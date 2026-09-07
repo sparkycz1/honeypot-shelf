@@ -14,7 +14,7 @@ Usage (inside the running `web` container):
     docker compose exec web python scripts/reset_account.py --username admin --disable-totp
 
 Always: sets a new password (prompted interactively, or from
-`DEBCONTROL_RESET_PASSWORD` for non-interactive/scripted use — see
+`HONEYHIVE_RESET_PASSWORD` for non-interactive/scripted use — see
 `create_admin.py` for why an env var instead of a `--password` flag),
 clears any lockout, resets the failed-attempt counter, and forces a
 password change on next login. `--disable-totp` additionally turns off
@@ -120,7 +120,7 @@ def main() -> None:
 
     password: str | None = None
     if not args.no_password:
-        password = os.environ.get("DEBCONTROL_RESET_PASSWORD")
+        password = os.environ.get("HONEYHIVE_RESET_PASSWORD")
         if not password:
             password = getpass.getpass("New password: ")
             if getpass.getpass("Confirm new password: ") != password:

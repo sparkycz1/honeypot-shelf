@@ -37,17 +37,32 @@ fresh instance running.
 
 ## 🚀 Quick start (Docker)
 
+**Recommended — one interactive script does everything:**
+
 ```bash
 git clone https://github.com/sparkycz1/honeyhive.git
 cd honeyhive
+python scripts/setup.py
+```
+
+It generates every secret, asks a handful of questions (timezone, whether
+to use the bundled Caddy reverse proxy, background-check intervals, the
+superadmin password — or auto-generates one — and the host port), then
+applies the DB migration, brings the stack up, and creates the first
+superadmin account for you. Full details:
+[wiki/Installation.md](wiki/Installation.md).
+
+**Manual setup**, if you'd rather configure everything by hand:
+
+```bash
 cp .env.example .env
 python scripts/generate_secrets.py
 ```
 
 Paste the printed values into `.env`, then see
-[wiki/Installation.md](wiki/Installation.md) for the rest (generating the
-first DB migration, bringing the stack up, creating the first superadmin
-account, and reverse-proxy options).
+[wiki/Installation.md](wiki/Installation.md) for the rest (applying the DB
+migration, bringing the stack up, creating the first superadmin account,
+and reverse-proxy options).
 
 ```bash
 docker compose up -d --build

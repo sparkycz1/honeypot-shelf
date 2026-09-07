@@ -1,35 +1,57 @@
 # 🚀 Installation
 
-## Quick start (Docker)
+## Quick start (Docker) — recommended
 
 ```bash
 git clone https://github.com/sparkycz1/honeyhive.git
 cd honeyhive
+python scripts/setup.py
+```
+
+`scripts/setup.py` is a self-contained, pure-stdlib wizard (needs only a
+system `python3` and Docker — nothing from this project's own virtualenv):
+it generates every secret (`SECRET_KEY`, `ENCRYPTION_KEY`,
+`POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `INFORM_TOKEN`, `INGEST_TOKEN`),
+asks a handful of questions (timezone, whether to use the bundled Caddy
+reverse proxy and its domain/email if so, whether the app's own port
+should only accept local connections, the facts/reachability check
+intervals, event retention, the superadmin password — or auto-generates
+one — and the host port), writes `.env`, applies the Alembic migration,
+brings the stack up, waits for it to become healthy, and creates the
+first superadmin account (`admin`). Re-running it against an existing
+`.env` just tops that file up with any new `.env.example` variables and
+restarts the stack — it won't regenerate secrets or touch your data.
+
+Once it finishes, log in and create at least one `Company` and one
+`Honeypot` from the Companies/Honeypots pages (both superadmin-only) —
+nothing shows up on the Dashboard before that. See
+[Honeypot Onboarding](Honeypot-Onboarding.md) for pointing an actual
+OpenCanary host at the honeypot you create.
+
+## Manual setup
+
+If you'd rather configure everything by hand instead of using
+`scripts/setup.py`:
+
+```bash
 cp .env.example .env
 python scripts/generate_secrets.py
 ```
 
 Paste the printed values (`SECRET_KEY`, `ENCRYPTION_KEY`,
-`POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `INGEST_TOKEN`) into `.env`.
-Optionally set `TZ` (e.g. `Europe/Prague`); defaults to UTC. Then:
+`POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `INFORM_TOKEN`, `INGEST_TOKEN`)
+into `.env`. Optionally set `TZ` (e.g. `Europe/Prague`); defaults to UTC.
+Then:
 
 ```bash
 docker compose up -d --build
 ```
 
-> [!IMPORTANT]
-> This scaffold ships **no initial Alembic migration yet** — the models
-> exist but nothing has generated the first migration against them. Before
-> `migrate` (the one-shot service that runs `alembic upgrade head`) has
-> anything to apply, generate it once against a running Postgres:
-> ```bash
-> docker compose up -d db redis
-> docker compose run --rm web alembic revision --autogenerate -m "Initial schema"
-> docker compose run --rm web alembic upgrade head
-> ```
-> Commit the generated file under `alembic/versions/`. After that, `docker
-> compose up -d --build` applies it automatically on every start via the
-> `migrate` service.
+`alembic/versions/` already ships the initial schema migration
+(`1aabc66480ab_initial_schema.py`) — the one-shot `migrate` service applies
+it automatically (`alembic upgrade head`) before `web`/`worker`/`beat`
+start. If you've changed a model since and need a new migration, see
+[Development.md](Development.md#adding-a-migration).
 
 The app listens on `APP_PORT` (default `8080`, plain HTTP, all interfaces
 by default — meant to sit behind a TLS-terminating reverse proxy; set
@@ -49,29 +71,9 @@ Then create the first superadmin account:
 docker compose exec web python scripts/create_admin.py --username admin
 ```
 
-You'll also need at least one `Company` and one `Honeypot` row before
-anything shows up — there's no UI to create either yet (see
-[Home.md](Home.md)'s open questions); insert them directly for now:
-
-```bash
-docker compose exec web python -c "
-import asyncio, uuid
-from app.db.session import AsyncSessionLocal
-from app.db.models.company import Company
-from app.db.models.honeypot import Honeypot
-
-async def main():
-    async with AsyncSessionLocal() as db:
-        company = Company(name='Example customer')
-        db.add(company)
-        await db.flush()
-        db.add(Honeypot(company_id=company.id, hostname='example-honey1'))
-        await db.commit()
-        print(company.id)
-
-asyncio.run(main())
-"
-```
+Log in, then create at least one `Company` and one `Honeypot` from the
+Companies/Honeypots pages — nothing shows up on the Dashboard before
+that.
 
 > [!WARNING]
 > The app speaks **plain HTTP only**. Always put TLS termination in front
@@ -96,6 +98,11 @@ web UI:
 ```bash
 docker compose exec web python scripts/reset_account.py --username admin
 ```
+
+Non-interactively, set `HONEYHIVE_RESET_PASSWORD` in the environment
+instead of being prompted (same reasoning as `create_admin.py`'s
+`HONEYHIVE_ADMIN_PASSWORD` — it never shows up in a process listing the
+way a `--password` flag would).
 
 See [Development.md](Development.md) for running the test suite,
 linting/type-checking, and adding a migration.
