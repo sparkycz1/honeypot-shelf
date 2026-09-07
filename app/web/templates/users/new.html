@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}Add user — HoneyHive{% endblock %}
+
+{% block content %}
+  <h1>Add user</h1>
+
+  {% if errors %}
+    <div class="alert alert-error">
+      {% for error in errors %}<p>{{ error }}</p>{% endfor %}
+    </div>
+  {% endif %}
+
+  <form method="post" action="/users" class="form" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <label for="username">Username</label>
+    <input type="text" id="username" name="username" required maxlength="64"
+           pattern="[a-z0-9][a-z0-9_.\-]{2,63}" value="{{ form.username or '' }}">
+    <p class="hint">Lowercase letters, digits, '.', '_', '-'. This is also the LDAP username and the OIDC identity, if used.</p>
+
+    <label for="display_name">Display name</label>
+    <input type="text" id="display_name" name="display_name" maxlength="255" value="{{ form.display_name or '' }}">
+
+    <label for="auth_provider">Login method</label>
+    <select id="auth_provider" name="auth_provider" required>
+      {% for provider in auth_providers %}
+        <option value="{{ provider.value }}" {{ 'selected' if form.auth_provider == provider else '' }}>{{ provider.value }}</option>
+      {% endfor %}
+    </select>
+    <p class="hint">
+      "local": a password set below. "ldap"/"oidc": leave the password
+      field empty — the username is matched against the directory/provider
+      instead (see Settings).
+    </p>
+
+    <label for="password">Password (local accounts only)</label>
+    <input type="password" id="password" name="password" autocomplete="new-password" minlength="12">
+    <p class="hint">At least 12 characters. Required for "local" accounts, left blank otherwise. The user must change it on first login.</p>
+
+    <label>
+      <input type="checkbox" name="api_access_enabled" {{ 'checked' if form.api_access_enabled else '' }}>
+      API access — allows this user to create and use their own API tokens
+    </label>
+
+    <fieldset>
+      <legend>Access</legend>
+      <label>
+        <input type="checkbox" id="is_superadmin" name="is_superadmin"
+               onchange="document.getElementById('company-scope-fields').hidden = this.checked">
+        Superadmin — sees and manages every company
+      </label>
+
+      <div id="company-scope-fields">
+        <label for="company_id">Company</label>
+        <select id="company_id" name="company_id">
+          <option value="" disabled selected>Choose a company…</option>
+          {% for company in companies %}
+            <option value="{{ company.id }}">{{ company.name }}</option>
+          {% endfor %}
+        </select>
+
+        <label for="access_level">Access level</label>
+        <select id="access_level" name="access_level">
+          {% for level in access_levels %}
+            <option value="{{ level.value }}">{{ "Read + write" if level.value == "read_write" else "Read only" }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <p class="hint">
+        A non-superadmin user always belongs to exactly one company, with
+        either read-only or read + write access to its honeypots — nothing
+        in between, and nothing shared across companies. The audit log and
+        Settings are never available to a non-superadmin.
+      </p>
+    </fieldset>
+
+    <button type="submit" class="button">Create user</button>
+    <a class="button button-secondary" href="/users">Cancel</a>
+  </form>
+{% endblock %}

@@ -1,10 +1,20 @@
 """One row per company per day: a cheap, pre-aggregated point for the
 Dashboard's trend chart, written by a daily Celery Beat job
 (`app.tasks.jobs.record_company_snapshots`) rather than computed from
-`honeypot_events` on every page load. Purged after
+`honeypot_events`/`honeypots` on every page load. Purged after
 `AppSettings.dashboard_trends_retention_days` — see that column's
-docstring. Mirrors debcontrol's `FleetSnapshot` one-to-one, scoped to a
-company instead of the whole fleet.
+docstring. Mirrors debcontrol's `FleetSnapshot`, scoped to a company
+instead of the whole (single-tenant) fleet, plus this project's own
+event-ingestion counts (`honeypots_online`/`event_count`, which have no
+debcontrol equivalent — see `app.services.honeypot_status`).
+
+Two independent notions of "online" are both captured here — same
+distinction `app.db.models.honeypot`'s module docstring draws:
+`honeypots_online` is the OpenCanary-event signal (`Honeypot.last_seen_at`
+recent enough); `needs_updates`/`needs_security_updates`/`needs_reboot`
+mirror debcontrol's SSH-management-plane facts
+(`Honeypot.is_reachable`/`upgradable_count`/etc, via
+`app.services.company_stats.compute_company_stats`).
 """
 
 from __future__ import annotations
@@ -28,9 +38,16 @@ class CompanySnapshot(Base):
     )
     snapshot_date: Mapped[date] = mapped_column(Date, nullable=False)
 
+    # --- This project's own event-ingestion counts ---
     honeypot_count: Mapped[int] = mapped_column(Integer, nullable=False)
     honeypots_online: Mapped[int] = mapped_column(Integer, nullable=False)
     event_count: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # --- SSH-management-plane facts, mirroring debcontrol's FleetSnapshot ---
+    honeypots_reachable: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    needs_updates: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    needs_security_updates: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    needs_reboot: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
 

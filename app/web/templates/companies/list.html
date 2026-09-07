@@ -1,27 +1,60 @@
 {% extends "base.html" %}
 
-{% block title %}Companies — HoneyHive{% endblock %}
+{% block title %}Honeypot companies — HoneyHive{% endblock %}
 
 {% block content %}
   <div class="page-header">
-    <h1>Companies</h1>
+    <h1>Honeypot companies</h1>
+    <a class="button" href="/companies/new">Add company</a>
   </div>
 
-  {% if rows %}
+  <form method="get" action="/companies" class="search-form">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search companies by name or description...">
+    <button type="submit" class="button">Search</button>
+    {% if q %}<a class="button button-secondary" href="/companies">Clear</a>{% endif %}
+  </form>
+
+  {% set show_all_row = not q or 'all' in q.lower() or 'honeypot' in q.lower() %}
+
+  {% if not companies and not show_all_row %}
+    <div class="empty-state">
+      <p>No companies match "{{ q }}".</p>
+    </div>
+  {% else %}
     <table class="data-table">
-      <thead><tr><th>Name</th><th>Honeypots</th><th>Online</th><th>Users</th></tr></thead>
-      <tbody>
-        {% for row in rows %}
+      <thead>
         <tr>
-          <td><a href="/companies/{{ row.company.id }}">{{ row.company.name }}</a></td>
-          <td>{{ row.honeypot_count }}</td>
-          <td>{{ row.online_count }}</td>
-          <td>{{ row.user_count }}</td>
+          <th>Name</th>
+          <th>Description</th>
+          <th>Honeypots</th>
+          <th></th>
         </tr>
+      </thead>
+      <tbody>
+        {% if show_all_row %}
+          <tr>
+            <td><a href="/companies/all">All honeypots</a> <span class="badge badge-ok">automatic</span></td>
+            <td>Every honeypot, always — built in, nothing to manage.</td>
+            <td>{{ all_honeypots_count }}</td>
+            <td><a href="/companies/all">Details</a></td>
+          </tr>
+        {% endif %}
+        {% for company in companies %}
+          <tr>
+            <td><a href="/companies/{{ company.id }}">{{ company.name }}</a></td>
+            <td>{{ company.description or '—' }}</td>
+            <td>{{ member_counts.get(company.id, 0) }}</td>
+            <td><a href="/companies/{{ company.id }}">Details</a></td>
+          </tr>
         {% endfor %}
       </tbody>
     </table>
-  {% else %}
-    <p class="hint">No companies yet.</p>
+  {% endif %}
+
+  {% if not companies and not q %}
+    <div class="empty-state">
+      <p>No custom companies yet — "All honeypots" above is built in and always there.</p>
+      <a class="button" href="/companies/new">Add your first custom company</a>
+    </div>
   {% endif %}
 {% endblock %}

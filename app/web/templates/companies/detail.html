@@ -1,43 +1,88 @@
 {% extends "base.html" %}
+{% from "partials/_tabnav.html" import render as render_tabnav %}
 
 {% block title %}{{ company.name }} — HoneyHive{% endblock %}
 
 {% block content %}
-  <h1>{{ company.name }}</h1>
+  <div class="page-header">
+    <h1>{{ company.name }}</h1>
+    <form method="post" action="/companies/{{ company.id }}/delete"
+          data-confirm="Delete this company? Honeypots in it will be unassigned, not deleted.">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="button button-danger">Delete company</button>
+    </form>
+  </div>
 
-  {% if company.notes %}
-    <section class="panel">{{ company.notes | markdown }}</section>
+  {{ render_tabnav(tabs, active_tab) }}
+
+  {% if company.description %}
+    <p>{{ company.description }}</p>
   {% endif %}
 
   <section class="panel">
-    <h2>Honeypots ({{ honeypots | length }})</h2>
-    <table class="data-table">
-      <thead><tr><th>Hostname</th><th>Location</th><th>Last seen</th></tr></thead>
-      <tbody>
-        {% for h in honeypots %}
-        <tr>
-          <td><a href="/honeypots/{{ h.id }}">{{ h.hostname }}</a></td>
-          <td>{{ h.location or '—' }}</td>
-          <td>{{ h.last_seen_at | local_time('%Y-%m-%d %H:%M %Z') }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <h2>Honeypots in this company</h2>
+    {% include "partials/honeypot_search_form.html" %}
+    {% if not honeypots %}
+      {% if q %}
+        <p class="hint">No honeypots in this company match "{{ q }}".</p>
+      {% else %}
+        <p class="hint">No honeypots in this company yet.</p>
+      {% endif %}
+    {% else %}
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>User</th>
+            <th>Updates</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for honeypot in honeypots %}
+            <tr>
+              <td>
+                <a href="/honeypots/{{ honeypot.id }}">{{ honeypot.name }}</a>
+                {% if honeypot.tags %}
+                  <br>
+                  {% for tag in honeypot.tags %}
+                    <a class="badge badge-tag" href="?tag={{ tag.name }}">{{ tag.name }}</a>
+                  {% endfor %}
+                {% endif %}
+              </td>
+              <td>{{ honeypot.username }}</td>
+              <td>{% include "partials/honeypot_update_status_cell.html" %}</td>
+              <td>
+                <form method="post"
+                      action="/companies/{{ company.id }}/honeypots/{{ honeypot.id }}/remove">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button type="submit" class="button button-secondary">Remove</button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
   </section>
 
   <section class="panel">
-    <h2>Users ({{ users | length }})</h2>
-    <table class="data-table">
-      <thead><tr><th>Username</th><th>Access</th><th>Active</th></tr></thead>
-      <tbody>
-        {% for u in users %}
-        <tr>
-          <td>{{ u.display_name or u.username }}</td>
-          <td>{{ "Read + write" if u.access_level.value == "read_write" else "Read only" }}</td>
-          <td>{{ "Yes" if u.is_active else "No" }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <h2>Add a honeypot to this company</h2>
+    {% if not available_honeypots %}
+      <p class="hint">No other honeypots available to add.</p>
+    {% else %}
+      <form method="post" action="/companies/{{ company.id }}/honeypots" class="form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label for="honeypot_id">Honeypot</label>
+        <select id="honeypot_id" name="honeypot_id" required>
+          {% for honeypot in available_honeypots %}
+            <option value="{{ honeypot.id }}">
+              {{ honeypot.name }}{% if honeypot.company %} (currently in {{ honeypot.company.name }}){% endif %}
+            </option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="button">Add to company</button>
+      </form>
+    {% endif %}
   </section>
 {% endblock %}

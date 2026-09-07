@@ -1,0 +1,98 @@
+{% if errors %}
+  <div class="alert alert-error">
+    {% for error in errors %}<p>{{ error }}</p>{% endfor %}
+  </div>
+{% endif %}
+
+<form method="post" action="{{ form_action }}" class="form" autocomplete="off">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+  <label for="name">Name</label>
+  <input type="text" id="name" name="name" required maxlength="255"
+         value="{{ form.get('name', '') }}" placeholder="e.g. Nightly updates — dev">
+
+  <label for="target">Applies to</label>
+  <select id="target" name="target">
+    {% if allow_all_honeypots %}
+      <option value="all" {% if form.get('target', 'all') == 'all' %}selected{% endif %}>
+        All honeypots
+      </option>
+    {% endif %}
+    {% for company in companies %}
+      <option value="company:{{ company.id }}" {% if form.get('target') == 'company:' ~ company.id %}selected{% endif %}>
+        Company: {{ company.name }}
+      </option>
+    {% endfor %}
+    {% for honeypot in honeypots %}
+      <option value="honeypot:{{ honeypot.id }}" {% if form.get('target') == 'honeypot:' ~ honeypot.id %}selected{% endif %}>
+        Honeypot: {{ honeypot.name }}
+      </option>
+    {% endfor %}
+  </select>
+  <p class="hint">
+    Honeypots without a pinned host key fingerprint are silently skipped when
+    the schedule fires, same as the manual buttons.
+    {% if not allow_all_honeypots %}
+      Your account is restricted to specific honeypot companies, so "All honeypots"
+      isn't available as a target.
+    {% endif %}
+  </p>
+
+  <label for="action">Action</label>
+  <select id="action" name="action">
+    {% for action in actions %}
+      <option value="{{ action.key }}" {% if form.get('action', actions[0].key if actions else '') == action.key %}selected{% endif %}>
+        {{ action.label }}{% if action.destructive %} ⚠{% endif %}
+      </option>
+    {% endfor %}
+  </select>
+  <ul class="hint">
+    {% for action in actions %}
+      <li><strong>{{ action.label }}</strong> — {{ action.description }}</li>
+    {% endfor %}
+  </ul>
+
+  {% for action in actions %}
+    {% for param in action.params %}
+      <label for="param_{{ param.key }}">
+        {{ param.label }} <span class="hint">(only used for "{{ action.label }}")</span>
+      </label>
+      {% if param.param_type == 'text' %}
+        <input type="text" id="param_{{ param.key }}" name="param_{{ param.key }}"
+               value="{{ form.get('param_' ~ param.key, param.default) }}"
+               {% if param.placeholder %}placeholder="{{ param.placeholder }}"{% endif %}>
+      {% else %}
+        <select id="param_{{ param.key }}" name="param_{{ param.key }}">
+          {% for value, label in param.choices %}
+            <option value="{{ value }}" {% if form.get('param_' ~ param.key, param.default) == value %}selected{% endif %}>
+              {{ label }}
+            </option>
+          {% endfor %}
+        </select>
+      {% endif %}
+    {% endfor %}
+  {% endfor %}
+
+  <label for="cron_expression">Cron expression (UTC)</label>
+  <input type="text" id="cron_expression" name="cron_expression" required maxlength="100"
+         list="cron-presets" value="{{ form.get('cron_expression', '') }}"
+         placeholder="0 3 * * *">
+  <datalist id="cron-presets">
+    <option value="0 3 * * *" label="Every day at 03:00">
+    <option value="0 3 * * 0" label="Every Sunday at 03:00">
+    <option value="0 */6 * * *" label="Every 6 hours">
+    <option value="0 0 1 * *" label="First of the month at 00:00">
+  </datalist>
+  <p class="hint">
+    Standard 5-field cron: minute hour day-of-month month day-of-week, always
+    interpreted in UTC. E.g. <code>0 3 * * *</code> = every day at 03:00 UTC.
+  </p>
+
+  <label>
+    <input type="checkbox" name="is_enabled" {% if form.get('is_enabled') %}checked{% endif %}>
+    Enabled
+  </label>
+
+  <button type="submit" class="button">Save</button>
+  <a class="button button-secondary" href="/scheduling">Cancel</a>
+</form>

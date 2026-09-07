@@ -1,0 +1,25 @@
+{# Shared summary line + "open modal" trigger, rendered in three places:
+   - once on the honeypot detail page itself (no package rows fetched — just
+     the aggregate counts already computed for that page), self-polling
+     (poll=True) so a periodic background refresh of packages shows up
+     without a manual page reload;
+   - again inside the lazily-loaded modal body (see honeypot_packages.html),
+     as an out-of-band swap (oob=True), so a refresh/filter done inside the
+     modal keeps the counts behind it in sync without a full page reload;
+   - poll=True's own periodic GET (see GET /honeypots/{id}/packages-summary-panel)
+     re-renders partials/_packages_summary_inner.html directly, not this
+     macro — reusing this div (with its id and poll attributes) would nest
+     it inside itself on every tick. #}
+{% macro render(honeypot, package_counts, held_count, oob=False, poll=False) %}
+<div
+  id="packages-summary"
+  {% if oob %}hx-swap-oob="true"{% endif %}
+  {% if poll %}
+  hx-get="/honeypots/{{ honeypot.id }}/packages-summary-panel"
+  hx-trigger="every 60s, live-packages from:body"
+  hx-swap="innerHTML settle:600ms"
+  {% endif %}
+>
+  {% include "partials/_packages_summary_inner.html" %}
+</div>
+{% endmacro %}

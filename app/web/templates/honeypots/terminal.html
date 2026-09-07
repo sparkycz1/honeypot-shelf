@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% from "partials/_tabnav.html" import render as render_tabnav %}
+
+{% block title %}Terminal — {{ honeypot.name }} — HoneyHive{% endblock %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="/static/css/xterm.css">
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>{{ honeypot.name }}</h1>
+  </div>
+
+  {{ render_tabnav(tabs, active_tab) }}
+
+  <p class="hint">
+    Connecting as <code>{{ honeypot.username }}</code> ({{ honeypot.ip_address }}).
+    This is a full interactive shell — whatever that account (and its sudo
+    rights, if any) can do, you can do here. The session ends automatically
+    after a few hours of use, and immediately if you close this tab.
+  </p>
+  <div id="terminal-status" class="hint" role="status"></div>
+  <div
+    id="terminal-container"
+    class="terminal-shell"
+    data-ws-path="/honeypots/{{ honeypot.id }}/terminal/ws"
+  ></div>
+{% endblock %}
+
+{% block extra_scripts %}
+  <script src="/static/js/xterm.min.js"></script>
+  <script src="/static/js/xterm-addon-fit.min.js"></script>
+  <script src="/static/js/terminal.js" defer></script>
+{% endblock %}

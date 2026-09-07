@@ -1,11 +1,36 @@
-"""A deployed OpenCanary instance (a Raspberry Pi at a customer site).
+"""A single deployed OpenCanary honeypot (a Raspberry Pi at a customer
+site), managed over SSH — same model debcontrol uses for a `Machine`,
+merged with the honeypot-specific event-ingestion bookkeeping this
+project added first.
 
-HoneyHive doesn't SSH into honeypots or manage them remotely (unlike
-debcontrol's `Machine`) — see `app.db.models.honeypot_event` and
-`wiki/Architecture.md` for the actual data flow: a honeypot pushes its own
-events to HoneyHive; HoneyHive never reaches back into it. This row is
-therefore mostly identity + last-seen bookkeeping, not a live-managed
-resource.
+Security notes (identical to debcontrol's `Machine`):
+- `secret_encrypted` only holds a value for `AuthMethod.PASSWORD` (the
+  discouraged fallback) — encrypted via `app.core.security.encrypt_secret`.
+  For `AuthMethod.SSH_KEY` (the default/recommended method), the app
+  connects using its own shared identity key (see
+  `app.db.models.ssh_identity.SSHIdentity`), so there's nothing
+  honeypot-specific to store.
+- `host_key_fingerprint` is the SSH host key fingerprint this honeypot is
+  "pinned" to. Until it's set, no connection will be established
+  automatically (no silent "trust on first use") — the fingerprint must be
+  explicitly confirmed by an operator outside this application and only
+  then stored here.
+
+Facts (`os_version`, `kernel_version`, `cpu_cores`, `ram_bytes`, `disks`,
+`discovered_hostname`, `reboot_required`) are read over SSH — see
+`app.ssh.facts` — once a host key fingerprint is pinned, and refreshed
+periodically by the background worker. `is_reachable`/`last_ping_at` come
+from a much cheaper, unauthenticated TCP-reachability check. Update
+counts/packages mirror debcontrol's `Machine` exactly — see
+`app.ssh.updates`/`app.ssh.packages`.
+
+**Two independent "is this honeypot alive" signals coexist** — don't
+conflate them: `is_reachable`/`last_ping_at` is the SSH-management-plane
+check (same as debcontrol); `last_seen_at`/`last_seen_ip` is when this
+honeypot last pushed an OpenCanary *event* to `POST
+/api/ingest/{id}/events` (see `app.services.honeypot_status`) — a
+honeypot can be SSH-reachable but have OpenCanary itself down, or vice
+versa.
 """
 
 from __future__ import annotations
@@ -13,61 +38,140 @@ from __future__ import annotations
 import enum
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import ForeignKey, String, func
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Boolean,
+    ForeignKey,
+    Integer,
+    LargeBinary,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.db.models.honeypot_tag import Tag, honeypot_tags
+from app.db.pg_enum import pg_enum
 
 if TYPE_CHECKING:
     from app.db.models.company import Company
     from app.db.models.honeypot_event import HoneypotEvent
 
 
-class HoneypotStatus(enum.StrEnum):
-    """Derived, not stored as the source of truth — `Honeypot.status`
-    (a property, see below) compares `last_seen_at` against
-    `Settings.honeypot_offline_after_seconds`. Kept as an enum anyway so
-    templates/API responses have a stable vocabulary rather than each
-    computing their own "online" wording."""
-
-    ONLINE = "online"
-    OFFLINE = "offline"
-    # No event has ever been received for this honeypot — distinct from
-    # OFFLINE, which means it was seen before and has since gone quiet.
-    NEVER_SEEN = "never_seen"
+class AuthMethod(enum.StrEnum):
+    SSH_KEY = "ssh_key"
+    PASSWORD = "password"
 
 
 class Honeypot(Base):
     __tablename__ = "honeypots"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+
     company_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True
     )
     company: Mapped[Company] = relationship(back_populates="honeypots", lazy="joined")
 
-    # e.g. "acme-honey1" — the RPI hostname convention from the install
-    # runbook (<firma>-honey<n>), shown as this honeypot's display name.
-    hostname: Mapped[str] = mapped_column(String(255), nullable=False)
-    # Free text — physical site/location note ("acme HQ, server room"), not
-    # structured.
+    # e.g. "acme-honey1" — the RPI name convention from the install
+    # runbook (<firma>-honey<n>). Indexed: the list orders/searches by this.
+    name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     location: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    # Last IP an ingest request for this honeypot arrived from — informational
-    # only (honeypots typically sit behind NetBird/VPN, so this is rarely a
-    # public IP).
+
+    # --- SSH management plane (see app.ssh.*, same shape as debcontrol's
+    # Machine) ---
+    ip_address: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    port: Mapped[int] = mapped_column(default=22, nullable=False)
+    username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    auth_method: Mapped[AuthMethod | None] = mapped_column(
+        pg_enum(AuthMethod, name="auth_method"), nullable=True
+    )
+    secret_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    host_key_fingerprint: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # Free-form, cross-cutting labels independent of `company` above.
+    tags: Mapped[list[Tag]] = relationship(
+        secondary=honeypot_tags, order_by="Tag.name", lazy="selectin"
+    )
+
+    description: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    # A longer, Markdown-formatted runbook — rendered via
+    # app.web.templating's `markdown` filter.
+    runbook: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(default=True, nullable=False, index=True)
+
+    # --- Facts, discovered over SSH (see app.ssh.facts) ---
+    discovered_hostname: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    os_version: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    kernel_version: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    cpu_architecture: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    cpu_cores: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cpu_model: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    ram_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    ram_speed_mhz: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # `/etc/os-release`'s `ID=` field — used only to pick an OS logo.
+    os_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    disks: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    reboot_required: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    uptime_seconds: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    process_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    filesystems: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    network_interfaces: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    facts_updated_at: Mapped[datetime | None] = mapped_column(nullable=True)
+
+    # --- Cheap per-minute reachability check (TCP connect to the SSH port) ---
+    is_reachable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    last_ping_at: Mapped[datetime | None] = mapped_column(nullable=True)
+
+    # --- Per-honeypot overrides of the global `.env` sweep cadences —
+    # NULL means "use the global default". See app.tasks.jobs._due_honeypots.
+    reachability_check_interval_seconds: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
+    facts_refresh_interval_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    monitoring_interval_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    monitoring_history_retention_days: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
+
+    # --- Monitoring tab: CPU/RAM/disk-usage samples and the systemd service
+    # snapshot ---
+    monitoring_updated_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    services_updated_at: Mapped[datetime | None] = mapped_column(nullable=True)
+
+    # --- Post-onboarding readiness check (see app.ssh.readiness) ---
+    readiness_checked_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    readiness_missing: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+
+    # --- Update availability: apt, flatpak, snap ---
+    upgradable_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    security_upgradable_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    flatpak_upgradable_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    snap_upgradable_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updates_checked_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    apt_upgradable_packages: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        JSON, nullable=True
+    )
+    flatpak_upgradable_packages: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        JSON, nullable=True
+    )
+    snap_upgradable_packages: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        JSON, nullable=True
+    )
+    packages_updated_at: Mapped[datetime | None] = mapped_column(nullable=True)
+
+    # --- Event ingestion (this project's own addition — see
+    # app/web/routes/ingest.py and app.services.honeypot_status) ---
     last_seen_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
-
-    # Per-honeypot bearer credential for POST /api/ingest/events, alternative
-    # to the shared INGEST_TOKEN — same "shared token as bootstrap, per-
-    # resource token as the real credential" shape as debcontrol's
-    # INFORM_TOKEN/per-user API tokens. Only the SHA-256 hash is stored.
-    ingest_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
-
-    notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
-
     last_seen_at: Mapped[datetime | None] = mapped_column(nullable=True, index=True)
+    # Per-honeypot bearer credential for POST /api/ingest/{id}/events,
+    # alternative to the shared INGEST_TOKEN. Only the SHA-256 hash is
+    # stored.
+    ingest_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
 
     events: Mapped[list[HoneypotEvent]] = relationship(
         back_populates="honeypot", cascade="all, delete-orphan"
@@ -79,4 +183,4 @@ class Honeypot(Base):
     )
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid only
-        return f"Honeypot(id={self.id!r}, hostname={self.hostname!r})"
+        return f"Honeypot(id={self.id!r}, name={self.name!r})"

@@ -1,6 +1,6 @@
 [project]
 name = "honeyhive"
-version = "0.1.0"
+version = "0.0.1"
 description = "Management and monitoring overview for a fleet of OpenCanary honeypots, across multiple companies"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -24,10 +24,14 @@ dependencies = [
     # purge, snapshot rollups) — event ingestion itself is a plain, fast
     # synchronous DB write, not queued. See app/tasks/celery_app.py.
     "celery[redis]>=5.6.3",
+    "asyncssh>=2.24.0",
     "jinja2>=3.1.6",
     "python-multipart>=0.0.32",
     "cryptography>=50.0.1",
     "itsdangerous>=2.2.0",
+    # Standard 5-field cron expression parsing/next-run computation for
+    # Scheduling (app/scheduling/). Well-established, tiny, no transitive deps.
+    "croniter>=6.0.0",
     # --- Authentication (app/auth/) ---
     # Argon2id password hashing for local accounts — current OWASP-recommended
     # default, memory-hard (better GPU/ASIC resistance than bcrypt).
@@ -71,6 +75,7 @@ dev = [
     "mypy>=2.3.1",
     "python-dotenv>=1.2.3",
     "types-authlib>=1.7.2.20260827",
+    "types-croniter>=6.0.0",
     "types-ldap3>=2.9.13.20260827",
     "types-qrcode>=8.2.0.20260518",
 ]
@@ -91,6 +96,8 @@ ignore = ["S101", "B008"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101", "S105", "S106"]
+# "password" here is just an enum value label (authentication method), not a secret.
+"app/db/models/honeypot.py" = ["S105"]
 
 [tool.mypy]
 python_version = "3.14"

@@ -75,6 +75,30 @@ class AppSettings(Base):
         Integer, nullable=True, default=90
     )
 
+    # Same idea again, for `HoneypotUpdateRun` rows (app.tasks.jobs.
+    # purge_old_honeypot_update_runs) — each one can hold up to ~200KB of
+    # apt output. The actual audit-worthy fact — *that* an update was
+    # triggered, by whom — is the separate `honeypot.updates.run` audit log
+    # entry recorded at trigger time and unaffected by this; what gets
+    # purged here is only the stored run record and its raw output.
+    # Defaults to a bounded window (90 days), same reasoning as
+    # dashboard_trends_retention_days. NULL still means "keep forever."
+    honeypot_update_run_retention_days: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=90
+    )
+
+    # Same idea again, for `HoneypotMonitoringSample`/`HoneypotReachabilitySample`
+    # rows (app.tasks.jobs.purge_old_monitoring_samples) — a row is taken
+    # every `MONITORING_INTERVAL_SECONDS` for every honeypot with a pinned
+    # host key, so this is the one retention setting most likely to matter
+    # for table size at fleet scale. Defaults to a bounded window (90 days)
+    # for the same "operational trend data, not a compliance record"
+    # reasoning as the two above. NULL still means "keep forever."
+    # Overridable per honeypot — see `Honeypot.monitoring_history_retention_days`.
+    monitoring_history_retention_days: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=90
+    )
+
     # --- LDAP login (app.auth.ldap) ---
     ldap_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     ldap_server_uri: Mapped[str | None] = mapped_column(String(255), nullable=True)

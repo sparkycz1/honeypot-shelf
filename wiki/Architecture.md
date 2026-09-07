@@ -162,11 +162,14 @@ separate reachability check exists (there's nothing to reach).
 
 CSRF, CSP (strict, no inline scripts/styles, no CDN — htmx and Swagger UI
 vendored locally), security headers, secrets-at-rest encryption
-(`ENCRYPTION_KEY`, Fernet — used for LDAP/OIDC secrets and, once built,
-per-honeypot ingest tokens), and the hash-chained audit log are all
-unchanged from debcontrol. See that project's `wiki/Architecture.md`
-"Security model" section for the exhaustive version.
+(`ENCRYPTION_KEY`, Fernet — used for LDAP/OIDC secrets, SSH credentials,
+and per-honeypot ingest tokens), SSH host-key pinning (no trust-on-first-
+use — identical to debcontrol's `Machine`), and the hash-chained audit log
+are all unchanged from debcontrol. See that project's
+`wiki/Architecture.md` "Security model" section for the exhaustive
+version — it applies here without modification for everything under
+`app/ssh/`.
 
-**Deliberately out of scope** (unlike debcontrol): no SSH access to
-anything, no remote command execution, no AI assistant, no user-definable
-roles.
+**Deliberately out of scope** (unlike debcontrol): no AI assistant, no
+user-definable roles (see "Authentication & RBAC" above for what replaces
+them).

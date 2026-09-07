@@ -1,0 +1,313 @@
+"""The interactive web terminal's WebSocket endpoint — the byte-relay half
+of the feature (`app/web/routes/honeypots.py`'s `terminal_page` serves the
+page shell that connects here).
+
+**Why this can't just use `require_permission`/`app.auth.middleware` like
+every other route**: `app.auth.middleware.require_auth` is registered via
+`@app.middleware("http")` in `app.main` — Starlette only ever invokes
+`http`-scoped middleware for `scope["type"] == "http"` requests, and never
+for `"websocket"` ones. A WebSocket connection reaches this handler having
+gone through *no* auth check at all. This module therefore re-implements,
+by hand, the same two checks every other page gets for free:
+
+1. A valid session cookie, via the exact same `app.auth.sessions.
+   get_valid_session` the HTTP middleware itself calls (same revocation/
+   expiry/`is_active` semantics — nothing new here, just called from a
+   different place).
+2. Write access (`User.can_write()`) on that session's user, plus company
+   scope on the specific honeypot (`app.auth.scope.has_company_access`) —
+   the single most powerful thing this app can do (arbitrary command
+   execution as whatever user/sudo rights the honeypot's configured
+   account has).
+
+Either failing closes the socket with `1008` (policy violation) *before*
+accepting the connection and before anything SSH-related is attempted —
+never accept-then-fail, which would let a client believe it has a live
+terminal for a moment.
+
+**Protocol**: binary WebSocket frames carry raw terminal bytes in both
+directions (client keystrokes in, remote PTY output out); text frames carry
+JSON control messages — currently just `{"type": "resize", "cols": .., "rows": ..}`
+from the client, and `{"type": "error", "message": ..}` from the server for
+a failure that happens before there's a PTY to relay bytes from at all.
+
+**Session lifecycle**: `TERMINAL_SESSION_MAX_SECONDS` (2 hours) is a hard
+cap on one session's wall-clock duration, closed server-side regardless of
+activity — long enough for a real, uninterrupted admin session (installing
+something, chasing down a problem, editing several files), short enough
+that a forgotten/abandoned browser tab against this app's most powerful
+capability doesn't hold an authenticated, potentially root-capable SSH
+connection open indefinitely. There's no separate idle timeout on top of
+it. The SSH connection and process are always torn down in a `finally`
+block — on a clean disconnect, an error, or the hard cap firing — so there
+is never a leaked SSH connection on any exit path.
+
+Only the session's start and end are audit-logged (`honeypot.terminal.open`/
+`.close`, with duration on close) — not keystrokes or output, which would
+mean recording everything typed/seen in a potentially root-capable shell,
+secrets included. This matches how the rest of this app treats "which SSH
+round trip happened, by whom" as the audit-worthy fact, not a full
+transcript of what it did (see `app/audit.py`'s module docstring).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import json
+import uuid
+from datetime import UTC, datetime
+from typing import Any
+
+import asyncssh
+from fastapi import APIRouter, WebSocket, status
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.audit import log_event
+from app.auth.scope import has_company_access
+from app.auth.sessions import SESSION_COOKIE_NAME, get_valid_session
+from app.core.config import get_settings
+from app.db.models.honeypot import Honeypot
+from app.db.models.user import User
+from app.ssh.client import open_shell_session
+from app.ssh.credentials import resolve_honeypot_credential
+from app.ssh.exceptions import SSHConnectionError
+
+router = APIRouter()
+
+# See the module docstring for the reasoning behind this specific value.
+TERMINAL_SESSION_MAX_SECONDS = 2 * 60 * 60  # 2 hours
+
+# "xterm-256color" — the browser terminal (xterm.js, see terminal.js) can
+# render the full 256-color palette, so this asks for the terminfo entry
+# that lets remote curses apps (htop, vim, ...) actually use it, rather
+# than settling for the 8/16-color one plain "xterm" implies.
+#
+# The one thing this depends on that a minimal Debian/Ubuntu install
+# doesn't have by default: `ncurses-term`, which ships the
+# "xterm-256color" terminfo entry itself (only the base `ncurses-base`
+# entries — "xterm", "vt100", "screen", "linux", ... — are guaranteed
+# present). Requesting a TERM the remote can't look up doesn't fail loudly;
+# ncurses silently falls back to a near-blank capability set instead, which
+# is what a flat monochrome/ASCII-only htop actually is. This app's own
+# onboarding (`app.ssh.onboarding.build_onboarding_command`) installs
+# `ncurses-term` automatically, best-effort, precisely so this default
+# works out of the box on a honeypot onboarded through this app — install
+# it by hand (`apt-get install ncurses-term`) on one that wasn't.
+_TERM_TYPE = "xterm-256color"
+_DEFAULT_TERM_SIZE = (80, 24)
+# Refuse an obviously-bogus resize request rather than passing it straight
+# through to AsyncSSH's `change_terminal_size` — a client is untrusted input
+# here just like any form field.
+_MIN_TERM_DIM = 1
+_MAX_TERM_DIM = 1000
+
+_POLICY_VIOLATION = status.WS_1008_POLICY_VIOLATION
+
+
+async def _authenticate(
+    websocket: WebSocket, honeypot_id: uuid.UUID
+) -> tuple[User, Honeypot] | None:
+    """Returns (user, honeypot) if the connection is allowed to proceed, or
+    `None` after already closing the socket with an explanatory reason."""
+    raw_token = websocket.cookies.get(SESSION_COOKIE_NAME)
+    if not raw_token:
+        await websocket.close(code=_POLICY_VIOLATION, reason="Not authenticated.")
+        return None
+
+    db_session_factory = websocket.app.state.db_session_factory
+    async with db_session_factory() as db:
+        session = await get_valid_session(db, raw_token)
+    if session is None:
+        await websocket.close(code=_POLICY_VIOLATION, reason="Not authenticated.")
+        return None
+
+    user = session.user
+    if not user.can_write():
+        await websocket.close(code=_POLICY_VIOLATION, reason="Read-only account.")
+        return None
+
+    async with db_session_factory() as db:
+        honeypot = await db.get(Honeypot, honeypot_id)
+        # A honeypot outside this account's company scope is reported
+        # as missing, never as forbidden — the same rule the HTTP routes
+        # follow (see `app.auth.scope`). The page shell at
+        # `GET /honeypots/{id}/terminal` already 404s, but this socket
+        # authenticates independently of it and must not rely on that.
+        if honeypot is None or not has_company_access(user, honeypot.company_id, write=True):
+            await websocket.close(code=_POLICY_VIOLATION, reason="Honeypot not found.")
+            return None
+        if not honeypot.host_key_fingerprint:
+            await websocket.close(
+                code=_POLICY_VIOLATION,
+                reason="Honeypot has no pinned SSH host key fingerprint.",
+            )
+            return None
+    return user, honeypot
+
+
+async def _relay_output(
+    websocket: WebSocket, process: asyncssh.SSHClientProcess[bytes]
+) -> None:
+    """Reads raw bytes from the remote PTY and forwards them as binary
+    WebSocket frames — see the module docstring's protocol note (binary
+    frames are terminal bytes, text frames are JSON control messages)."""
+    while True:
+        chunk = await process.stdout.read(65536)
+        if not chunk:
+            return
+        await websocket.send_bytes(chunk)
+
+
+async def _relay_input(websocket: WebSocket, process: asyncssh.SSHClientProcess[bytes]) -> None:
+    """Reads from the WebSocket and either writes raw bytes to the remote
+    shell's stdin (binary frames) or handles a control message (text
+    frames — currently just `resize`)."""
+    while True:
+        message = await websocket.receive()
+        if message["type"] == "websocket.disconnect":
+            return
+        data = message.get("bytes")
+        if data is not None:
+            process.stdin.write(data)
+            continue
+        text = message.get("text")
+        if text is None:
+            continue
+        try:
+            control = json.loads(text)
+        except ValueError:
+            continue
+        if not isinstance(control, dict) or control.get("type") != "resize":
+            continue
+        cols, rows = control.get("cols"), control.get("rows")
+        if (
+            isinstance(cols, int)
+            and isinstance(rows, int)
+            and _MIN_TERM_DIM <= cols <= _MAX_TERM_DIM
+            and _MIN_TERM_DIM <= rows <= _MAX_TERM_DIM
+        ):
+            with contextlib.suppress(Exception):
+                process.change_terminal_size(cols, rows)
+
+
+async def _log_terminal_event(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    *,
+    action: str,
+    summary: str,
+    honeypot: Honeypot,
+    user: User,
+    details: dict[str, Any] | None,
+) -> None:
+    """`app.audit.log_event` normally derives `actor`/`ip_address` from a
+    `Request` — there is no `Request` here (this is a WebSocket), so `actor`
+    is passed explicitly instead, same as any other background-job-style
+    caller with no HTTP request behind it (see `app.audit.log_event`'s
+    docstring). `ip_address` is left `None`: a WebSocket's originating
+    address isn't tracked anywhere else in this app's audit trail either,
+    and `websocket.client` isn't always populated depending on the ASGI
+    server/proxy setup, so it isn't a reliable enough signal to add here
+    without more work than this pass warrants."""
+    async with db_session_factory() as db:
+        await log_event(
+            db,
+            action=action,
+            summary=summary,
+            target_type="honeypot",
+            target_id=honeypot.id,
+            target_label=honeypot.name,
+            actor=user.username,
+            details=details,
+        )
+
+
+@router.websocket("/honeypots/{honeypot_id}/terminal/ws")
+async def terminal_websocket(websocket: WebSocket, honeypot_id: uuid.UUID) -> None:
+    authenticated = await _authenticate(websocket, honeypot_id)
+    if authenticated is None:
+        return
+    user, honeypot = authenticated
+
+    settings = get_settings()
+    db_session_factory = websocket.app.state.db_session_factory
+    async with db_session_factory() as db:
+        secret = await resolve_honeypot_credential(honeypot, db)
+
+    await websocket.accept()
+
+    conn: asyncssh.SSHClientConnection | None = None
+    process: asyncssh.SSHClientProcess[bytes] | None = None
+    started_at = datetime.now(UTC)
+    close_reason = "Session ended."
+    # Only log a "close" event if "open" was actually logged — a connection
+    # that never got established (see the `SSHConnectionError` branch below)
+    # never started a session worth recording the end of.
+    session_opened = False
+    try:
+        try:
+            conn, process = await open_shell_session(
+                honeypot,
+                secret,
+                settings.ssh_connect_timeout,
+                term_type=_TERM_TYPE,
+                term_size=_DEFAULT_TERM_SIZE,
+            )
+        except SSHConnectionError as exc:
+            await websocket.send_text(json.dumps({"type": "error", "message": str(exc)}))
+            return
+
+        session_opened = True
+        await _log_terminal_event(
+            db_session_factory,
+            action="honeypot.terminal.open",
+            summary=f'Opened terminal to "{honeypot.name}"',
+            honeypot=honeypot,
+            user=user,
+            details=None,
+        )
+
+        output_task: asyncio.Task[None] = asyncio.ensure_future(
+            _relay_output(websocket, process)
+        )
+        input_task: asyncio.Task[None] = asyncio.ensure_future(_relay_input(websocket, process))
+        timeout_task: asyncio.Task[None] = asyncio.ensure_future(
+            asyncio.sleep(TERMINAL_SESSION_MAX_SECONDS)
+        )
+        try:
+            done, _pending = await asyncio.wait(
+                {output_task, input_task, timeout_task}, return_when=asyncio.FIRST_COMPLETED
+            )
+            if timeout_task in done:
+                close_reason = "Session time limit reached."
+        finally:
+            for task in (output_task, input_task, timeout_task):
+                task.cancel()
+            for task in (output_task, input_task, timeout_task):
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await task
+    finally:
+        if process is not None:
+            with contextlib.suppress(Exception):
+                process.terminate()
+        if conn is not None:
+            with contextlib.suppress(Exception):
+                conn.close()
+
+        if session_opened:
+            duration_seconds = (datetime.now(UTC) - started_at).total_seconds()
+            await _log_terminal_event(
+                db_session_factory,
+                action="honeypot.terminal.close",
+                summary=f'Closed terminal to "{honeypot.name}" after {duration_seconds:.0f}s',
+                honeypot=honeypot,
+                user=user,
+                details={"duration_seconds": round(duration_seconds, 1)},
+            )
+            with contextlib.suppress(Exception):
+                await websocket.close(code=status.WS_1000_NORMAL_CLOSURE, reason=close_reason)
+        else:
+            with contextlib.suppress(Exception):
+                await websocket.close(
+                    code=status.WS_1011_INTERNAL_ERROR, reason="SSH connection failed."
+                )

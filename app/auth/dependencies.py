@@ -85,6 +85,14 @@ async def require_api_write(user: User = Depends(get_api_token_user)) -> User:
     return user
 
 
+async def require_api_superadmin(user: User = Depends(get_api_token_user)) -> User:
+    if not user.is_superadmin:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, detail="This API token's account isn't a superadmin."
+        )
+    return user
+
+
 def ensure_company_access(user: User, company_id: uuid.UUID, *, write: bool = False) -> None:
     """The one place every route/service touching a specific company (or a
     honeypot/event scoped to one) calls before reading or writing it — see

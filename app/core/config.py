@@ -51,13 +51,69 @@ class Settings(BaseSettings):
     redis_db: int = Field(default=0, alias="REDIS_DB")
     redis_url_override: str | None = Field(default=None, alias="REDIS_URL")
 
-    # --- Honeypot ingest ---
-    # Bearer token an OpenCanary host must present when pushing events to
-    # POST /api/ingest/events (syslog/HTTP forwarder on the Pi — see
-    # wiki/Honeypot-Onboarding.md). Rotate per-honeypot tokens live under
-    # Honeypot.ingest_token_hash instead once that's needed; this shared
-    # token is the bootstrap/fallback path, mirroring debcontrol's
-    # INFORM_TOKEN.
+    # --- SSH management plane (app/ssh/*, app/tasks/jobs.py) — ported from
+    # debcontrol close to unchanged, since a honeypot is managed exactly
+    # like a debcontrol Machine (terminal, facts, packages, updates,
+    # power). See wiki/Architecture.md. ---
+    ssh_connect_timeout: int = Field(default=10, alias="SSH_CONNECT_TIMEOUT")
+
+    # How often (seconds) Celery Beat schedules a refresh of OS/kernel/CPU/
+    # RAM/disk facts (and installed packages, and update availability) for
+    # every honeypot with a pinned host key.
+    facts_refresh_interval_seconds: int = Field(
+        default=600, alias="FACTS_REFRESH_INTERVAL_SECONDS"
+    )
+
+    # How often (seconds) the "is it alive" status badge's reachability
+    # sweep (a plain TCP connect to the SSH port, no authentication) runs
+    # for every honeypot. Deliberately its own, much shorter, default than
+    # `facts_refresh_interval_seconds`.
+    reachability_check_interval_seconds: int = Field(
+        default=60, alias="REACHABILITY_CHECK_INTERVAL_SECONDS"
+    )
+
+    # How many honeypots the reachability sweep checks concurrently — a
+    # semaphore, not a thread/process count.
+    reachability_check_concurrency: int = Field(
+        default=20, alias="REACHABILITY_CHECK_CONCURRENCY"
+    )
+
+    # How often (seconds) the Monitoring tab's CPU/RAM/disk-usage sample
+    # (and the cheap "how many systemd services are failed" count) is
+    # taken for every honeypot — a real SSH round trip (unlike the plain
+    # TCP reachability check above), but much lighter than a full facts
+    # refresh.
+    monitoring_interval_seconds: int = Field(default=120, alias="MONITORING_INTERVAL_SECONDS")
+
+    # apt update/upgrade/autoremove/autoclean can legitimately take a long
+    # time — this is the max wall-clock time given to that whole sequence,
+    # distinct from `ssh_connect_timeout` (which only bounds establishing
+    # the connection itself).
+    update_timeout_seconds: int = Field(default=1800, alias="UPDATE_TIMEOUT_SECONDS")
+
+    # Comma-separated absolute path prefixes the Logs tab's "view an
+    # arbitrary file" feature is allowed to read from a managed honeypot
+    # (app.ssh.logs.is_path_allowed) — a UX/scope guardrail, not a hard
+    # security boundary against an account that already has write access
+    # (who could read the same file directly in the terminal anyway).
+    log_file_allowed_paths: str = Field(
+        default="/var/log,/var/lib/docker/containers", alias="LOG_FILE_ALLOWED_PATHS"
+    )
+
+    # Bearer token a not-yet-registered honeypot presents when announcing
+    # itself via POST /api/inform (see app/db/models/pending_honeypot.py) —
+    # distinct from INGEST_TOKEN below, which is for an *already-registered*
+    # honeypot's OpenCanary event stream.
+    inform_token: SecretStr = Field(alias="INFORM_TOKEN")
+
+    # --- Honeypot event ingestion (this project's own addition — see
+    # app/web/routes/ingest.py) ---
+    # Bearer token an OpenCanary host's forwarder must present when pushing
+    # events to POST /api/ingest/{id}/events (see
+    # wiki/Honeypot-Onboarding.md). Rotate a per-honeypot token
+    # (Honeypot.ingest_token_hash) instead once a specific honeypot needs
+    # revoking individually; this shared token is the bootstrap/fallback
+    # path, mirroring debcontrol's INFORM_TOKEN shape.
     ingest_token: SecretStr = Field(alias="INGEST_TOKEN")
 
     # How long (days) raw honeypot events are kept before the daily
@@ -80,7 +136,7 @@ class Settings(BaseSettings):
     # own OS timezone (see docker-compose.yml).
     tz: str = Field(default="UTC", alias="TZ")
 
-    @field_validator("secret_key", "encryption_key", "ingest_token")
+    @field_validator("secret_key", "encryption_key", "ingest_token", "inform_token")
     @classmethod
     def _reject_placeholder_secrets(cls, value: SecretStr) -> SecretStr:
         raw = value.get_secret_value()
@@ -117,6 +173,18 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.app_env.lower() == "production"
+
+    @property
+    def log_file_allowed_path_list(self) -> list[str]:
+        """`log_file_allowed_paths` split and cleaned up — empty entries
+        (e.g. a trailing comma) dropped, no trailing slash (so a prefix
+        check via `str.startswith` doesn't require the caller to normalize
+        first)."""
+        return [
+            part.strip().rstrip("/")
+            for part in self.log_file_allowed_paths.split(",")
+            if part.strip()
+        ]
 
 
 @lru_cache

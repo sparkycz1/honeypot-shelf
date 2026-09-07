@@ -1,0 +1,17 @@
+<span
+  id="honeypot-status"
+  hx-get="/honeypots/{{ honeypot.id }}/status-panel"
+  hx-trigger="every 60s, live-status from:body"
+  hx-swap="outerHTML settle:600ms"
+>
+  {% if honeypot.is_reachable is none %}
+    <span class="badge badge-warn">unknown</span>
+  {% elif honeypot.is_reachable %}
+    <span class="badge badge-ok">online</span>
+  {% else %}
+    <span class="badge badge-error">offline</span>
+  {% endif %}
+  {% if honeypot.last_ping_at %}
+    <span class="hint">(checked {{ honeypot.last_ping_at | local_time('%Y-%m-%d %H:%M %Z') }})</span>
+  {% endif %}
+</span>

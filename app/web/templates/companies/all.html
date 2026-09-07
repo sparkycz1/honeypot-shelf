@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+
+{% block title %}All honeypots — HoneyHive{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>All honeypots</h1>
+  </div>
+
+  <p class="hint">
+    Built-in company — every honeypot is always here automatically, regardless
+    of which other company (if any) it's also assigned to. There's nothing to
+    add, remove, or delete.
+  </p>
+
+  {% if power_skipped %}
+    <div class="alert alert-warn">
+      <p>{{ power_skipped }} honeypot(s) were skipped — no confirmed host key fingerprint yet.</p>
+    </div>
+  {% endif %}
+
+  {% include "partials/honeypot_search_form.html" %}
+
+  {% if not honeypots %}
+    <div class="empty-state">
+      {% if q %}
+        <p>No honeypots match "{{ q }}".</p>
+      {% else %}
+        <p>No managed honeypots yet.</p>
+        <a class="button" href="/honeypots/new">Add your first honeypot</a>
+      {% endif %}
+    </div>
+  {% else %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>IP address</th>
+          <th>Company</th>
+          <th>Status</th>
+          <th>Updates</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for honeypot in honeypots %}
+          <tr>
+            <td>
+              <a href="/honeypots/{{ honeypot.id }}">{{ honeypot.name }}</a>
+              {% if honeypot.tags %}
+                <br>
+                {% for tag in honeypot.tags %}
+                  <a class="badge badge-tag" href="?tag={{ tag.name }}">{{ tag.name }}</a>
+                {% endfor %}
+              {% endif %}
+            </td>
+            <td>{{ honeypot.ip_address }}</td>
+            <td>
+              {% if honeypot.company %}
+                <a href="/companies/{{ honeypot.company.id }}">{{ honeypot.company.name }}</a>
+              {% else %}
+                <span class="hint">—</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if honeypot.is_reachable is none %}
+                <span class="badge badge-warn">unknown</span>
+              {% elif honeypot.is_reachable %}
+                <span class="badge badge-ok">online</span>
+              {% else %}
+                <span class="badge badge-error">offline</span>
+              {% endif %}
+            </td>
+            <td>{% include "partials/honeypot_update_status_cell.html" %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {% if page > 1 or has_more %}
+      <div class="page-header-actions">
+        {% if page > 1 %}
+          <a class="button button-secondary" href="/companies/all?q={{ q | urlencode }}&page={{ page - 1 }}">
+            Previous
+          </a>
+        {% endif %}
+        {% if has_more %}
+          <a class="button button-secondary" href="/companies/all?q={{ q | urlencode }}&page={{ page + 1 }}">
+            Next
+          </a>
+        {% endif %}
+      </div>
+    {% endif %}
+  {% endif %}
+
+  <section class="panel">
+    <h2>Update all honeypots</h2>
+    <p class="hint">
+      Runs update → upgrade → autoremove/autoclean on every honeypot that has
+      a confirmed host key fingerprint — others are skipped. Ignores the
+      search box above; this always targets literally every honeypot.
+    </p>
+    <form method="post" action="/companies/all/updates" class="form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {% include "partials/upgrade_strategy_fields.html" %}
+      <button type="submit" class="button">Run update on all honeypots</button>
+    </form>
+
+    <h3>Check for updates</h3>
+    <p class="hint">
+      Dry run — refreshes each honeypot's package list and records how many
+      updates are available, without installing anything.
+    </p>
+    <form method="post" action="/companies/all/check-updates" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="button button-secondary">Check for updates on all honeypots</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>Power</h2>
+    <p class="hint">
+      Sends the command to every honeypot with a confirmed host key
+      fingerprint — others are skipped. Requires typing a confirmation
+      phrase.
+    </p>
+    <div class="page-header-actions">
+      <a class="button button-secondary" href="/companies/all/power/reboot">Reboot all honeypots</a>
+      <a class="button button-danger" href="/companies/all/power/shutdown">Shut down all honeypots</a>
+    </div>
+  </section>
+{% endblock %}

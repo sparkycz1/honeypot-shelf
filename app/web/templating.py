@@ -17,6 +17,7 @@ from markupsafe import Markup
 from app.core.config import get_settings
 from app.i18n import get_locale
 from app.i18n import translate as _translate
+from app.web.os_logos import badge_for
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 
@@ -52,6 +53,28 @@ def local_time(value: datetime | None, fmt: str = "%Y-%m-%d %H:%M") -> str:
 
 
 templates.env.filters["local_time"] = local_time
+
+
+def format_uptime(seconds: int | None) -> str:
+    """Render a honeypot's uptime as e.g. "12d 3h 4m" — the DB only stores
+    the raw second count (`Honeypot.uptime_seconds`, from `/proc/uptime`)."""
+    if seconds is None:
+        return "—"
+    days, remainder = divmod(int(seconds), 86400)
+    hours, remainder = divmod(remainder, 3600)
+    minutes = remainder // 60
+    parts = []
+    if days:
+        parts.append(f"{days}d")
+    if hours or days:
+        parts.append(f"{hours}h")
+    parts.append(f"{minutes}m")
+    return " ".join(parts)
+
+
+templates.env.filters["format_uptime"] = format_uptime
+
+templates.env.filters["os_badge"] = badge_for
 
 
 def iso_list(timestamps: list[datetime]) -> list[str]:

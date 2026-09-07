@@ -36,7 +36,7 @@
     </p>
   </section>
 
-  {% if company_breakdown is defined %}
+  {% if company_breakdown %}
   <section class="panel">
     <h2>By company</h2>
     <table class="data-table">
@@ -76,7 +76,7 @@
           {% for event in recent_events %}
           <tr>
             <td>{{ event.occurred_at | local_time('%Y-%m-%d %H:%M %Z') }}</td>
-            <td><a href="/honeypots/{{ event.honeypot_id }}">{{ event.honeypot.hostname }}</a></td>
+            <td><a href="/honeypots/{{ event.honeypot_id }}">{{ event.honeypot.name }}</a></td>
             <td><span class="badge">{{ event.event_type }}</span></td>
             <td>{{ event.src_ip or '—' }}</td>
           </tr>
