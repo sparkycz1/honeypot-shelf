@@ -1,0 +1,31 @@
+{# The built-in "bee in a honeycomb cell" mark — used whenever no custom
+   LOGO_SOURCE is configured (see app.web.branding). Inlined as markup
+   (not an <img>) so its colors can follow the CSS custom properties
+   base.html already sets per theme (--color-text swaps light/dark; the
+   amber tone is the brand's own color, deliberately fixed regardless of
+   theme). Set `mark_class` before including this partial to size it
+   (see .brand-mark / .brand-mark-lg in style.css). #}
+<svg class="{{ mark_class }}" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"
+     xmlns:xlink="http://www.w3.org/1999/xlink" aria-hidden="true" focusable="false">
+  <polygon points="50,5 88.97,27.5 88.97,72.5 50,95 11.03,72.5 11.03,27.5"
+            fill="none" stroke="#f2a83a" stroke-width="7" stroke-linejoin="round"/>
+  <g fill="var(--color-text)">
+    <path d="M44 20 C 40 12, 34 10, 32 6" stroke="var(--color-text)" stroke-width="3"
+          stroke-linecap="round" fill="none"/>
+    <path d="M56 20 C 60 12, 66 10, 68 6" stroke="var(--color-text)" stroke-width="3"
+          stroke-linecap="round" fill="none"/>
+    <circle cx="32" cy="6" r="2.4"/>
+    <circle cx="68" cy="6" r="2.4"/>
+    <circle cx="50" cy="27" r="10"/>
+    <rect x="37" y="34" width="26" height="17" rx="8.5"/>
+    <path id="hh-abdomen" d="M50 45 C 63 45 69 54 69 65 C 69 78 60 87 50 92 C 40 87 31 78 31 65 C 31 54 37 45 50 45 Z"/>
+  </g>
+  <clipPath id="hh-abdomen-clip">
+    <use href="#hh-abdomen" xlink:href="#hh-abdomen"/>
+  </clipPath>
+  <g fill="#f2a83a" clip-path="url(#hh-abdomen-clip)">
+    <rect x="31" y="58" width="38" height="7" rx="3"/>
+    <rect x="31" y="70" width="38" height="7" rx="3"/>
+    <rect x="31" y="82" width="38" height="7" rx="3"/>
+  </g>
+</svg>

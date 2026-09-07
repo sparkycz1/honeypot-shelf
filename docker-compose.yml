@@ -99,6 +99,11 @@ services:
       # its own container should join this compose project's network
       # instead of going through the published port at all.
       - "${APP_BIND_ADDRESS:-0.0.0.0}:${APP_PORT:-8080}:8080"
+    # Uncomment to point LOGO_SOURCE/FAVICON_SOURCE (in .env) at a local
+    # file — e.g. LOGO_SOURCE=/app/branding/logo.svg — rather than a URL.
+    # See wiki/Installation.md#custom-logo--favicon.
+    # volumes:
+    #   - ./branding:/app/branding:ro
     depends_on:
       db:
         condition: service_healthy

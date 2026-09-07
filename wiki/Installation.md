@@ -80,6 +80,28 @@ that.
 > of it, and firewall its port off (or set `APP_BIND_ADDRESS=127.0.0.1` in
 > `.env`) if you don't want it reachable directly.
 
+## Custom logo & favicon
+
+By default, HoneyHive shows its own built-in bee mark in the nav bar,
+login/two-factor pages, and browser tab — it already adapts to the
+in-app light/dark toggle (and the favicon separately follows the OS/
+browser's own dark-mode preference). To replace it with your own:
+
+```bash
+# In .env — either works for LOGO_SOURCE and FAVICON_SOURCE independently:
+LOGO_SOURCE=https://example.com/my-logo.svg   # a URL, fetched by the browser directly
+LOGO_SOURCE=/app/branding/logo.svg            # a file path readable inside the `web` container
+```
+
+A filesystem path needs the file mounted into the container first —
+uncomment the `branding` volume on the `web` service in
+`docker-compose.yml`, drop the file(s) into a local `./branding/`
+directory, and point `LOGO_SOURCE`/`FAVICON_SOURCE` at
+`/app/branding/<filename>`. Any common image format works (SVG, PNG,
+etc.). Restart `web` after changing either. See `.env.example` and
+`app/web/branding.py` for exactly how a URL vs. a local path is told
+apart.
+
 ## Updating
 
 ```bash

@@ -62,8 +62,10 @@ _PUBLIC_PATHS = frozenset(
 # `/static/`: CSS/JS/the vendored htmx build — the login page needs these
 # too. `/api/`: machine-to-machine endpoints (event ingest from a honeypot,
 # and the token-authenticated REST API) authenticated with their own
-# bearer token, not a user session at all.
-_PUBLIC_PREFIXES = ("/static/", "/api/")
+# bearer token, not a user session at all. `/branding/`: a deployment's
+# optional custom logo/favicon (app.web.routes.branding) — same reasoning
+# as `/static/`, the login page needs it too.
+_PUBLIC_PREFIXES = ("/static/", "/api/", "/branding/")
 
 
 def _is_public(path: str) -> bool:

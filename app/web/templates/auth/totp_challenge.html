@@ -4,11 +4,21 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Two-factor authentication — HoneyHive</title>
+  <link rel="icon" href="{{ branding_favicon_url() }}">
   <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body class="auth-body">
   <main class="auth-page">
-    <span class="brand">HoneyHive</span>
+    <span class="brand">
+      {% set logo = branding_logo_url() %}
+      {% if logo %}
+        <img class="brand-mark-lg" src="{{ logo }}" alt="HoneyHive">
+      {% else %}
+        {% set mark_class = "brand-mark-lg" %}
+        {% include "partials/_brand_mark.html" %}
+        <span class="sr-only">HoneyHive</span>
+      {% endif %}
+    </span>
     <div class="panel">
       <h2>Verify it's you</h2>
 
