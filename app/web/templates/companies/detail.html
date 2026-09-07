@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}{{ company.name }} — HoneyHive{% endblock %}
+
+{% block content %}
+  <h1>{{ company.name }}</h1>
+
+  {% if company.notes %}
+    <section class="panel">{{ company.notes | markdown }}</section>
+  {% endif %}
+
+  <section class="panel">
+    <h2>Honeypots ({{ honeypots | length }})</h2>
+    <table class="data-table">
+      <thead><tr><th>Hostname</th><th>Location</th><th>Last seen</th></tr></thead>
+      <tbody>
+        {% for h in honeypots %}
+        <tr>
+          <td><a href="/honeypots/{{ h.id }}">{{ h.hostname }}</a></td>
+          <td>{{ h.location or '—' }}</td>
+          <td>{{ h.last_seen_at | local_time('%Y-%m-%d %H:%M %Z') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="panel">
+    <h2>Users ({{ users | length }})</h2>
+    <table class="data-table">
+      <thead><tr><th>Username</th><th>Access</th><th>Active</th></tr></thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td>{{ u.display_name or u.username }}</td>
+          <td>{{ "Read + write" if u.access_level.value == "read_write" else "Read only" }}</td>
+          <td>{{ "Yes" if u.is_active else "No" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+{% endblock %}

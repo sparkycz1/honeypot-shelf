@@ -1,0 +1,37 @@
+{
+  "meta": {
+    "code": "en",
+    "label": "English"
+  },
+  "strings": {
+    "account.language.heading": "Language",
+    "account.language.help": "Only affects your own account — everyone else keeps their own choice (or the default, English).",
+    "account.language.label": "UI language",
+    "account.profile.access": "Access",
+    "account.profile.display_name": "Display name",
+    "account.profile.heading": "Profile",
+    "account.profile.login_method": "Login method",
+    "account.profile.username": "Username",
+    "account.title": "My account",
+    "common.cancel": "Cancel",
+    "common.save": "Save",
+    "login.oidc_button": "Log in with OIDC",
+    "login.password": "Password",
+    "login.submit": "Log in",
+    "login.username": "Username",
+    "nav.api_docs": "API docs",
+    "nav.audit": "Audit",
+    "nav.companies": "Companies",
+    "nav.dashboard": "Dashboard",
+    "nav.honeypots": "Honeypots",
+    "nav.log_out": "Log out",
+    "nav.scheduling": "Scheduling",
+    "nav.settings": "Settings",
+    "nav.skip_to_content": "Skip to content",
+    "nav.switch_theme": "Switch to {theme} theme",
+    "nav.toggle_navigation": "Toggle navigation",
+    "nav.users": "Users",
+    "theme.dark": "dark",
+    "theme.light": "light"
+  }
+}

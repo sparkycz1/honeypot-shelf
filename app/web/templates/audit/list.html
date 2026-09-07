@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block title %}Audit log — HoneyHive{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>Audit log</h1>
+  </div>
+
+  <p class="hint">
+    Who (account and source IP), what happened, its outcome, and when.
+    A blank "User" is a pre-login event (a failed login attempt) or a
+    background job's own fixed label (e.g. "scheduler (automatic)"). Every
+    entry is hash-chained for tamper-evidence; verify the chain and set the
+    retention policy on the <a href="/settings">Settings</a> page.
+  </p>
+
+  {% if target_type and target_id %}
+    <p class="hint">
+      Showing entries for {{ target_type }}
+      {% if target_label %}"{{ target_label }}"{% else %}<code>{{ target_id }}</code>{% endif %}
+      only. <a href="/audit?q={{ q | urlencode }}&outcome={{ outcome | urlencode }}">Clear this filter</a>.
+    </p>
+  {% endif %}
+
+  <form method="get" class="search-form">
+    <input type="search" name="q" value="{{ q }}"
+           placeholder="Search by action, summary, target, IP...">
+    <select name="outcome">
+      <option value="" {% if not outcome %}selected{% endif %}>Any outcome</option>
+      {% for o in outcomes %}
+        <option value="{{ o.value }}" {% if outcome == o.value %}selected{% endif %}>
+          {{ o.value }}
+        </option>
+      {% endfor %}
+    </select>
+    <input type="hidden" name="target_type" value="{{ target_type }}">
+    <input type="hidden" name="target_id" value="{{ target_id }}">
+    <button type="submit" class="button">Search</button>
+    {% if q or outcome or target_type %}
+      <a class="button button-secondary" href="/audit">Clear</a>
+    {% endif %}
+    <a class="button button-secondary"
+       href="/audit/export?format=csv&q={{ q | urlencode }}&outcome={{ outcome | urlencode }}&target_type={{ target_type | urlencode }}&target_id={{ target_id | urlencode }}">Export CSV</a>
+    <a class="button button-secondary"
+       href="/audit/export?format=json&q={{ q | urlencode }}&outcome={{ outcome | urlencode }}&target_type={{ target_type | urlencode }}&target_id={{ target_id | urlencode }}">Export JSON</a>
+  </form>
+  <p class="hint">Export respects the filters above (blank means everything).</p>
+
+  {% if entries %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Time (UTC)</th>
+          <th>User</th>
+          <th>IP address</th>
+          <th>Action</th>
+          <th>Target</th>
+          <th>Summary</th>
+          <th>Outcome</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in entries %}
+          <tr>
+            <td>{{ entry.created_at | local_time('%Y-%m-%d %H:%M:%S %Z') }}</td>
+            <td>{{ entry.actor or '—' }}</td>
+            <td>{{ entry.ip_address or '—' }}</td>
+            <td><code>{{ entry.action }}</code></td>
+            <td>
+              {% if entry.target_label %}
+                {{ entry.target_type }}: {{ entry.target_label }}
+              {% else %}
+                —
+              {% endif %}
+            </td>
+            <td>
+              {{ entry.summary }}
+              {% if entry.details %}
+                <br><span class="hint">{{ entry.details }}</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if entry.outcome.value == 'success' %}
+                <span class="badge badge-ok">success</span>
+              {% elif entry.outcome.value == 'denied' %}
+                <span class="badge badge-error">denied</span>
+              {% else %}
+                <span class="badge badge-warn">failure</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="page-header-actions">
+      {% if page > 1 %}
+        <a class="button button-secondary"
+           href="/audit?q={{ q | urlencode }}&outcome={{ outcome | urlencode }}&target_type={{ target_type | urlencode }}&target_id={{ target_id | urlencode }}&page={{ page - 1 }}">
+          Newer
+        </a>
+      {% endif %}
+      {% if has_older %}
+        <a class="button button-secondary"
+           href="/audit?q={{ q | urlencode }}&outcome={{ outcome | urlencode }}&target_type={{ target_type | urlencode }}&target_id={{ target_id | urlencode }}&page={{ page + 1 }}">
+          Older
+        </a>
+      {% endif %}
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <p>No audit log entries {% if q or outcome or target_type %}match this filter{% else %}yet{% endif %}.</p>
+    </div>
+  {% endif %}
+{% endblock %}

@@ -1,0 +1,37 @@
+{
+  "meta": {
+    "code": "cs",
+    "label": "Čeština"
+  },
+  "strings": {
+    "account.language.heading": "Jazyk",
+    "account.language.help": "Ovlivňuje jen tvůj vlastní účet — ostatní si zachovají svou vlastní volbu (nebo výchozí angličtinu).",
+    "account.language.label": "Jazyk rozhraní",
+    "account.profile.access": "Přístup",
+    "account.profile.display_name": "Zobrazované jméno",
+    "account.profile.heading": "Profil",
+    "account.profile.login_method": "Způsob přihlášení",
+    "account.profile.username": "Uživatelské jméno",
+    "account.title": "Můj účet",
+    "common.cancel": "Zrušit",
+    "common.save": "Uložit",
+    "login.oidc_button": "Přihlásit se přes OIDC",
+    "login.password": "Heslo",
+    "login.submit": "Přihlásit se",
+    "login.username": "Uživatelské jméno",
+    "nav.api_docs": "Dokumentace API",
+    "nav.audit": "Audit",
+    "nav.companies": "Firmy",
+    "nav.dashboard": "Přehled",
+    "nav.honeypots": "Honeypoty",
+    "nav.log_out": "Odhlásit se",
+    "nav.scheduling": "Plánování",
+    "nav.settings": "Nastavení",
+    "nav.skip_to_content": "Přeskočit na obsah",
+    "nav.switch_theme": "Přepnout na {theme} téma",
+    "nav.toggle_navigation": "Zobrazit/skrýt navigaci",
+    "nav.users": "Uživatelé",
+    "theme.dark": "tmavé",
+    "theme.light": "světlé"
+  }
+}

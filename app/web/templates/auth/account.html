@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t(request, "account.title") }} — HoneyHive{% endblock %}
+
+{% block content %}
+  <h1>{{ t(request, "account.title") }}</h1>
+
+  {% if errors %}
+    <div class="alert alert-error">
+      {% for error in errors %}<p>{{ error }}</p>{% endfor %}
+    </div>
+  {% endif %}
+
+  {% if user.must_change_password %}
+    <div class="alert alert-warn">
+      <p>An administrator set this password — please change it below.</p>
+    </div>
+  {% endif %}
+
+  {% if recovery_codes %}
+    <div class="alert alert-ok">
+      <p>
+        {% if just_enrolled %}Two-factor authentication is enabled.{% else %}New recovery codes generated — the old ones no longer work.{% endif %}
+        Save these recovery codes somewhere safe now — <strong>they won't be shown again</strong>.
+        Each one can be used once, in place of a code from your app, if you lose access to it.
+      </p>
+      <div class="recovery-codes">
+        {% for code in recovery_codes %}<code>{{ code }}</code>{% endfor %}
+      </div>
+    </div>
+  {% endif %}
+
+  <section class="panel">
+    <h2>{{ t(request, "account.profile.heading") }}</h2>
+    <dl class="detail-list">
+      <dt>{{ t(request, "account.profile.username") }}</dt><dd>{{ user.username }}</dd>
+      <dt>{{ t(request, "account.profile.access") }}</dt>
+      <dd>
+        {% if user.is_superadmin %}Superadmin (all companies){% else %}
+          {{ user.company.name }} — {{ "Read + write" if user.access_level.value == "read_write" else "Read only" }}
+        {% endif %}
+      </dd>
+      <dt>{{ t(request, "account.profile.login_method") }}</dt><dd>{{ user.auth_provider.value }}</dd>
+    </dl>
+    <form method="post" action="/account/display-name" class="form" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label for="display_name">{{ t(request, "account.profile.display_name") }}</label>
+      <input type="text" id="display_name" name="display_name" maxlength="255"
+             value="{{ user.display_name or '' }}" placeholder="{{ user.username }}">
+      <button type="submit" class="button">{{ t(request, "common.save") }}</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>{{ t(request, "account.language.heading") }}</h2>
+    <form method="post" action="/account/locale" class="form" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label for="locale">{{ t(request, "account.language.label") }}</label>
+      <select id="locale" name="locale">
+        {% for locale in available_locales %}
+          <option value="{{ locale.code }}" {% if (user.locale or 'en') == locale.code %}selected{% endif %}>{{ locale.label }}</option>
+        {% endfor %}
+      </select>
+      <p class="hint">{{ t(request, "account.language.help") }}</p>
+      <button type="submit" class="button">{{ t(request, "common.save") }}</button>
+    </form>
+  </section>
+
+  {% if user.auth_provider.value == 'local' %}
+    <section class="panel">
+      <h2>Password</h2>
+      <form method="post" action="/account/password" class="form" autocomplete="off">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label for="current_password">Current password</label>
+        <input type="password" id="current_password" name="current_password" autocomplete="current-password" required>
+        <label for="new_password">New password</label>
+        <input type="password" id="new_password" name="new_password" autocomplete="new-password"
+               minlength="{{ min_password_length }}" required>
+        <label for="confirm_password">Confirm new password</label>
+        <input type="password" id="confirm_password" name="confirm_password" autocomplete="new-password"
+               minlength="{{ min_password_length }}" required>
+        <button type="submit" class="button">Change password</button>
+      </form>
+    </section>
+  {% endif %}
+
+  {% if user.auth_provider.value != 'oidc' %}
+    <section class="panel">
+      <h2>Two-factor authentication</h2>
+      {% if user.totp_enabled %}
+        <p class="hint">
+          Enabled since {{ user.totp_confirmed_at | local_time('%Y-%m-%d') if user.totp_confirmed_at else 'unknown' }}.
+          {{ unused_recovery_codes }} unused recovery code(s) remaining.
+        </p>
+        <form method="post" action="/account/totp/recovery-codes/regenerate" class="form" autocomplete="off">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <label for="regen_code">Current code, to regenerate recovery codes</label>
+          <input type="text" id="regen_code" name="code" inputmode="numeric" autocomplete="one-time-code" required>
+          <button type="submit" class="button button-secondary">Regenerate recovery codes</button>
+        </form>
+        <form method="post" action="/account/totp/disable" class="form stack-gap" autocomplete="off">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <label for="disable_code">Current code or a recovery code, to disable</label>
+          <input type="text" id="disable_code" name="code" autocomplete="one-time-code" required>
+          <button type="submit" class="button button-danger">Disable two-factor authentication</button>
+        </form>
+      {% else %}
+        <p class="hint">Not enabled.</p>
+        <a href="/account/totp/enroll" class="button">Enable two-factor authentication</a>
+      {% endif %}
+    </section>
+  {% endif %}
+
+  {% if user.auth_provider.value != 'oidc' %}
+    <section class="panel">
+      <h2>Passkeys</h2>
+      <p class="hint">
+        A hardware security key, your device's own biometrics/PIN, or a
+        password manager (Bitwarden, 1Password, your browser's own — pick
+        it from the prompt "Add a passkey" opens) as a second factor
+        alongside (or in place of) TOTP — see
+        <a href="https://passkeys.dev/" target="_blank" rel="noopener">passkeys.dev</a>
+        if you're not sure what this is.
+      </p>
+
+      {% if just_registered_webauthn %}
+        <div class="alert alert-ok"><p>Passkey registered.</p></div>
+      {% endif %}
+
+      {% if webauthn_credentials %}
+        <table class="data-table">
+          <thead>
+            <tr><th>Name</th><th>Type</th><th>Added</th><th>Last used</th><th></th></tr>
+          </thead>
+          <tbody>
+            {% for credential in webauthn_credentials %}
+            <tr>
+              <td>{{ credential.name }}</td>
+              <td>{{ 'Synced (multi-device)' if credential.device_type == 'multi_device' else 'Single device' }}</td>
+              <td>{{ credential.created_at | local_time('%Y-%m-%d') }}</td>
+              <td>{{ credential.last_used_at | local_time('%Y-%m-%d %H:%M %Z') if credential.last_used_at else 'never' }}</td>
+              <td>
+                <form method="post" action="/account/webauthn/{{ credential.id }}/delete" class="inline-form"
+                      data-confirm="Remove this passkey? It will no longer be able to sign in to this account.">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button type="submit" class="button button-danger">Remove</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="hint">No passkeys registered.</p>
+      {% endif %}
+
+      <form class="form stack-gap" autocomplete="off">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label for="webauthn_name">Name this passkey (e.g. "YubiKey", "MacBook Touch ID")</label>
+        <input type="text" id="webauthn_name" name="name" maxlength="100" placeholder="Passkey">
+        <button type="button" class="button" data-webauthn-register>Add a passkey</button>
+        <p class="hint" data-webauthn-status></p>
+      </form>
+    </section>
+  {% endif %}
+
+  <section class="panel">
+    <h2>Sessions</h2>
+    <p class="hint">Signs out every other browser/device this account is logged into — not this one.</p>
+    <form method="post" action="/account/sessions/revoke-all" data-confirm="Log out of every other session?">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="button button-secondary">Log out everywhere else</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>API tokens</h2>
+    <p class="hint">
+      For scripts/dashboards reading the API (<code>GET /api/v1/honeypots</code>,
+      <code>/api/v1/events</code>) as <code>Authorization: Bearer &lt;token&gt;</code>, or in
+      place of the shared <code>INGEST_TOKEN</code> for <code>POST /api/ingest/events</code>
+      (needs read + write access). A token can do whatever your account currently permits — it
+      stops working immediately if your access level changes or your account is deactivated.
+    </p>
+
+    {% if new_api_token %}
+      <div class="alert alert-ok">
+        <p><strong>Copy this token now — it won't be shown again.</strong></p>
+        <textarea readonly rows="2">{{ new_api_token }}</textarea>
+      </div>
+    {% endif %}
+
+    {% if api_tokens %}
+      <table class="data-table">
+        <thead>
+          <tr><th>Name</th><th>Token</th><th>Created</th><th>Last used</th><th>Expires</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for token in api_tokens %}
+          <tr>
+            <td>{{ token.name }}</td>
+            <td><code>{{ token.token_prefix }}…</code></td>
+            <td>{{ token.created_at | local_time('%Y-%m-%d') }}</td>
+            <td>{{ token.last_used_at | local_time('%Y-%m-%d %H:%M %Z') if token.last_used_at else 'never' }}</td>
+            <td>{{ token.expires_at | local_time('%Y-%m-%d') if token.expires_at else 'never' }}</td>
+            <td>
+              <form method="post" action="/account/api-tokens/{{ token.id }}/revoke" class="inline-form"
+                    data-confirm="Revoke this API token? Anything using it will stop working immediately.">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="button button-danger">Revoke</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="hint">No active API tokens.</p>
+    {% endif %}
+
+    {% if user.api_access_enabled %}
+      <form method="post" action="/account/api-tokens" class="form stack-gap" autocomplete="off">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label for="token_name">Name</label>
+        <input type="text" id="token_name" name="name" maxlength="100" placeholder="monitoring script" required>
+        <label for="expires_in_days">Expires in (days, blank for never)</label>
+        <input type="number" id="expires_in_days" name="expires_in_days" min="1" step="1">
+        <button type="submit" class="button">Create API token</button>
+      </form>
+    {% else %}
+      <p class="hint">
+        An administrator hasn't granted this account API access yet — ask one to
+        enable it on the Users page before creating a token.
+      </p>
+    {% endif %}
+  </section>
+{% endblock %}
+
+{% block extra_scripts %}
+  <script src="/static/js/webauthn.js" defer></script>
+{% endblock %}

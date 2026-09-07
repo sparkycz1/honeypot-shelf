@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}Users — HoneyHive{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>Users</h1>
+  </div>
+
+  <table class="data-table">
+    <thead><tr><th>Username</th><th>Company</th><th>Access</th><th>Login method</th><th>Active</th></tr></thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td>{{ u.display_name or u.username }}</td>
+        <td>{% if u.is_superadmin %}<em>all companies</em>{% else %}{{ u.company.name }}{% endif %}</td>
+        <td>
+          {% if u.is_superadmin %}Superadmin
+          {% else %}{{ "Read + write" if u.access_level.value == "read_write" else "Read only" }}{% endif %}
+        </td>
+        <td>{{ u.auth_provider.value }}</td>
+        <td>{{ "Yes" if u.is_active else "No" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

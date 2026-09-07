@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% from "macros/charts.html" import sparkline %}
+
+{% block title %}Dashboard — HoneyHive{% endblock %}
+
+{% block content %}
+  <h1>Dashboard</h1>
+
+  <section class="panel">
+    <h2>{{ "All companies" if current_user.is_superadmin else current_user.company.name }}</h2>
+    <div class="stat-grid">
+      <div class="stat-card">
+        <span class="stat-value">{{ honeypot_stats.total }}</span>
+        <span class="stat-label">Honeypots</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value">{{ honeypot_stats.online }}</span>
+        <span class="stat-label">Online</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value">{{ honeypot_stats.offline }}</span>
+        <span class="stat-label">Offline</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value">{{ event_stats.last_24h }}</span>
+        <span class="stat-label">Events (24h)</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value">{{ event_stats.last_7d }}</span>
+        <span class="stat-label">Events (7d)</span>
+      </div>
+    </div>
+    <p class="hint">
+      <a href="/honeypots">All honeypots</a>
+      {% if current_user.is_superadmin %} · <a href="/companies">{{ company_count }} compan{{ 'y' if company_count == 1 else 'ies' }}</a>{% endif %}
+    </p>
+  </section>
+
+  {% if company_breakdown is defined %}
+  <section class="panel">
+    <h2>By company</h2>
+    <table class="data-table">
+      <thead><tr><th>Company</th><th>Honeypots</th><th>Online</th><th>Events (24h)</th></tr></thead>
+      <tbody>
+        {% for row in company_breakdown %}
+        <tr>
+          <td><a href="/companies/{{ row.company_id }}">{{ row.company_name }}</a></td>
+          <td>{{ row.honeypot_count }}</td>
+          <td>{{ row.online_count }}</td>
+          <td>{{ row.events_24h }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+
+  {% if daily_snapshots %}
+  <section class="panel">
+    <h2>Event trend</h2>
+    <p class="hint">
+      One point per day, {{ daily_snapshots[0].snapshot_date }} to
+      {{ daily_snapshots[-1].snapshot_date }} — see "Dashboard trends" on
+      <a href="/settings">Settings</a> for how long these are kept.
+    </p>
+    {{ sparkline(daily_snapshots | map(attribute='event_count') | list, '#e0ab4a') }}
+  </section>
+  {% endif %}
+
+  <section class="panel">
+    <h2>Recent events</h2>
+    {% if recent_events %}
+      <table class="data-table">
+        <thead><tr><th>When</th><th>Honeypot</th><th>Type</th><th>Source IP</th></tr></thead>
+        <tbody>
+          {% for event in recent_events %}
+          <tr>
+            <td>{{ event.occurred_at | local_time('%Y-%m-%d %H:%M %Z') }}</td>
+            <td><a href="/honeypots/{{ event.honeypot_id }}">{{ event.honeypot.hostname }}</a></td>
+            <td><span class="badge">{{ event.event_type }}</span></td>
+            <td>{{ event.src_ip or '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="hint">No events recorded yet.</p>
+    {% endif %}
+    <p class="hint"><a href="/honeypots">Browse by honeypot</a></p>
+  </section>
+{% endblock %}

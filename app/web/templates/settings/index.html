@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}Settings — HoneyHive{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>Settings</h1>
+  </div>
+
+  <p class="hint">
+    HoneyHive v{{ app_version }}. Edit forms for LDAP/OIDC login, retention
+    policy, and syslog forwarding aren't built yet — this page is read-only
+    for now.
+  </p>
+
+  <section class="panel">
+    <h2>Retention</h2>
+    <dl class="detail-list">
+      <dt>Audit log</dt>
+      <dd>{{ settings_row.audit_log_retention_days or "kept forever" }}{% if settings_row.audit_log_retention_days %} days{% endif %}</dd>
+      <dt>Dashboard trends</dt>
+      <dd>{{ settings_row.dashboard_trends_retention_days or "kept forever" }}{% if settings_row.dashboard_trends_retention_days %} days{% endif %}</dd>
+    </dl>
+  </section>
+
+  <section class="panel">
+    <h2>LDAP login</h2>
+    <p class="hint">{{ "Enabled" if settings_row.ldap_enabled else "Disabled" }}{% if settings_row.ldap_enabled %} — {{ settings_row.ldap_server_uri }}{% endif %}</p>
+  </section>
+
+  <section class="panel">
+    <h2>OIDC login</h2>
+    <p class="hint">{{ "Enabled" if settings_row.oidc_enabled else "Disabled" }}{% if settings_row.oidc_enabled %} — {{ settings_row.oidc_issuer_url }}{% endif %}</p>
+  </section>
+
+  <section class="panel">
+    <h2>Syslog forwarding (e.g. Wazuh)</h2>
+    <p class="hint">{{ "Enabled" if settings_row.syslog_enabled else "Disabled" }}{% if settings_row.syslog_enabled %} — {{ settings_row.syslog_host }}:{{ settings_row.syslog_port }}/{{ settings_row.syslog_protocol.value }}{% endif %}</p>
+  </section>
+{% endblock %}
