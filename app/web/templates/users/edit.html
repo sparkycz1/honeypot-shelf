@@ -57,7 +57,7 @@
         <label>
           <input type="checkbox" id="is_superadmin" name="is_superadmin"
                  {{ 'checked' if target_user.is_superadmin else '' }}
-                 onchange="document.getElementById('company-scope-fields').hidden = this.checked">
+                 data-toggle-hidden="company-scope-fields">
           Superadmin — sees and manages every company
         </label>
 

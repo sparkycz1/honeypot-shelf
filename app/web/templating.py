@@ -15,6 +15,7 @@ from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 
 from app.core.config import get_settings
+from app.core.version import APP_VERSION, get_git_commit
 from app.i18n import get_locale
 from app.i18n import translate as _translate
 from app.web import branding
@@ -154,3 +155,8 @@ templates.env.globals["t"] = t
 
 templates.env.globals["branding_logo_url"] = branding.logo_url
 templates.env.globals["branding_favicon_url"] = branding.favicon_url
+
+# Footer (base.html) — same values settings/_general.html's "Version" panel
+# used to show before that panel was removed in favor of the footer.
+templates.env.globals["app_version"] = APP_VERSION
+templates.env.globals["git_commit"] = get_git_commit

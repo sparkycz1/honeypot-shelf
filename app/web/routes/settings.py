@@ -21,7 +21,6 @@ from app.core.app_settings import get_or_create_app_settings
 from app.core.config import get_settings
 from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie, verify_csrf
 from app.core.security import encrypt_secret
-from app.core.version import APP_VERSION, commit_url, get_git_commit
 from app.db.models.app_settings import (
     DEFAULT_LDAP_USER_SEARCH_FILTER,
     DEFAULT_OIDC_SCOPES,
@@ -75,16 +74,12 @@ async def _render_settings(
     identity = await get_or_create_identity(db)
     app_settings = await get_or_create_app_settings(db)
     csrf_token, new_cookie = get_or_create_csrf_token(request)
-    git_commit = get_git_commit()
     context: dict[str, object] = {
         "identity": identity,
         "settings": get_settings(),
         "app_settings": app_settings,
         "csrf_token": csrf_token,
         "errors": errors,
-        "app_version": APP_VERSION,
-        "git_commit": git_commit,
-        "commit_url": commit_url(git_commit) if git_commit else None,
         "syslog_protocols": list(SyslogProtocol),
         "tabs": _TABS,
         "active_tab": tab,
@@ -454,6 +449,7 @@ async def update_oidc_settings(
     request: Request,
     db: AsyncSession = Depends(get_db),
     oidc_enabled: str = Form(""),
+    oidc_provider_name: str = Form(""),
     oidc_issuer_url: str = Form(""),
     oidc_client_id: str = Form(""),
     # Blank = keep the existing client secret unchanged.
@@ -480,6 +476,7 @@ async def update_oidc_settings(
         return await _render_settings(request, db, errors, tab="integrations")
 
     app_settings.oidc_enabled = bool(oidc_enabled)
+    app_settings.oidc_provider_name = oidc_provider_name.strip() or None
     app_settings.oidc_issuer_url = issuer_url or None
     app_settings.oidc_client_id = oidc_client_id.strip() or None
     if oidc_client_secret:
