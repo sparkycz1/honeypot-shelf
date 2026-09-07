@@ -80,6 +80,58 @@ that.
 > of it, and firewall its port off (or set `APP_BIND_ADDRESS=127.0.0.1` in
 > `.env`) if you don't want it reachable directly.
 
+> [!WARNING]
+> Two features are browser-disabled outright on plain HTTP, for any origin
+> other than `http://localhost` — not just restricted, entirely absent from
+> `window`/`navigator`, with no server-side workaround: **WebAuthn/
+> passkeys** (My account → Passkeys shows "This browser doesn't support
+> passkeys" even in a browser that does, once it notices) and **the
+> honeypot terminal's clipboard copy/paste** (Ctrl+C/Ctrl+V and right-click
+> copy; native Ctrl+V paste still works, since that doesn't go through the
+> Clipboard API). Both need a real "secure context" — reached over HTTPS
+> (an `https://` reverse proxy, Caddy or otherwise) or accessed as
+> `http://localhost` on the machine HoneyHive itself runs on. A plain HTTP
+> LAN IP/hostname (e.g. `http://192.168.1.x:8080`) satisfies neither, no
+> matter how the app itself or its host firewall is configured.
+>
+> **No public domain needed to fix this on a LAN-only deployment.** A
+> browser treats any `https://` origin as a secure context regardless of
+> whether the certificate is trusted — a self-signed one is enough, at the
+> cost of a one-time "this connection isn't private, proceed anyway"
+> click per client. The bundled Caddy (below) can mint one itself: in
+> `./Caddyfile`, replace the site address with `tls internal` —
+> ```
+> :443 {
+>     tls internal
+>     reverse_proxy web:8080
+> }
+> ```
+> then `docker compose -f docker-compose.yml -f docker-compose.caddy.yml up
+> -d --build` and open `https://<this-host's-LAN-IP>`. `DOMAIN`/`ACME_EMAIL`
+> aren't needed for this path. To make the browser warning go away
+> permanently instead of clicking through it every time, install Caddy's
+> local CA on each client (`docker compose exec caddy caddy trust` prints
+> where to find it) — optional, purely cosmetic, WebAuthn/clipboard work
+> either way once the page has loaded over `https://`.
+>
+> **Already have HTTPS via a reverse proxy (bundled Caddy, your own, or one
+> on a different host) and still seeing this?** The app itself also needs
+> to know the request arrived as HTTPS — otherwise it builds/verifies URLs
+> and origins as if it were still plain HTTP even though the browser used
+> HTTPS, which fails WebAuthn with "Unexpected client data origin" and
+> breaks OIDC login the same way. This is what `TRUSTED_PROXY_IPS` (see
+> `.env.example`, default `*`) fixes — already on by default for every
+> setup described above. See `app/core/proxy_headers.py` and
+> [Architecture](Architecture.md#authentication--rbac) for the full story.
+>
+> **Audit log / rate limiter showing the proxy's IP instead of the real
+> client's?** That's a separate correction (`X-Forwarded-For`, not
+> `X-Forwarded-Proto`) with a different, off-by-default setting —
+> `TRUST_FORWARDED_FOR` (see `.env.example`) — precisely because trusting
+> it from just anyone would let an attacker defeat the login rate limiter
+> by spoofing a different "source" on every attempt. Turn it on once
+> `TRUSTED_PROXY_IPS` is narrowed to your real proxy's address (not `*`).
+
 ## Custom logo & favicon
 
 By default, HoneyHive shows its own built-in bee mark in the nav bar,
