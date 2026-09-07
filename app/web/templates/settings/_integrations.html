@@ -115,6 +115,14 @@
         Enabled
       </label>
 
+      <label for="oidc_provider_name">Provider name</label>
+      <input type="text" id="oidc_provider_name" name="oidc_provider_name" placeholder="Entra ID"
+             value="{{ app_settings.oidc_provider_name or '' }}">
+      <p class="hint">
+        Shown on the login button ("Log in with {name}") instead of the
+        generic "Log in with OIDC" — purely cosmetic.
+      </p>
+
       <label for="oidc_issuer_url">Issuer URL</label>
       <input type="text" id="oidc_issuer_url" name="oidc_issuer_url" placeholder="https://idp.example.com"
              value="{{ app_settings.oidc_issuer_url or '' }}">

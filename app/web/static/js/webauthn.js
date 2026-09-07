@@ -94,7 +94,7 @@
     submitForm.action = actionUrl;
     submitForm.style.display = "none";
     for (const el of form.elements) {
-      if (el.name === "csrf_token" || el.name === "next" || el.name === "name") {
+      if (el.name === "csrf_token" || el.name === "next" || el.name === "name" || el.name === "username") {
         const hidden = document.createElement("input");
         hidden.type = "hidden";
         hidden.name = el.name;
@@ -115,11 +115,26 @@
     if (el) el.textContent = message;
   }
 
+  // `navigator.credentials`/`PublicKeyCredential` are only exposed in a
+  // "secure context" — HTTPS, or http://localhost — never plain HTTP on a
+  // LAN IP/hostname, regardless of how capable the browser otherwise is.
+  // That's the far more common reason this comes back unsupported for a
+  // self-hosted instance than an actually-old browser, so it gets its own,
+  // actionable message instead of the generic one.
+  function unsupportedReason() {
+    if (window.PublicKeyCredential) return null;
+    if (!window.isSecureContext) {
+      return "Passkeys need HTTPS (or http://localhost) — this page is loaded over plain HTTP. Put HoneyHive behind a reverse proxy with TLS (see the wiki's Installation page) to use them.";
+    }
+    return "This browser doesn't support passkeys.";
+  }
+
   async function registerPasskey(trigger) {
     const form = trigger.closest("form");
     const statusEl = form ? form.querySelector("[data-webauthn-status]") : null;
-    if (!window.PublicKeyCredential) {
-      setStatus(statusEl, "This browser doesn't support passkeys.");
+    const reason = unsupportedReason();
+    if (reason) {
+      setStatus(statusEl, reason);
       return;
     }
     setStatus(statusEl, "Follow your browser/device's prompt…");
@@ -141,13 +156,24 @@
   async function signInWithPasskey(trigger) {
     const form = trigger.closest("form") || document.querySelector("form[data-webauthn-login]");
     const statusEl = document.querySelector("[data-webauthn-status]");
-    if (!window.PublicKeyCredential) {
-      setStatus(statusEl, "This browser doesn't support passkeys.");
+    const reason = unsupportedReason();
+    if (reason) {
+      setStatus(statusEl, reason);
       return;
     }
     setStatus(statusEl, "Follow your browser/device's prompt…");
     try {
-      const optionsResponse = await fetch("/login/webauthn/options");
+      // On the two-step login's password/passkey screen, the account
+      // hasn't been verified yet — `username` (from that screen's own
+      // hidden field, if present) tells the server which account's
+      // passkeys to challenge. Absent entirely on the post-password 2FA
+      // page, which instead identifies the account via its own pending-
+      // login cookie — see _resolve_webauthn_login_user's docstring.
+      const usernameField = form ? form.querySelector("[name='username']") : null;
+      const optionsUrl = usernameField && usernameField.value
+        ? "/login/webauthn/options?username=" + encodeURIComponent(usernameField.value)
+        : "/login/webauthn/options";
+      const optionsResponse = await fetch(optionsUrl);
       if (!optionsResponse.ok) {
         setStatus(statusEl, "Couldn't start passkey sign-in — reload and try again.");
         return;
