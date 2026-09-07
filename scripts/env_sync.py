@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Adds whatever `.env.example` variables are missing from an existing
-`.env` — run automatically by `scripts/upgrade.sh` after `git pull`, since
-a new release can add new `.env.example` variables that an existing `.env`
-predates.
+`.env` — run automatically by `scripts/setup.py` (when an existing `.env`
+is kept rather than overwritten) and by `scripts/upgrade.sh` (after
+`git pull`, since a new release can add new `.env.example` variables that
+an existing `.env` predates).
 
 Never touches a key already present in `.env`, in either commented or
 uncommented form — this only ever *adds*, never overwrites a value someone
@@ -113,9 +114,9 @@ def main() -> None:
         print(f"error: {args.example} not found.")
         raise SystemExit(1)
     if not args.env.exists():
-        # Nothing to sync into — a from-scratch install copies .env.example
-        # to .env itself first; this is a no-op, not an error, so
-        # upgrade.sh can call this unconditionally without checking first.
+        # Nothing to sync into — scripts/setup.py handles a from-scratch
+        # .env itself; this is a no-op, not an error, so upgrade.sh can
+        # call this unconditionally without checking first.
         print(f"No {args.env} yet — nothing to sync.")
         return
 
