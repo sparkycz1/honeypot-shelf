@@ -90,22 +90,43 @@ commit.
 
 Real and verified end-to-end (built, migrated against real Postgres,
 exercised through the actual HTTP stack — not just "imports without
-error"): the full domain model, the entire auth stack, company scoping,
-event ingestion, the Dashboard, full Honeypot CRUD (create/edit/delete,
-host-key discovery/trust, facts/packages/services refresh, the SSH
-terminal and Logs tab, system updates with live output, power actions),
-Company CRUD and bulk actions ("All honeypots"), Scheduling (cron-driven
-actions, company-scoped via `ScheduledTask.owner_company_id`), the REST
-API mirroring all of the above (`/api/v1/...`), Users/Settings
-(LDAP/OIDC/syslog-forwarding config, SSH key rotation, retention
-policies), and an initial Alembic migration. A 45-test suite covers auth,
-company scoping, ingest, the dashboard, honeypot/company/schedule CRUD,
-`pg_enum`, i18n, and config.
+error"): the full domain model, the entire auth stack (including
+two-step, GitHub/Google-style login — username first, then a passkey or
+password), company scoping, event ingestion, the Dashboard, full Honeypot
+CRUD (create/edit/delete, host-key discovery/trust, facts/packages/
+services refresh, the SSH terminal and Logs tab, system updates with live
+output, power actions), Company CRUD and bulk actions ("All honeypots"),
+Scheduling (cron-driven actions, company-scoped via
+`ScheduledTask.owner_company_id`), the REST API mirroring all of the above
+(`/api/v1/...`), Users/Settings (LDAP/OIDC/syslog-forwarding config, SSH
+key rotation, retention policies), and an initial Alembic migration. A
+61-test suite covers auth, company scoping, ingest, the dashboard,
+honeypot/company/schedule CRUD, `pg_enum`, i18n, config, and the proxy-
+headers/CSP-safety regression guards below.
+
+Periodically synced against upstream debcontrol for fixes/features that
+apply here too (see that project's own release history) — most recently
+`X-Forwarded-Proto`/`-For` reverse-proxy support
+(`app.core.proxy_headers`), the two-step login above, the honeypot list
+folding tag search into its main search box, and a CSP-safety regression
+test (`tests/test_no_inline_event_handlers.py`) that also caught two
+HoneyHive-specific inline `onchange` handlers on the Users new/edit forms
+(silently dead under this app's CSP — fixed via `data-toggle-hidden` +
+`static/js/toggle-hidden.js`). Also caught and fixed during this pass: the
+interactive SSH terminal's own client-side assets (`static/js/terminal.js`,
+vendored xterm.js + its fit addon, `static/css/xterm.css`) had never
+actually been copied over during the original port despite the terminal
+page referencing them — the feature 404'd on every asset it needed. Take
+this as a reminder that "the mechanical port was verified end-to-end"
+claims from earlier in this file cover what was *tested* at the time, not
+a guarantee nothing was missed — re-check a claim like this against the
+actual files on disk before trusting it, the same way this bug was found.
 
 **Known gaps, not yet done**: i18n coverage is still just the site
-chrome (most of the ported pages' strings are plain English, same
-"not yet translated" state debcontrol itself is in for many pages); the
-~95 `ruff` line-length warnings from the mechanical port haven't been
+chrome plus the auth/footer/toolbar strings touched by the debcontrol
+sync above (most of the ported pages' strings are still plain English,
+same "not yet translated" state debcontrol itself is in for many pages);
+the ~95 `ruff` line-length warnings from the mechanical port haven't been
 manually wrapped; `mypy --strict` hasn't been run against this codebase
 yet (debcontrol's own code is strict-typed, but the porting/adaptation
 here wasn't type-checked as it went); no CI workflow file exists yet.

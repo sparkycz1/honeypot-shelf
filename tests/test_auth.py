@@ -15,10 +15,19 @@ pytestmark = pytest.mark.asyncio
 
 
 async def _login_csrf(anonymous_client) -> str:
-    response = await anonymous_client.get("/login")
-    match = re.search(r'name="csrf_token" value="([^"]+)"', response.text)
-    assert match, "no csrf_token found on /login"
-    return match.group(1)
+    """Every anonymous request already gets a csrftoken cookie from
+    `app.auth.middleware` — a plain GET to any page (even one that
+    redirects) is enough to have one to read back. Reads the cookie
+    rather than regex-parsing a `csrf_token` hidden field out of
+    `GET /login`'s HTML: since login is now two steps (see auth/login.html
+    and auth/login_password.html), step one's page has no such field at
+    all — it only collects the username via a plain GET to
+    `/login/password`, which is where the CSRF-protected password form
+    actually lives."""
+    await anonymous_client.get("/login")
+    token = anonymous_client.cookies.get("csrftoken")
+    assert token is not None
+    return token
 
 
 async def test_login_with_correct_password_succeeds(anonymous_client, db_session_factory):

@@ -5,8 +5,10 @@ Management and monitoring for a fleet of
 Pis deployed at customer sites), across **multiple companies**, each with
 their own scoped users. Every page requires a login; access is controlled
 per company (see [Architecture](Architecture.md#authentication--rbac)),
-with accounts authenticating locally, against LDAP, or via OIDC SSO, with
-optional TOTP/passkey two-factor. A honeypot is managed exactly like a
+with accounts authenticating locally, against LDAP, or via OIDC SSO. Login
+is two steps — username, then a passkey (signs straight in, no password
+needed) or a password (plus TOTP and/or a passkey as a second factor, if
+either is set up). A honeypot is managed exactly like a
 machine in debcontrol (a sister project managing Debian machines over
 SSH, which this project's tech stack, layout, auth system, and entire SSH
 management layer were ported from) — terminal, facts, packages, updates,
