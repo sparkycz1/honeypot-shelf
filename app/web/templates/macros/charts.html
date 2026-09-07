@@ -1,0 +1,158 @@
+{# Dependency-free inline SVG charts, generated entirely server-side —
+   this app's CSP forbids external chart libraries (no external CDN, and
+   generated markup here only ever uses SVG presentation attributes like
+   `fill=`/`stroke=`, never a `style=` attribute or a `<style>` block, so
+   nothing here needs `style-src` to allow anything beyond 'self').
+
+   `sparkline` draws one polyline for a series of numbers, scaled to fit its
+   own min/max — reusable anywhere a small trend line is useful, not just
+   the Dashboard (see app/web/routes/dashboard.py for the current caller). #}
+
+{% macro sparkline(values, color, width=560, height=120, pad=12) %}
+  {% set n = values | length %}
+  {% set vmin = values | min %}
+  {% set vmax = values | max %}
+  {% set vrange = (vmax - vmin) if vmax != vmin else 1 %}
+  {% set step = ((width - 2 * pad) / (n - 1)) if n > 1 else 0 %}
+  {% set coords = [] %}
+  {% for v in values %}
+    {% set x = pad + loop.index0 * step %}
+    {% set y = height - pad - ((v - vmin) / vrange) * (height - 2 * pad) %}
+    {% set _ = coords.append((x | round(1) | string) ~ "," ~ (y | round(1) | string)) %}
+  {% endfor %}
+  <svg viewBox="0 0 {{ width }} {{ height }}" width="100%" height="{{ height }}"
+       preserveAspectRatio="none" role="img" aria-label="Trend chart">
+    <polyline fill="none" stroke="{{ color }}" stroke-width="2"
+              stroke-linejoin="round" stroke-linecap="round"
+              points="{{ coords | join(' ') }}"></polyline>
+    {% for point in coords %}
+      {% set xy = point.split(',') %}
+      <circle cx="{{ xy[0] }}" cy="{{ xy[1] }}" r="2.5" fill="{{ color }}"></circle>
+    {% endfor %}
+  </svg>
+  <p class="hint">
+    {{ vmin }}&ndash;{{ vmax }} over {{ n }} day{{ 's' if n != 1 else '' }}
+    (latest: {{ values[-1] }})
+  </p>
+{% endmacro %}
+
+{# Same idea as `sparkline` above, but for a percent series on a fixed
+   0-100 scale (rather than auto-scaled to the series' own min/max) — used
+   by the Monitoring tab's CPU/RAM/disk graphs, where "this always fills
+   the same vertical space regardless of how busy the machine actually was"
+   is the more honest read of a trend line than auto-scaling would give (a
+   machine idling at 2-4% CPU shouldn't look like a wild rollercoaster).
+   `values` may contain `None` (a genuine gap — see
+   app.services.monitoring_history's downsampling) — a `None` breaks the
+   polyline into a new segment rather than being drawn as 0. #}
+{% macro percent_sparkline(values, color, width=560, height=120, pad=12) %}
+  {% set n = values | length %}
+  {% set step = ((width - 2 * pad) / (n - 1)) if n > 1 else 0 %}
+  {% set segments = [] %}
+  {% set current = [] %}
+  {% for v in values %}
+    {% if v is none %}
+      {% if current %}
+        {% set _ = segments.append(current | join(' ')) %}
+        {% set current = [] %}
+      {% endif %}
+    {% else %}
+      {% set x = pad + loop.index0 * step %}
+      {% set y = height - pad - (([v, 100] | min) / 100) * (height - 2 * pad) %}
+      {% set _ = current.append((x | round(1) | string) ~ "," ~ (y | round(1) | string)) %}
+    {% endif %}
+  {% endfor %}
+  {% if current %}
+    {% set _ = segments.append(current | join(' ')) %}
+  {% endif %}
+  <svg viewBox="0 0 {{ width }} {{ height }}" width="100%" height="{{ height }}"
+       preserveAspectRatio="none" role="img" aria-label="Trend chart, 0 to 100 percent">
+    {% for segment in segments %}
+      <polyline fill="none" stroke="{{ color }}" stroke-width="2"
+                stroke-linejoin="round" stroke-linecap="round"
+                points="{{ segment }}"></polyline>
+    {% endfor %}
+  </svg>
+{% endmacro %}
+
+{# The Monitoring tab's interactive chart: one or more series sharing the
+   same X axis (a timestamp per point — see
+   app.services.monitoring_history._bucket_timestamps), with a scrubbable
+   hover readout wired up by static/js/monitoring-chart.js (which finds
+   every `[data-chart]` element and does the rest — this macro only emits
+   markup + data attributes, no inline `<script>`, to keep the CSP simple).
+
+   `series` is a list of `{label, color, values}` dicts, `values` all the
+   same length as `timestamps` and each may contain `None` (a gap, drawn as
+   a polyline break rather than a fake dip to 0 — see `percent_sparkline`
+   above for why). `fixed_max` pins the Y axis to `[0, fixed_max]` (used for
+   percent series); left as `none`, the axis auto-scales to the tightest
+   range that fits every series (used for load average / throughput, which
+   have no natural ceiling). `unit` is a display-only suffix the hover
+   tooltip appends after each formatted number (e.g. " B/s"); pass
+   `bytes_rate=True` instead for throughput series, so the JS formats them
+   as KB/s-MB/s rather than a raw byte count. #}
+{% macro trend_chart(series, timestamps, width=560, height=140, pad=14, fixed_max=none, unit='', bytes_rate=False) %}
+  {% set n = timestamps | length %}
+  {% set step = ((width - 2 * pad) / (n - 1)) if n > 1 else 0 %}
+  {% if fixed_max is not none %}
+    {% set vmin = 0 %}
+    {% set vmax = fixed_max %}
+  {% else %}
+    {% set all_values = [] %}
+    {% for s in series %}
+      {% for v in s.points %}
+        {% if v is not none %}{% set _ = all_values.append(v) %}{% endif %}
+      {% endfor %}
+    {% endfor %}
+    {% set vmin = 0 %}
+    {% set vmax = (all_values | max) if all_values else 1 %}
+  {% endif %}
+  {% set vrange = (vmax - vmin) if vmax != vmin else 1 %}
+  <div class="trend-chart-wrap" data-chart
+       data-unit="{{ unit }}" data-bytes-rate="{{ 'true' if bytes_rate else 'false' }}"
+       data-timestamps='{{ timestamps | iso_list | tojson }}'
+       data-series='{{ series | map(attribute="points") | list | tojson }}'
+       data-labels='{{ series | map(attribute="label") | list | tojson }}'>
+    <svg viewBox="0 0 {{ width }} {{ height }}" width="100%" height="{{ height }}"
+         preserveAspectRatio="none" role="img" aria-label="Interactive trend chart"
+         class="trend-chart-svg">
+      {% for s in series %}
+        {% set segments = [] %}
+        {% set current = [] %}
+        {% for v in s.points %}
+          {% if v is none %}
+            {% if current %}
+              {% set _ = segments.append(current | join(' ')) %}
+              {% set current = [] %}
+            {% endif %}
+          {% else %}
+            {% set x = pad + loop.index0 * step %}
+            {% set y = height - pad - (([[v, vmin] | max, vmax] | min) - vmin) / vrange * (height - 2 * pad) %}
+            {% set _ = current.append((x | round(1) | string) ~ "," ~ (y | round(1) | string)) %}
+          {% endif %}
+        {% endfor %}
+        {% if current %}{% set _ = segments.append(current | join(' ')) %}{% endif %}
+        {% for segment in segments %}
+          <polyline fill="none" stroke="{{ s.color }}" stroke-width="2"
+                    stroke-linejoin="round" stroke-linecap="round"
+                    points="{{ segment }}"></polyline>
+        {% endfor %}
+      {% endfor %}
+      <line class="trend-chart-cursor" x1="0" y1="0" x2="0" y2="{{ height }}" hidden></line>
+    </svg>
+    <div class="trend-chart-tooltip" hidden></div>
+    {% if series | length > 1 %}
+      <div class="trend-chart-legend">
+        {% for s in series %}
+          <span class="trend-chart-legend-item">
+            <svg class="trend-chart-swatch" viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
+              <rect width="10" height="10" rx="2" fill="{{ s.color }}"></rect>
+            </svg>
+            {{ s.label }}
+          </span>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+{% endmacro %}

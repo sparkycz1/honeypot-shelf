@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}Companies — HoneyHive{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>Companies</h1>
+  </div>
+
+  {% if rows %}
+    <table class="data-table">
+      <thead><tr><th>Name</th><th>Honeypots</th><th>Online</th><th>Users</th></tr></thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td><a href="/companies/{{ row.company.id }}">{{ row.company.name }}</a></td>
+          <td>{{ row.honeypot_count }}</td>
+          <td>{{ row.online_count }}</td>
+          <td>{{ row.user_count }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="hint">No companies yet.</p>
+  {% endif %}
+{% endblock %}

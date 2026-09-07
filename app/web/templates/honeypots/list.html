@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}Honeypots — HoneyHive{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>Honeypots</h1>
+  </div>
+
+  {% if rows %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Hostname</th>
+          {% if show_company_column %}<th>Company</th>{% endif %}
+          <th>Status</th>
+          <th>Location</th>
+          <th>Last seen</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td><a href="/honeypots/{{ row.honeypot.id }}">{{ row.honeypot.hostname }}</a></td>
+          {% if show_company_column %}<td>{{ row.honeypot.company.name }}</td>{% endif %}
+          <td>
+            {% if row.status.value == "online" %}<span class="badge badge-ok">online</span>
+            {% elif row.status.value == "offline" %}<span class="badge badge-error">offline</span>
+            {% else %}<span class="badge badge-warn">never seen</span>{% endif %}
+          </td>
+          <td>{{ row.honeypot.location or '—' }}</td>
+          <td>{{ row.honeypot.last_seen_at | local_time('%Y-%m-%d %H:%M %Z') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="hint">No honeypots yet.</p>
+  {% endif %}
+{% endblock %}

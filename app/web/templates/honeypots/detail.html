@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}{{ honeypot.hostname }} — HoneyHive{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>{{ honeypot.hostname }}</h1>
+    {% if status.value == "online" %}<span class="badge badge-ok">online</span>
+    {% elif status.value == "offline" %}<span class="badge badge-error">offline</span>
+    {% else %}<span class="badge badge-warn">never seen</span>{% endif %}
+  </div>
+
+  <section class="panel">
+    <dl class="detail-list">
+      <dt>Company</dt><dd>{{ honeypot.company.name }}</dd>
+      <dt>Location</dt><dd>{{ honeypot.location or '—' }}</dd>
+      <dt>Last seen</dt><dd>{{ honeypot.last_seen_at | local_time('%Y-%m-%d %H:%M %Z') }}</dd>
+      <dt>Last seen from</dt><dd>{{ honeypot.last_seen_ip or '—' }}</dd>
+    </dl>
+    {% if honeypot.notes %}
+      <h3>Notes</h3>
+      <div>{{ honeypot.notes | markdown }}</div>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <h2>Recent events</h2>
+    {% if events %}
+      <table class="data-table">
+        <thead><tr><th>When</th><th>Type</th><th>Source IP</th><th>Src port</th><th>Dst port</th></tr></thead>
+        <tbody>
+          {% for event in events %}
+          <tr>
+            <td>{{ event.occurred_at | local_time('%Y-%m-%d %H:%M %Z') }}</td>
+            <td><span class="badge">{{ event.event_type }}</span></td>
+            <td>{{ event.src_ip or '—' }}</td>
+            <td>{{ event.src_port or '—' }}</td>
+            <td>{{ event.dst_port or '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="hint">No events recorded yet for this honeypot.</p>
+    {% endif %}
+  </section>
+{% endblock %}
