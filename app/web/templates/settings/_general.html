@@ -1,19 +1,4 @@
   <section class="panel">
-    <h2>Version</h2>
-    <dl class="detail-list">
-      <dt>Version</dt><dd>{{ app_version }}</dd>
-      <dt>Commit</dt>
-      <dd>
-        {% if git_commit %}
-          <a href="{{ commit_url }}" target="_blank" rel="noopener noreferrer"><code>{{ git_commit[:12] }}</code></a>
-        {% else %}
-          unknown (not a git checkout, and no GIT_COMMIT baked into this image)
-        {% endif %}
-      </dd>
-    </dl>
-  </section>
-
-  <section class="panel">
     <h2>App SSH identity</h2>
     <p class="hint">
       HoneyHive connects to honeypots using this one shared key when

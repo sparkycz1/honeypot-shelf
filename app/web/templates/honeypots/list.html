@@ -50,13 +50,16 @@
   <div class="page-header">
     <h1>{{ t(request, 'honeypots.title') }}</h1>
     <div class="page-header-actions">
-      <a class="button button-secondary" href="/honeypots/package-search">{{ t(request, 'honeypots.actions.package_search') }}</a>
-      <a class="button button-secondary" href="/honeypots/import">{{ t(request, 'honeypots.actions.bulk_import') }}</a>
-      <a class="button button-secondary"
-         href="/honeypots/config/export?format=json">{{ t(request, 'honeypots.actions.export_json') }}</a>
-      <a class="button button-secondary"
-         href="/honeypots/config/export?format=csv">{{ t(request, 'honeypots.actions.export_csv') }}</a>
-      <a class="button button-secondary" href="/honeypots/config/import">{{ t(request, 'honeypots.actions.import_config') }}</a>
+      <details class="actions-menu">
+        <summary class="button button-secondary">{{ t(request, 'honeypots.actions.more') }}</summary>
+        <div class="actions-menu-list">
+          <a href="/honeypots/package-search">{{ t(request, 'honeypots.actions.package_search') }}</a>
+          <a href="/honeypots/import">{{ t(request, 'honeypots.actions.bulk_import') }}</a>
+          <a href="/honeypots/config/export?format=json">{{ t(request, 'honeypots.actions.export_json') }}</a>
+          <a href="/honeypots/config/export?format=csv">{{ t(request, 'honeypots.actions.export_csv') }}</a>
+          <a href="/honeypots/config/import">{{ t(request, 'honeypots.actions.import_config') }}</a>
+        </div>
+      </details>
       <a class="button" href="/honeypots/new">{{ t(request, 'honeypots.actions.add') }}</a>
     </div>
   </div>

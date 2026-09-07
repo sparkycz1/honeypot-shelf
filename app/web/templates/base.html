@@ -62,13 +62,22 @@
     {% block content %}{% endblock %}
   </main>
 
+  {% set _commit = git_commit() %}
   <footer class="site-footer">
     <p>{{ t(request, "footer.tagline") }}</p>
+    <p class="site-footer-meta">
+      <a href="https://github.com/sparkycz1" target="_blank" rel="noopener">Jakub Adámek</a>
+      <span aria-hidden="true">·</span>
+      <a href="https://github.com/sparkycz1/honeyhive/releases" target="_blank" rel="noopener"
+         title="{{ t(request, 'footer.commit', commit=(_commit[:12] if _commit else t(request, 'footer.commit_unknown'))) }}">v{{ app_version }}</a>
+    </p>
   </footer>
 
   <script src="/static/js/htmx.min.js" defer></script>
   <script src="/static/js/confirm.js" defer></script>
   <script src="/static/js/bulk-select.js" defer></script>
+  <script src="/static/js/auto-submit.js" defer></script>
+  <script src="/static/js/toggle-hidden.js" defer></script>
   {% block extra_scripts %}{% endblock %}
 </body>
 </html>
