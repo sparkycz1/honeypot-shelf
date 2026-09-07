@@ -25,7 +25,7 @@ from app.db.models.honeypot import Honeypot
 from app.db.models.honeypot_event import HoneypotEvent
 from app.db.models.user import User
 from app.db.session import get_db
-from app.services.honeypot_status import offline_cutoff
+from app.services.honeypot_status import is_online, offline_cutoff
 from app.web.templating import templates
 
 router = APIRouter()
@@ -48,9 +48,7 @@ async def dashboard(
     honeypots = (await db.execute(honeypot_query)).scalars().all()
 
     offline_after = offline_cutoff()
-    online_count = sum(
-        1 for h in honeypots if h.last_seen_at is not None and h.last_seen_at >= offline_after
-    )
+    online_count = sum(1 for h in honeypots if is_online(h.last_seen_at, cutoff=offline_after))
     honeypot_stats = {
         "total": len(honeypots),
         "online": online_count,
@@ -88,9 +86,7 @@ async def dashboard(
         for company in companies:
             company_honeypots = [h for h in honeypots if h.company_id == company.id]
             company_online = sum(
-                1
-                for h in company_honeypots
-                if h.last_seen_at is not None and h.last_seen_at >= offline_after
+                1 for h in company_honeypots if is_online(h.last_seen_at, cutoff=offline_after)
             )
             events_24h = (
                 await db.execute(

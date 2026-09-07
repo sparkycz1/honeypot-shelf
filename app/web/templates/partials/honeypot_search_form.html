@@ -1,0 +1,29 @@
+<form method="get" class="search-form">
+  <input type="search" name="q" value="{{ q }}"
+         placeholder="{{ t(request, 'honeypots.search.placeholder') }}">
+  {% if all_tags is defined %}
+    {% if tag_mode is defined %}
+      {# The honeypot list: multiple tags at once, AND/OR — `tag` is a list. #}
+      <select name="tag" multiple aria-label="{{ t(request, 'honeypots.tag.filter_label') }}"
+              size="{{ [[all_tags | length, 5] | min, 3] | max }}">
+        {% for existing_tag in all_tags %}
+          <option value="{{ existing_tag.name }}" {% if existing_tag.name in tag %}selected{% endif %}>{{ existing_tag.name }}</option>
+        {% endfor %}
+      </select>
+      <select name="tag_mode" aria-label="{{ t(request, 'honeypots.tag.filter_label') }}">
+        <option value="or" {% if tag_mode != 'and' %}selected{% endif %}>{{ t(request, 'honeypots.tag.mode_or') }}</option>
+        <option value="and" {% if tag_mode == 'and' %}selected{% endif %}>{{ t(request, 'honeypots.tag.mode_and') }}</option>
+      </select>
+    {% else %}
+      {# Honeypot companies' "All honeypots"/company pages: one tag — `tag` is a string. #}
+      <select name="tag" aria-label="{{ t(request, 'honeypots.tag.filter_label') }}">
+        <option value="">{{ t(request, 'honeypots.tag.all') }}</option>
+        {% for existing_tag in all_tags %}
+          <option value="{{ existing_tag.name }}" {% if tag == existing_tag.name %}selected{% endif %}>{{ existing_tag.name }}</option>
+        {% endfor %}
+      </select>
+    {% endif %}
+  {% endif %}
+  <button type="submit" class="button">{{ t(request, 'honeypots.search.submit') }}</button>
+  {% if q or tag %}<a class="button button-secondary" href="{{ request.url.path }}">{{ t(request, 'honeypots.search.clear') }}</a>{% endif %}
+</form>

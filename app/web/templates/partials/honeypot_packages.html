@@ -1,0 +1,90 @@
+{% from "partials/_packages_summary.html" import render as render_packages_summary %}
+{{ render_packages_summary(honeypot, package_counts, held_count, oob=True) }}
+
+<div id="packages-panel">
+  {% if error %}
+    <div class="alert alert-error">
+      <p>Could not refresh packages: {{ error }}</p>
+    </div>
+  {% endif %}
+
+  {% if not honeypot.packages_updated_at %}
+    <p class="hint">
+      Not gathered yet — this happens automatically once the host key
+      fingerprint is confirmed above, and refreshes periodically after that
+      (and right after any update run on this honeypot).
+    </p>
+  {% else %}
+    <form
+      hx-get="/honeypots/{{ honeypot.id }}/packages"
+      hx-target="#packages-panel"
+      hx-swap="outerHTML"
+      class="search-form"
+      id="package-filters"
+    >
+      <input type="search" name="pkg_q" value="{{ pkg_q }}" placeholder="Search packages by name...">
+      <select name="pkg_source">
+        <option value="" {% if not pkg_source %}selected{% endif %}>All sources</option>
+        <option value="apt" {% if pkg_source == 'apt' %}selected{% endif %}>apt</option>
+        <option value="flatpak" {% if pkg_source == 'flatpak' %}selected{% endif %}>flatpak</option>
+        <option value="snap" {% if pkg_source == 'snap' %}selected{% endif %}>snap</option>
+      </select>
+      <label class="hint">
+        <input type="checkbox" name="held_only" value="1" {% if held_only %}checked{% endif %}>
+        Held only
+      </label>
+      <button type="submit" class="button">Filter</button>
+      {% if pkg_q or pkg_source or held_only %}
+        <a
+          class="button button-secondary"
+          href="#"
+          hx-get="/honeypots/{{ honeypot.id }}/packages"
+          hx-target="#packages-panel"
+          hx-swap="outerHTML"
+        >
+          Clear
+        </a>
+      {% endif %}
+    </form>
+
+    {% if packages %}
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Package</th>
+            <th>Version</th>
+            <th>Source</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for pkg in packages %}
+            <tr>
+              <td>{{ pkg.name }}</td>
+              <td>{{ pkg.version }}</td>
+              <td>{{ pkg.source.value }}</td>
+              <td>{% if pkg.held %}<span class="badge badge-warn">held</span>{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="hint">No packages match this filter.</p>
+    {% endif %}
+  {% endif %}
+
+  <button
+    class="button"
+    hx-post="/honeypots/{{ honeypot.id }}/refresh-packages"
+    hx-include="#package-filters"
+    hx-vals='{"csrf_token": "{{ csrf_token }}"}'
+    hx-target="#packages-panel"
+    hx-swap="outerHTML"
+    {% if not honeypot.host_key_fingerprint %}disabled{% endif %}
+  >
+    Refresh packages now
+  </button>
+  {% if not honeypot.host_key_fingerprint %}
+    <p class="hint">Confirm the server's key fingerprint above first.</p>
+  {% endif %}
+</div>

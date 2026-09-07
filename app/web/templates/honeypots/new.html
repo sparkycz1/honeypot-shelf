@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %}Add honeypot — HoneyHive{% endblock %}
+
+{% block content %}
+  <h1>Add honeypot</h1>
+
+  {% if errors %}
+    <div class="alert alert-error">
+      {% for error in errors %}<p>{{ error }}</p>{% endfor %}
+    </div>
+  {% endif %}
+
+  <form method="post" action="/honeypots" class="form" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <label for="name">Name</label>
+    <input type="text" id="name" name="name" required maxlength="255"
+           placeholder="e.g. web1, db-primary"
+           value="{{ form.name or '' }}">
+
+    <label for="ip_address">IP address</label>
+    <input type="text" id="ip_address" name="ip_address" required maxlength="255"
+           placeholder="e.g. 192.0.2.10"
+           value="{{ form.ip_address or '' }}">
+    <p class="hint">
+      The honeypot's own hostname is discovered automatically once its SSH
+      host key is confirmed — no need to enter it here.
+    </p>
+
+    <label for="port">SSH port</label>
+    <input type="number" id="port" name="port" min="1" max="65535"
+           value="{{ form.port or 22 }}">
+
+    <label for="username">Username</label>
+    <input type="text" id="username" name="username" required maxlength="255"
+           value="{{ form.username or '' }}">
+
+    <label for="auth_method">Authentication method</label>
+    <select id="auth_method" name="auth_method">
+      {% for method in auth_methods %}
+        <option value="{{ method.value }}" {% if form.auth_method == method %}selected{% endif %}>
+          {{ 'SSH key (recommended)' if method.value == 'ssh_key' else 'Password (not recommended)' }}
+        </option>
+      {% endfor %}
+    </select>
+    <p class="hint">
+      <strong>SSH key</strong> uses HoneyHive's own shared identity — see
+      <a href="/settings">Settings</a> for the public key to add to the
+      honeypot's <code>~/.ssh/authorized_keys</code>. <strong>Password</strong>
+      is only there as a fallback; prefer the key above whenever possible.
+    </p>
+
+    <label for="secret">Password</label>
+    <textarea id="secret" name="secret" rows="2"
+      placeholder="Only used if 'Password' is selected above. Stored encrypted."></textarea>
+
+    {% if current_user.is_superadmin %}
+      <label for="company_id">Company</label>
+      <select id="company_id" name="company_id" required>
+        <option value="" disabled selected>Choose a company…</option>
+        {% for company in companies %}
+          <option value="{{ company.id }}">{{ company.name }}</option>
+        {% endfor %}
+      </select>
+    {% endif %}
+
+    <label for="location">Location</label>
+    <input type="text" id="location" name="location" maxlength="255" value="{{ form.location or '' }}"
+           placeholder="e.g. server room, floor 2">
+
+    <label for="description">Notes</label>
+    <textarea id="description" name="description" rows="2">{{ form.description or '' }}</textarea>
+
+    <label for="tags">Tags</label>
+    <input type="text" id="tags" name="tags" list="tag-suggestions"
+           placeholder="prod, web, praha-dc1" value="{{ form.tags or '' }}">
+    <p class="hint">Comma-separated. Independent of the company above — a honeypot can carry any number.</p>
+    <datalist id="tag-suggestions">
+      {% for existing_tag in all_tags %}<option value="{{ existing_tag.name }}">{% endfor %}
+    </datalist>
+
+    <label for="runbook">Runbook</label>
+    <textarea id="runbook" name="runbook" rows="8"
+              placeholder="How to deal with this server, who owns it, anything worth knowing…">{{ form.runbook or '' }}</textarea>
+    <p class="hint">Markdown supported. Shown on the Overview tab.</p>
+
+    <button type="submit" class="button">Save</button>
+    <a class="button button-secondary" href="/honeypots">Cancel</a>
+  </form>
+{% endblock %}

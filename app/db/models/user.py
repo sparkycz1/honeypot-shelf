@@ -86,7 +86,7 @@ class User(Base):
         CheckConstraint(
             "(is_superadmin AND company_id IS NULL AND access_level IS NULL) "
             "OR (NOT is_superadmin AND company_id IS NOT NULL AND access_level IS NOT NULL)",
-            name="ck_users_superadmin_xor_company_scope",
+            name="superadmin_xor_company_scope",
         ),
     )
 

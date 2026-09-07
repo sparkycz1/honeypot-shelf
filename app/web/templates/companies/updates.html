@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% from "partials/_tabnav.html" import render as render_tabnav %}
+
+{% block title %}Updates — {{ company.name }} — HoneyHive{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>{{ company.name }}</h1>
+  </div>
+
+  {{ render_tabnav(tabs, active_tab) }}
+
+  <section class="panel">
+    <h2>Update all honeypots in this company</h2>
+    <p class="hint">
+      Runs update → upgrade → autoremove/autoclean on every honeypot in this
+      company that has a confirmed host key fingerprint — others are skipped.
+    </p>
+    <form method="post" action="/companies/{{ company.id }}/updates" class="form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {% include "partials/upgrade_strategy_fields.html" %}
+      <button type="submit" class="button">Run update on this company</button>
+    </form>
+
+    <h3>Check for updates</h3>
+    <p class="hint">
+      Dry run — refreshes each honeypot's package list and records how many
+      updates are available, without installing anything. Results appear on
+      each honeypot's own page as each check finishes.
+    </p>
+    <form method="post" action="/companies/{{ company.id }}/check-updates" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="button button-secondary">Check for updates on this company</button>
+    </form>
+  </section>
+{% endblock %}

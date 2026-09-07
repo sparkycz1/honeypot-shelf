@@ -5,22 +5,43 @@
 {% block content %}
   <div class="page-header">
     <h1>Users</h1>
+    <a class="button" href="/users/new">Add user</a>
   </div>
 
   <table class="data-table">
-    <thead><tr><th>Username</th><th>Company</th><th>Access</th><th>Login method</th><th>Active</th></tr></thead>
+    <thead>
+      <tr>
+        <th>Username</th>
+        <th>Access</th>
+        <th>Login method</th>
+        <th>2FA</th>
+        <th>API access</th>
+        <th>Status</th>
+        <th>Last login</th>
+        <th></th>
+      </tr>
+    </thead>
     <tbody>
       {% for u in users %}
-      <tr>
-        <td>{{ u.display_name or u.username }}</td>
-        <td>{% if u.is_superadmin %}<em>all companies</em>{% else %}{{ u.company.name }}{% endif %}</td>
-        <td>
-          {% if u.is_superadmin %}Superadmin
-          {% else %}{{ "Read + write" if u.access_level.value == "read_write" else "Read only" }}{% endif %}
-        </td>
-        <td>{{ u.auth_provider.value }}</td>
-        <td>{{ "Yes" if u.is_active else "No" }}</td>
-      </tr>
+        <tr>
+          <td>{{ u.display_name or u.username }}</td>
+          <td>
+            {% if u.is_superadmin %}<span class="badge">superadmin</span>
+            {% else %}{{ u.company.name }} — {{ "Read + write" if u.access_level.value == "read_write" else "Read only" }}{% endif %}
+          </td>
+          <td>{{ u.auth_provider.value }}</td>
+          <td>{{ 'on' if u.totp_enabled else '—' }}</td>
+          <td>{{ 'on' if u.api_access_enabled else '—' }}</td>
+          <td>
+            {% if u.is_active %}
+              <span class="badge badge-ok">active</span>
+            {% else %}
+              <span class="badge badge-error">disabled</span>
+            {% endif %}
+          </td>
+          <td>{{ u.last_login_at | local_time('%Y-%m-%d %H:%M %Z') if u.last_login_at else 'never' }}</td>
+          <td><a href="/users/{{ u.id }}/edit">Edit</a></td>
+        </tr>
       {% endfor %}
     </tbody>
   </table>

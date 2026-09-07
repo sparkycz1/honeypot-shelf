@@ -28,10 +28,12 @@ proxy guides, honeypot onboarding, and local development
 fresh instance running.
 
 > [!NOTE]
-> This is a fresh scaffold — the domain model, auth system, and read-only
-> pages are real; create/edit forms, the REST API, and the first DB
-> migration still need to be built. See [wiki/Home.md](wiki/Home.md)'s
-> "Current state" section.
+> A honeypot is managed exactly like a machine in
+> [debcontrol](https://github.com/sparkycz1/debcontrol) — terminal, facts,
+> packages, system updates, power, scheduling — plus this project's own
+> addition: honeypots push OpenCanary events in, and the Dashboard sums
+> them per company. See [wiki/Home.md](wiki/Home.md)'s "Current state"
+> section for exact coverage and open questions.
 
 ## 🚀 Quick start (Docker)
 

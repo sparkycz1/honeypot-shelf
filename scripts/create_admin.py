@@ -27,7 +27,6 @@ import os
 import sys
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.security import USERNAME_PATTERN, hash_password
 from app.db.models.user import AuthProvider, User

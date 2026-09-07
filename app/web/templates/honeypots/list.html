@@ -1,40 +1,328 @@
 {% extends "base.html" %}
+{% from "partials/_os_badge.html" import render as render_os_badge %}
 
-{% block title %}Honeypots — HoneyHive{% endblock %}
+{% block title %}{{ t(request, 'honeypots.title') }} — HoneyHive{% endblock %}
+
+{% macro status_badge(honeypot) %}
+  {% if honeypot.is_reachable is none %}
+    <span class="badge badge-warn">unknown</span>
+  {% elif honeypot.is_reachable %}
+    <span class="badge badge-ok">online</span>
+  {% else %}
+    <span class="badge badge-error">offline</span>
+  {% endif %}
+{% endmacro %}
+
+{% macro host_key_badge(honeypot) %}
+  {% if honeypot.host_key_fingerprint %}
+    <span class="badge badge-ok">pinned</span>
+  {% else %}
+    <span class="badge badge-warn">unconfirmed</span>
+  {% endif %}
+{% endmacro %}
+
+{% macro usage_bar(label, percent) %}
+  {# No inline `style` (CSP has no 'unsafe-inline' for style-src) — the
+     fill width comes from one of 11 fixed `.usage-bar-fill-N0` classes
+     (0/10/.../100), picked by rounding to the nearest 10. #}
+  {% if percent is not none %}
+    {% set clamped = [[percent, 100] | min, 0] | max %}
+    {% set rounded = ((clamped / 10) | round | int) * 10 %}
+    <div class="usage-bar" role="img" aria-label="{{ label }}: {{ '%.0f' % percent }}%">
+      <span class="usage-bar-label">{{ label }}</span>
+      <span class="usage-bar-track">
+        <span class="usage-bar-fill usage-bar-fill-{{ rounded }}"></span>
+      </span>
+      <span class="usage-bar-value">{{ '%.0f' % percent }}%</span>
+    </div>
+  {% endif %}
+{% endmacro %}
+
+{% macro tag_chips(honeypot) %}
+  {% if honeypot.tags %}
+    {% for tag in honeypot.tags %}
+      <a class="badge badge-tag" href="?tag={{ tag.name }}">{{ tag.name }}</a>
+    {% endfor %}
+  {% endif %}
+{% endmacro %}
 
 {% block content %}
   <div class="page-header">
-    <h1>Honeypots</h1>
+    <h1>{{ t(request, 'honeypots.title') }}</h1>
+    <div class="page-header-actions">
+      <a class="button button-secondary" href="/honeypots/package-search">{{ t(request, 'honeypots.actions.package_search') }}</a>
+      <a class="button button-secondary" href="/honeypots/import">{{ t(request, 'honeypots.actions.bulk_import') }}</a>
+      <a class="button button-secondary"
+         href="/honeypots/config/export?format=json">{{ t(request, 'honeypots.actions.export_json') }}</a>
+      <a class="button button-secondary"
+         href="/honeypots/config/export?format=csv">{{ t(request, 'honeypots.actions.export_csv') }}</a>
+      <a class="button button-secondary" href="/honeypots/config/import">{{ t(request, 'honeypots.actions.import_config') }}</a>
+      <a class="button" href="/honeypots/new">{{ t(request, 'honeypots.actions.add') }}</a>
+    </div>
   </div>
 
-  {% if rows %}
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th>Hostname</th>
-          {% if show_company_column %}<th>Company</th>{% endif %}
-          <th>Status</th>
-          <th>Location</th>
-          <th>Last seen</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in rows %}
-        <tr>
-          <td><a href="/honeypots/{{ row.honeypot.id }}">{{ row.honeypot.hostname }}</a></td>
-          {% if show_company_column %}<td>{{ row.honeypot.company.name }}</td>{% endif %}
-          <td>
-            {% if row.status.value == "online" %}<span class="badge badge-ok">online</span>
-            {% elif row.status.value == "offline" %}<span class="badge badge-error">offline</span>
-            {% else %}<span class="badge badge-warn">never seen</span>{% endif %}
-          </td>
-          <td>{{ row.honeypot.location or '—' }}</td>
-          <td>{{ row.honeypot.last_seen_at | local_time('%Y-%m-%d %H:%M %Z') }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  {% if pending_honeypots %}
+    <section class="panel">
+      <h2>{{ t(request, 'honeypots.pending.heading') }}</h2>
+      <p class="hint">{{ t(request, 'honeypots.pending.description') }}</p>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>{{ t(request, 'honeypots.pending.ip') }}</th>
+            <th>{{ t(request, 'honeypots.pending.hostname') }}</th>
+            <th>{{ t(request, 'honeypots.pending.os') }}</th>
+            <th>{{ t(request, 'honeypots.pending.seen') }}</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for pending in pending_honeypots %}
+            <tr>
+              <td>{{ pending.ip_address }}</td>
+              <td>{{ pending.reported_hostname or '—' }}</td>
+              <td>{{ pending.os_version or '—' }}</td>
+              <td>{{ pending.created_at | local_time('%Y-%m-%d %H:%M %Z') }}</td>
+              <td>
+                <a class="button"
+                   href="/honeypots/new?ip_address={{ pending.ip_address | urlencode }}&name={{ (pending.reported_hostname or '') | urlencode }}">
+                  {{ t(request, 'honeypots.pending.use_this') }}
+                </a>
+                <form action="/honeypots/pending/{{ pending.id }}/dismiss" method="post"
+                      class="inline-form">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button type="submit" class="button button-secondary">{{ t(request, 'honeypots.pending.dismiss') }}</button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  {% endif %}
+
+  {% if saved_views %}
+    <div class="saved-views">
+      {% for view in saved_views %}
+        <span class="saved-view-chip">
+          <a href="/honeypots?{{ view.query_string }}">{{ view.name }}</a>
+          <form method="post" action="/honeypots/views/{{ view.id }}/delete" class="inline-form"
+                data-confirm="Delete the saved view &quot;{{ view.name }}&quot;?">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="link-button" aria-label="Delete saved view {{ view.name }}">&times;</button>
+          </form>
+        </span>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <div class="honeypots-toolbar">
+    {% include "partials/honeypot_search_form.html" %}
+
+    <div class="view-mode-toggle" role="group" aria-label="{{ t(request, 'honeypots.title') }}">
+      {% for mode, label_key in (('table', 'honeypots.view.table'), ('list', 'honeypots.view.list'), ('cards', 'honeypots.view.cards')) %}
+        <form method="post" action="/honeypots/view-mode" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="view" value="{{ mode }}">
+          <input type="hidden" name="next" value="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}">
+          <button type="submit" class="button {{ 'button' if view_mode == mode else 'button-secondary' }}"
+                  aria-pressed="{{ 'true' if view_mode == mode else 'false' }}">{{ t(request, label_key) }}</button>
+        </form>
+      {% endfor %}
+    </div>
+  </div>
+
+  {% if q or tag %}
+    <form method="post" action="/honeypots/views" class="inline-form stack-gap">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="q" value="{{ q }}">
+      {% for t_val in tag %}<input type="hidden" name="tag" value="{{ t_val }}">{% endfor %}
+      <input type="hidden" name="tag_mode" value="{{ tag_mode }}">
+      <input type="text" name="name" class="inline-text-input"
+             placeholder="{{ t(request, 'honeypots.save_view.placeholder') }}" maxlength="100" required>
+      <button type="submit" class="button button-secondary">{{ t(request, 'honeypots.save_view.submit') }}</button>
+    </form>
+  {% endif %}
+
+  {% if request.query_params.get('view_error') == 'duplicate_name' %}
+    <div class="alert alert-error"><p>{{ t(request, 'honeypots.save_view.duplicate') }}</p></div>
+  {% endif %}
+
+  {% if bulk_error %}
+    <div class="alert alert-error"><p>{{ bulk_error }}</p></div>
+  {% endif %}
+  {% if power_skipped %}
+    <div class="alert alert-warn">
+      <p>{{ t(request, 'honeypots.power_skipped', count=power_skipped) }}</p>
+    </div>
+  {% endif %}
+
+  {% if not honeypots %}
+    <div class="empty-state">
+      {% if q %}
+        {# `| safe`: the translation string itself is trusted app content
+           (from app/i18n/locales/*.json, never user input) and contains
+           literal quote marks around the placeholder — autoescape would
+           otherwise turn those into &#34; the same way it would for any
+           other Jinja expression. `query=q` is still escaped correctly:
+           `.format()` substitutes the *escaped* value in already, since
+           the interpolation happens before this `| safe` marks the
+           surrounding template text as pre-escaped. #}
+        <p>{{ t(request, 'honeypots.empty.no_match', query=q | e) | safe }}</p>
+      {% elif tag %}
+        <p>{{ t(request, 'honeypots.empty.no_filter_match') }}</p>
+      {% else %}
+        <p>{{ t(request, 'honeypots.empty.none_yet') }}</p>
+        <a class="button" href="/honeypots/new">{{ t(request, 'honeypots.empty.add_first') }}</a>
+      {% endif %}
+    </div>
   {% else %}
-    <p class="hint">No honeypots yet.</p>
+    <form method="post" class="form form-wide" id="bulk-actions-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+      {% if view_mode == 'list' %}
+        <ul class="honeypot-compact-list">
+          {% for honeypot in honeypots %}
+            <li class="honeypot-compact-row">
+              <input type="checkbox" name="honeypot_ids" value="{{ honeypot.id }}"
+                     aria-label="Select {{ honeypot.name }}">
+              {{ render_os_badge(honeypot.os_id, size=18) }}
+              <a href="/honeypots/{{ honeypot.id }}" class="honeypot-compact-name">{{ honeypot.name }}</a>
+              {{ status_badge(honeypot) }}
+              {{ tag_chips(honeypot) }}
+            </li>
+          {% endfor %}
+        </ul>
+      {% elif view_mode == 'cards' %}
+        <div class="honeypot-card-grid">
+          {% for honeypot in honeypots %}
+            <div class="honeypot-card">
+              <div class="honeypot-card-header">
+                <input type="checkbox" name="honeypot_ids" value="{{ honeypot.id }}"
+                       aria-label="Select {{ honeypot.name }}">
+                {{ render_os_badge(honeypot.os_id, size=32) }}
+                <a href="/honeypots/{{ honeypot.id }}" class="honeypot-card-name">{{ honeypot.name }}</a>
+              </div>
+              <dl class="honeypot-card-details">
+                <dt>IP</dt><dd>{{ honeypot.ip_address }}</dd>
+                <dt>{{ t(request, 'honeypots.table.company') }}</dt>
+                <dd>
+                  {% if honeypot.company %}
+                    <a href="/companies/{{ honeypot.company.id }}">{{ honeypot.company.name }}</a>
+                  {% else %}
+                    <span class="hint">—</span>
+                  {% endif %}
+                </dd>
+              </dl>
+              <div class="honeypot-card-badges">
+                {{ status_badge(honeypot) }}
+                {% include "partials/honeypot_update_status_cell.html" %}
+                {{ host_key_badge(honeypot) }}
+              </div>
+              {% set sample = latest_monitoring.get(honeypot.id) %}
+              {% if sample %}
+                <div class="honeypot-card-usage">
+                  {{ usage_bar('CPU', sample.cpu_percent) }}
+                  {% if sample.ram_used_bytes is not none and sample.ram_total_bytes %}
+                    {{ usage_bar('RAM', sample.ram_used_bytes / sample.ram_total_bytes * 100) }}
+                  {% endif %}
+                </div>
+              {% endif %}
+              {% if honeypot.tags %}
+                <div class="honeypot-card-tags">{{ tag_chips(honeypot) }}</div>
+              {% endif %}
+              <a href="/honeypots/{{ honeypot.id }}" class="button button-secondary honeypot-card-details-link">
+                {{ t(request, 'honeypots.table.details') }}
+              </a>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th><input type="checkbox" data-select-all aria-label="Select all honeypots"></th>
+              <th>{{ t(request, 'honeypots.table.name') }}</th>
+              <th>{{ t(request, 'honeypots.table.ip') }}</th>
+              <th>{{ t(request, 'honeypots.table.hostname') }}</th>
+              <th>{{ t(request, 'honeypots.table.company') }}</th>
+              <th>{{ t(request, 'honeypots.table.status') }}</th>
+              <th>{{ t(request, 'honeypots.table.updates') }}</th>
+              <th>{{ t(request, 'honeypots.table.host_key') }}</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for honeypot in honeypots %}
+              <tr>
+                <td><input type="checkbox" name="honeypot_ids" value="{{ honeypot.id }}"></td>
+                <td>
+                  {{ render_os_badge(honeypot.os_id) }}
+                  <a href="/honeypots/{{ honeypot.id }}">{{ honeypot.name }}</a>
+                  {% if honeypot.tags %}
+                    <br>
+                    {{ tag_chips(honeypot) }}
+                  {% endif %}
+                </td>
+                <td>{{ honeypot.ip_address }}</td>
+                <td>{{ honeypot.discovered_hostname or '—' }}</td>
+                <td>
+                  {% if honeypot.company %}
+                    <a href="/companies/{{ honeypot.company.id }}">{{ honeypot.company.name }}</a>
+                  {% else %}
+                    <span class="hint">—</span>
+                  {% endif %}
+                </td>
+                <td>{{ status_badge(honeypot) }}</td>
+                <td>{% include "partials/honeypot_update_status_cell.html" %}</td>
+                <td>{{ host_key_badge(honeypot) }}</td>
+                <td><a href="/honeypots/{{ honeypot.id }}">{{ t(request, 'honeypots.table.details') }}</a></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+
+      <div class="page-header-actions" id="bulk-actions-bar">
+        <span class="hint">{{ t(request, 'honeypots.bulk.with_selected') }}</span>
+        <button type="submit" formaction="/honeypots/bulk/check-updates" class="button button-secondary">
+          {{ t(request, 'honeypots.bulk.check_updates') }}
+        </button>
+        <select name="strategy" aria-label="Upgrade strategy for bulk update">
+          <option value="dist_upgrade">dist-upgrade</option>
+          <option value="full_upgrade">full-upgrade</option>
+        </select>
+        <button type="submit" formaction="/honeypots/bulk/updates" class="button">{{ t(request, 'honeypots.bulk.run_update') }}</button>
+        <button type="submit" formaction="/honeypots/bulk/power-confirm/reboot" class="button button-secondary">
+          {{ t(request, 'honeypots.bulk.reboot') }}
+        </button>
+        <button type="submit" formaction="/honeypots/bulk/power-confirm/shutdown" class="button button-danger">
+          {{ t(request, 'honeypots.bulk.shutdown') }}
+        </button>
+        <input type="text" name="tags" class="inline-text-input" placeholder="{{ t(request, 'honeypots.bulk.tags_placeholder') }}"
+               aria-label="Tags for the buttons below">
+        <button type="submit" formaction="/honeypots/bulk/tags/add" class="button button-secondary">
+          {{ t(request, 'honeypots.bulk.add_tags') }}
+        </button>
+        <button type="submit" formaction="/honeypots/bulk/tags/remove" class="button button-secondary">
+          {{ t(request, 'honeypots.bulk.remove_tags') }}
+        </button>
+      </div>
+    </form>
+
+    {% if page > 1 or has_more %}
+      {% set tag_qs %}{% for t_val in tag %}&tag={{ t_val | urlencode }}{% endfor %}{% if tag_mode == 'and' and tag | length > 1 %}&tag_mode=and{% endif %}{% endset %}
+      <div class="page-header-actions">
+        {% if page > 1 %}
+          <a class="button button-secondary" href="/honeypots?q={{ q | urlencode }}{{ tag_qs }}&page={{ page - 1 }}">
+            {{ t(request, 'honeypots.pagination.previous') }}
+          </a>
+        {% endif %}
+        {% if has_more %}
+          <a class="button button-secondary" href="/honeypots?q={{ q | urlencode }}{{ tag_qs }}&page={{ page + 1 }}">
+            {{ t(request, 'honeypots.pagination.next') }}
+          </a>
+        {% endif %}
+      </div>
+    {% endif %}
   {% endif %}
 {% endblock %}

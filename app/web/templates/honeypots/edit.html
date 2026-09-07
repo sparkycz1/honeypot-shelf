@@ -1,0 +1,250 @@
+{% extends "base.html" %}
+{% from "partials/_tabnav.html" import render as render_tabnav %}
+
+{% block title %}Settings — {{ honeypot.name }} — HoneyHive{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>{{ honeypot.name }}</h1>
+  </div>
+
+  {{ render_tabnav(tabs, active_tab) }}
+
+  {% if honeypot.readiness_missing %}
+    <div class="alert alert-warn">
+      <p>
+        This honeypot is missing:
+        {% for item in honeypot.readiness_missing %}{{ item }}{% if not loop.last %}; {% endif %}{% endfor %}.
+      </p>
+      {% if honeypot.auth_method.value == 'password' %}
+        <p class="hint">Run "Run initial setup" below to fix this.</p>
+      {% elif honeypot.username == 'root' %}
+        <p class="hint">
+          This honeypot already connects as <code>root</code> — nothing
+          needs sudo access it doesn't already have. The credential
+          already on file is enough to install what's missing directly,
+          no login needed.
+        </p>
+        <form method="post" action="/honeypots/{{ honeypot.id }}/fix-readiness-directly"
+              class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit" class="button">Install now</button>
+        </form>
+      {% else %}
+        <p class="hint">
+          Add this sudoers rule yourself over your own SSH session (then
+          click "Re-check" below) — often the only option, since password
+          SSH to a privileged account is commonly disabled by policy:
+        </p>
+        <pre><code>cat &gt; /etc/sudoers.d/{{ honeypot.username }} &lt;&lt;'EOF'
+{{ honeypot.username }} ALL=(root) NOPASSWD: /usr/bin/apt-get, /usr/sbin/shutdown, /usr/sbin/dmidecode
+EOF
+chmod 440 /etc/sudoers.d/{{ honeypot.username }}
+visudo -cf /etc/sudoers.d/{{ honeypot.username }}</code></pre>
+        <details>
+          <summary>Or let HoneyHive do it (needs a one-time root/sudo login)</summary>
+          <p class="hint">
+            This honeypot already uses HoneyHive's own SSH key for everyday
+            use — fixing the items above needs a root-equivalent login just
+            this once, the same as the original setup did. Nothing is
+            stored afterward; on success this honeypot goes right back to
+            using its own SSH key. This won't work if password SSH to that
+            account is disabled — use the manual command above instead.
+          </p>
+          <form method="post" action="/honeypots/{{ honeypot.id }}/run-onboarding-with-credential"
+                class="form" autocomplete="off"
+                data-confirm="Temporarily connect as this account to fix what's missing, then switch back to HoneyHive's own SSH key?">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label for="readiness_username">Username</label>
+            <input type="text" id="readiness_username" name="username" value="root" required>
+            <label for="readiness_password">Password</label>
+            <input type="password" id="readiness_password" name="password" required>
+            <button type="submit" class="button">Run initial setup</button>
+          </form>
+        </details>
+      {% endif %}
+      <form method="post" action="/honeypots/{{ honeypot.id }}/recheck-readiness"
+            class="inline-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="button button-secondary">Re-check</button>
+      </form>
+    </div>
+  {% endif %}
+
+  {% if errors %}
+    <div class="alert alert-error">
+      {% for error in errors %}<p>{{ error }}</p>{% endfor %}
+    </div>
+  {% endif %}
+
+  <form method="post" action="/honeypots/{{ honeypot.id }}/edit" class="form" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <label for="name">Name</label>
+    <input type="text" id="name" name="name" required maxlength="255" value="{{ honeypot.name }}">
+
+    <label for="ip_address">IP address</label>
+    <input type="text" id="ip_address" name="ip_address" required maxlength="255"
+           value="{{ honeypot.ip_address }}">
+    {% if honeypot.host_key_fingerprint %}
+      <p class="hint">
+        Changing the IP address or port resets the pinned host key
+        fingerprint and gathered facts below — you'll need to
+        re-discover and re-confirm the fingerprint before connecting again.
+      </p>
+    {% endif %}
+
+    <label for="port">SSH port</label>
+    <input type="number" id="port" name="port" min="1" max="65535" value="{{ honeypot.port }}">
+
+    <label for="username">Username</label>
+    <input type="text" id="username" name="username" required maxlength="255"
+           value="{{ honeypot.username }}">
+
+    <label for="auth_method">Authentication method</label>
+    <select id="auth_method" name="auth_method">
+      {% for method in auth_methods %}
+        <option value="{{ method.value }}" {% if honeypot.auth_method == method %}selected{% endif %}>
+          {{ 'SSH key (recommended)' if method.value == 'ssh_key' else 'Password (not recommended)' }}
+        </option>
+      {% endfor %}
+    </select>
+    <p class="hint">
+      See <a href="/settings">Settings</a> for the app's SSH public key.
+    </p>
+
+    <label for="secret">Password</label>
+    <textarea id="secret" name="secret" rows="2"
+      placeholder="{% if honeypot.secret_encrypted %}Leave empty to keep the current password unchanged.{% else %}Only used if 'Password' is selected above.{% endif %}"></textarea>
+
+    {% if current_user.is_superadmin %}
+      <label for="company_id">Company</label>
+      <select id="company_id" name="company_id" required>
+        {% for company in companies %}
+          <option value="{{ company.id }}" {% if honeypot.company_id == company.id %}selected{% endif %}>
+            {{ company.name }}
+          </option>
+        {% endfor %}
+      </select>
+    {% endif %}
+
+    <label for="location">Location</label>
+    <input type="text" id="location" name="location" maxlength="255" value="{{ honeypot.location or '' }}"
+           placeholder="e.g. server room, floor 2">
+
+    <label for="description">Notes</label>
+    <textarea id="description" name="description" rows="2">{{ honeypot.description or '' }}</textarea>
+
+    <label for="tags">Tags</label>
+    <input type="text" id="tags" name="tags" list="tag-suggestions"
+           placeholder="prod, web, praha-dc1"
+           value="{{ honeypot.tags | map(attribute='name') | join(', ') }}">
+    <p class="hint">Comma-separated. Independent of the company above — a honeypot can carry any number.</p>
+    <datalist id="tag-suggestions">
+      {% for existing_tag in all_tags %}<option value="{{ existing_tag.name }}">{% endfor %}
+    </datalist>
+
+    <label for="runbook">Runbook</label>
+    <textarea id="runbook" name="runbook" rows="8"
+              placeholder="How to deal with this server, who owns it, anything worth knowing…">{{ honeypot.runbook or '' }}</textarea>
+    <p class="hint">Markdown supported. Shown on the Overview tab.</p>
+
+    <label>
+      <input type="checkbox" name="is_active" {% if honeypot.is_active %}checked{% endif %}>
+      Active (included in reachability checks and facts refresh)
+    </label>
+
+    <details class="form-advanced">
+      <summary>Overwrite check intervals</summary>
+      <p class="hint">
+        Leave blank to use the instance-wide default set in <code>.env</code>.
+        Only a <em>larger</em> value than the default actually changes
+        anything — both sweeps still run at the global cadence, a honeypot
+        with a longer interval is just skipped on ticks that come too soon.
+      </p>
+
+      <label for="reachability_check_interval_seconds">Reachability check interval (seconds)</label>
+      <input type="number" id="reachability_check_interval_seconds"
+        name="reachability_check_interval_seconds" min="1"
+        placeholder="default: {{ global_settings.reachability_check_interval_seconds }}"
+        value="{{ honeypot.reachability_check_interval_seconds or '' }}">
+
+      <label for="facts_refresh_interval_seconds">Facts refresh interval (seconds)</label>
+      <input type="number" id="facts_refresh_interval_seconds"
+        name="facts_refresh_interval_seconds" min="1"
+        placeholder="default: {{ global_settings.facts_refresh_interval_seconds }}"
+        value="{{ honeypot.facts_refresh_interval_seconds or '' }}">
+
+      <label for="monitoring_interval_seconds">Monitoring sample interval (seconds)</label>
+      <input type="number" id="monitoring_interval_seconds"
+        name="monitoring_interval_seconds" min="1"
+        placeholder="default: {{ global_settings.monitoring_interval_seconds }}"
+        value="{{ honeypot.monitoring_interval_seconds or '' }}">
+
+      <label for="monitoring_history_retention_days">Monitoring history retention (days)</label>
+      <input type="number" id="monitoring_history_retention_days"
+        name="monitoring_history_retention_days" min="1"
+        placeholder="default: {{ app_settings.monitoring_history_retention_days or 'keep forever' }}"
+        value="{{ honeypot.monitoring_history_retention_days or '' }}">
+      <p class="hint">
+        This one isn't a sweep interval — it just picks how long <em>this
+        honeypot's</em> samples are kept before the daily retention purge
+        deletes them, overriding the instance-wide default set in
+        <a href="/settings">Settings</a>.
+      </p>
+    </details>
+
+    <button type="submit" class="button">Save</button>
+    <a class="button button-secondary" href="/honeypots/{{ honeypot.id }}">Cancel</a>
+  </form>
+
+  {% if honeypot.auth_method.value == 'password' %}
+    <section class="panel">
+      <h2>Initial setup</h2>
+      {% if not honeypot.host_key_fingerprint %}
+        <p class="hint">Confirm the server's key fingerprint on the Overview tab first.</p>
+      {% else %}
+        <p class="hint">
+          Prepares this honeypot the same way the wiki page "Ansible Onboarding"'s
+          playbook would, run directly over SSH instead: creates a dedicated
+          "HoneyHive" user, installs this app's own SSH public key into it,
+          grants it passwordless sudo scoped to <code>apt-get</code>/<code>shutdown</code>
+          (and <code>flatpak</code>/<code>snap</code>, if either is installed), and
+          installs <code>ncurses-term</code> (colors/box-drawing in the Terminal tab —
+          best-effort, never blocks the rest). <strong>The password above must belong
+          to root, or an account that already behaves like root</strong> — there is no
+          sudo escalation to fall back on here. On success this honeypot switches to
+          using HoneyHive's own SSH key, and the password above is discarded.
+        </p>
+        {% if onboarding_error %}
+          <div class="alert alert-error"><p>{{ onboarding_error }}</p></div>
+        {% endif %}
+        {% if onboarding_output %}
+          <div class="alert alert-ok">
+            <p>Setup completed — this honeypot now uses HoneyHive's own SSH key.</p>
+          </div>
+          <details>
+            <summary>Setup script output</summary>
+            <pre><code>{{ onboarding_output }}</code></pre>
+          </details>
+        {% endif %}
+        <form method="post" action="/honeypots/{{ honeypot.id }}/run-onboarding"
+              class="inline-form"
+              data-confirm="Create a &quot;HoneyHive&quot; user, grant it scoped sudo, and switch this honeypot to HoneyHive's own SSH key?">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit" class="button">Run initial setup</button>
+        </form>
+      {% endif %}
+    </section>
+  {% endif %}
+
+  <section class="panel">
+    <h2>Delete this honeypot</h2>
+    <p class="hint">This can't be undone.</p>
+    <form method="post" action="/honeypots/{{ honeypot.id }}/delete"
+          class="inline-form" data-confirm="Delete this honeypot?">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="button button-danger">Delete honeypot</button>
+    </form>
+  </section>
+{% endblock %}

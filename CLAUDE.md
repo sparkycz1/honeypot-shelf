@@ -4,32 +4,32 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-HoneyHive: a FastAPI + htmx web app for **monitoring a fleet of
-[OpenCanary](https://github.com/thinkst/opencanary) honeypots** (Raspberry
-Pis deployed at customer sites) across **multiple companies**, with
-per-company RBAC. Server-rendered Jinja2 + htmx, not a SPA. Python 3.14,
-SQLAlchemy 2.0 async + PostgreSQL, Celery + Redis for daily housekeeping
-jobs, deployed via Docker Compose only.
+HoneyHive: a FastAPI + htmx web app for **managing and monitoring a fleet
+of [OpenCanary](https://github.com/thinkst/opencanary) honeypots**
+(Raspberry Pis deployed at customer sites) across **multiple companies**,
+with per-company RBAC. Server-rendered Jinja2 + htmx, not a SPA. Python
+3.14, SQLAlchemy 2.0 async + PostgreSQL, Celery + Redis for background
+work, deployed via Docker Compose only.
 
 **This project is derived from a sister project, [debcontrol](https://github.com/sparkycz1/debcontrol)**
-(a Debian fleet-management app for the same team) — deliberately reused:
-the tech stack, reverse-proxy setup, project layout, and the *entire* auth
+(a Debian fleet-management app for the same team) — reused near-verbatim:
+the tech stack, reverse-proxy setup, project layout, the *entire* auth
 system (local/LDAP/OIDC login, sessions, TOTP, WebAuthn/passkeys, per-user
-API tokens, audit log, CSRF/CSP/security headers). Deliberately **not**
-reused: debcontrol's `Role`/`Permission` matrix (replaced by a much flatter
-model — see below), its machine-group scoping (replaced by `Company`
-scoping), scheduling, and the AI assistant.
+API tokens, audit log, CSRF/CSP/security headers), and the **entire SSH
+management layer** (`app/ssh/`, host-key pinning, the interactive browser
+terminal, facts/packages/services/monitoring/update sweeps, power actions,
+Scheduling, the REST API) — a `Honeypot` is managed exactly like
+debcontrol's `Machine`. Deliberately **not** reused: debcontrol's
+`Role`/`Permission` matrix (replaced by a much flatter model — see below),
+its machine-group scoping (replaced by `Company` scoping), and the AI
+assistant. When in doubt about *why* something is built a certain way and
+it isn't explained below, the debcontrol repo/wiki is probably the
+reference this copied from.
 
-**SSH-based remote management IS in scope, not yet built.** `READ_WRITE`
-on a `Honeypot` is meant to include an interactive terminal and host
-configuration/IP changes — i.e. this project needs debcontrol's SSH client
-layer (`app/ssh/`, `SSHIdentity`, host-key pinning, `terminal_ws.py`)
-ported in and scoped per company, not just the monitoring/ingest half this
-scaffold currently has. See
-[wiki/Home.md](wiki/Home.md#ssh-based-remote-management--the-next-major-piece-to-build)
-before starting that work. When in doubt about *why* something is built a
-certain way and it isn't explained below, the debcontrol repo/wiki is
-probably the reference this copied from.
+**This project also adds its own thing debcontrol has no equivalent of**:
+OpenCanary event ingestion (`POST /api/ingest/{honeypot_id}/events`,
+`app/db/models/honeypot_event.py`) and the company-scoped Dashboard built
+on top of it — see "Architecture" below.
 
 ## RBAC: the one thing that's genuinely different from debcontrol
 
@@ -40,16 +40,21 @@ probably the reference this copied from.
   or
 - belongs to **exactly one `Company`** (`User.company_id`, required) with
   exactly one **`AccessLevel`** (`User.access_level`): `READ` or
-  `READ_WRITE`. Nothing in between, no per-honeypot grants.
+  `READ_WRITE`. Nothing in between, no per-honeypot grants. `READ_WRITE`
+  covers everything a company user can do — terminal, facts, updates,
+  power, scheduling — there is no separate "terminal permission" the way
+  debcontrol's `action.terminal` was its own grant.
 
 See [`app/db/models/user.py`](app/db/models/user.py)'s module docstring for
 the full reasoning and the DB `CheckConstraint` enforcing this shape, and
 [`app/auth/scope.py`](app/auth/scope.py) for how a request gets checked
 against it (`app.auth.dependencies.require_write` for "can this user write
-at all", `app.auth.scope.ensure_company_access`/`visible_company_id` for
-"which company"). **Out-of-scope reads 404, never 403** — same reasoning
-debcontrol's machine-group scoping used (a 403 would itself leak that the
-company/honeypot exists).
+at all", `app.auth.scope.ensure_company_access`/`visible_company_id`/
+`has_company_access` for "which company"). **Out-of-scope reads 404, never
+403** — same reasoning debcontrol's machine-group scoping used (a 403
+would itself leak that the company/honeypot exists). Companies, Users,
+Settings, and the Audit log are **superadmin-only** end to end (web and
+REST API) — see [wiki/Home.md](wiki/Home.md) for that product decision.
 
 ## Commands
 
@@ -57,7 +62,7 @@ company/honeypot exists).
 uv sync                          # install deps into .venv (needed for tests/lint/mypy)
 uv run pytest                    # full suite — no real Postgres/Redis/Celery broker touched
 uv run pytest tests/test_x.py    # one file
-uv run ruff check .               # lint
+uv run ruff check .              # lint
 uv run mypy app alembic tests    # type check (strict for app/ and alembic/)
 uv run alembic revision --autogenerate -m "..."   # after changing a model — READ the generated file
 uv run alembic upgrade head
@@ -69,7 +74,11 @@ There is no supported way to run the app itself outside Docker:
 
 **Before committing**, run the same gate debcontrol's history consistently
 uses: `ruff check .`, `mypy app alembic tests`, `pytest`, `alembic heads`
-(single head) — all clean.
+(single head) — all clean. (At the time of the last verified pass:
+`pytest` was clean at 45/45; `ruff check .` had ~95 line-length-only
+`E501`s left over from the mechanical port and no `mypy` run yet — treat
+both as known cleanup debt, not a reason to skip the gate on your own
+change.)
 
 **Every round of changes** bumps `APP_VERSION` in `app/core/version.py`
 **and** `version` in `pyproject.toml` together (patch for a small fix,
@@ -77,62 +86,84 @@ minor for a feature/infrastructure change, major only if explicitly
 asked) — then run `uv lock` and commit the updated `uv.lock` in the same
 commit.
 
-## Current state of this repo — read before assuming a page exists
+## Current state of this repo
 
-This repo is a **freshly scaffolded start**, not a feature-complete app.
-Done and real: the domain models (`Company`, `User`, `Honeypot`,
-`HoneypotEvent`, `CompanySnapshot`), the full auth stack (login/logout,
-sessions, TOTP, WebAuthn, LDAP, OIDC, API tokens, rate limiting, CSRF,
-audit log), company scoping, the event-ingest endpoint
-(`POST /api/ingest/{honeypot_id}/events`), the Dashboard, and read-only
-Honeypots/Companies/Users/Audit/Settings pages. **Not yet built**: create/
-edit/delete forms for honeypots, companies, and users; the SSH-based
-terminal/host-config management `READ_WRITE` is meant to grant (see
-above — this is the single biggest missing piece, not a minor gap); the
-REST API (`/api/v1/...`); an initial Alembic migration (no DB has been
-migrated against these models yet — generate one with `alembic revision
---autogenerate` against a real Postgres before first deploy); a test
-suite; i18n coverage beyond the site chrome.
+Real and verified end-to-end (built, migrated against real Postgres,
+exercised through the actual HTTP stack — not just "imports without
+error"): the full domain model, the entire auth stack, company scoping,
+event ingestion, the Dashboard, full Honeypot CRUD (create/edit/delete,
+host-key discovery/trust, facts/packages/services refresh, the SSH
+terminal and Logs tab, system updates with live output, power actions),
+Company CRUD and bulk actions ("All honeypots"), Scheduling (cron-driven
+actions, company-scoped via `ScheduledTask.owner_company_id`), the REST
+API mirroring all of the above (`/api/v1/...`), Users/Settings
+(LDAP/OIDC/syslog-forwarding config, SSH key rotation, retention
+policies), and an initial Alembic migration. A 45-test suite covers auth,
+company scoping, ingest, the dashboard, honeypot/company/schedule CRUD,
+`pg_enum`, i18n, and config.
+
+**Known gaps, not yet done**: i18n coverage is still just the site
+chrome (most of the ported pages' strings are plain English, same
+"not yet translated" state debcontrol itself is in for many pages); the
+~95 `ruff` line-length warnings from the mechanical port haven't been
+manually wrapped; `mypy --strict` hasn't been run against this codebase
+yet (debcontrol's own code is strict-typed, but the porting/adaptation
+here wasn't type-checked as it went); no CI workflow file exists yet.
+None of these block using the app.
 
 Settled product decisions (see [wiki/Home.md](wiki/Home.md) for the full
 list): only a superadmin creates companies/honeypots/users — a company's
-own `READ_WRITE` user never does; the audit log and Settings stay
-superadmin-only; no alerting in v1 (dashboard/overview only).
+own `READ_WRITE` user manages honeypots *within* their own company (via
+`/honeypots`, already scoped) but never creates a company or another
+user; the audit log and Settings stay superadmin-only; no alerting in v1
+(dashboard/overview only); `READ_WRITE` includes the SSH terminal and host
+config, not just HoneyHive-side metadata.
 
 ## Architecture, beyond what one file shows
 
-- **Monitoring today is one-way and agentless; remote management (SSH) is
-  planned but not built** (see above). Right now HoneyHive never SSHes
-  into a honeypot and has no live agent polling it — a
-  honeypot's own forwarder (see
-  [wiki/Honeypot-Onboarding.md](wiki/Honeypot-Onboarding.md)) pushes
-  OpenCanary's JSON events to `POST /api/ingest/{honeypot_id}/events`;
-  HoneyHive only ever reads that stream. "Online"/"offline" status
-  (`app/services/honeypot_status.py`) is purely derived from how recently
-  an event arrived, compared against `HONEYPOT_OFFLINE_AFTER_SECONDS` —
-  there's no separate reachability check.
+- **Two independent "is this honeypot alive" signals coexist — don't
+  conflate them.** `Honeypot.is_reachable`/`last_ping_at` is the
+  SSH-management-plane check (identical to debcontrol's `Machine`, a
+  periodic unauthenticated TCP connect). `Honeypot.last_seen_at`/
+  `last_seen_ip` is when this honeypot last pushed an OpenCanary *event*
+  to `POST /api/ingest/{id}/events` (see
+  `app.services.honeypot_status.is_online`/`status_of`) — a honeypot can
+  be SSH-reachable with OpenCanary itself down, or vice versa. The
+  Dashboard's "online" count uses the event signal; the SSH-facts-derived
+  counts (`needs_updates`, etc., `app.services.company_stats`) use the
+  other. `CompanySnapshot` (the Dashboard trend chart's daily rollup)
+  stores both.
+- **Every timestamp comparison in Python (not SQL) must normalize
+  naive-vs-aware first** — SQLite (what tests run against) drops tzinfo on
+  round-trip; real Postgres columns (`DateTime(timezone=True)`, see
+  `app.db.base.Base.type_annotation_map`) never do. This bit the Dashboard
+  once already (fixed via `app.services.honeypot_status.as_aware_utc`/
+  `is_online`) — reuse that helper (or the identical pattern in
+  `User.is_locked_out`/`app.audit._normalized_timestamp`) for any new
+  Python-side datetime comparison; a bare `a >= b` that works against
+  SQLite in a hand-run test can still `TypeError` there and won't be
+  caught by `pytest` unless a test actually exercises it (see
+  `tests/test_dashboard.py`).
+- **Every `ScheduledTask` belongs to exactly one company**
+  (`owner_company_id`) — unlike debcontrol, where "All machines" meant the
+  whole (single-tenant) fleet, `ALL_HONEYPOTS` here means "every honeypot
+  in this schedule's own company." `app.scheduling.targets.
+  task_within_scope` (read, `write=False`) vs. `target_within_scope(...,
+  write=True)` (create/edit) — mixing these up silently makes schedules
+  invisible to `READ`-only users, which is exactly the bug the current
+  code was fixed for; if you touch scheduling scoping, keep read and write
+  paths distinct.
 - **The async/sync seam** and **fork safety** (Celery workers rebuild the
   DB engine after forking) are copied verbatim from debcontrol — see
   [`app/tasks/celery_app.py`](app/tasks/celery_app.py)'s module docstring.
-  Unlike debcontrol, there's no per-machine fan-out needing this: Celery
-  here only runs three daily housekeeping jobs
-  ([`app/tasks/jobs.py`](app/tasks/jobs.py)) — purge old events, purge old
-  audit log entries, and roll up yesterday's per-company counts into
-  `CompanySnapshot` for the Dashboard trend chart. Event ingestion itself
-  is a plain synchronous DB write on the web process, not queued.
 - **CSP is strict — no inline scripts or styles, no CDN.** Same as
-  debcontrol: htmx and Swagger UI are vendored under `app/web/static/`.
-  New CSS reads colors through `--color-*` custom properties in
-  `style.css`.
+  debcontrol: htmx, Swagger UI, and the OS-badge SVGs are vendored under
+  `app/web/static/`. New CSS reads colors through `--color-*` custom
+  properties in `style.css`.
 - **Audit logging** (`app.audit.log_event`) is unchanged from debcontrol —
   hash-chained, called once per human-initiated mutation, action codes
   `lowercase.dot.separated` (e.g. `honeypot.create`,
-  `user.access_level.update`).
-- **Dashboard scoping**: every user sees the *sum* across their own
-  company's honeypots/events (per the product brief — "every user sees
-  the total across all their honeypots"); a superadmin additionally sees a
-  per-company breakdown. See
-  [`app/web/routes/dashboard.py`](app/web/routes/dashboard.py).
+  `user.access_level.update`, `company.honeypot.add`).
 - **UI strings go through `t()`**, backed by `app/i18n/` (English + Czech
   today) — same mechanism as debcontrol, copied as-is. Coverage today is
   just the site chrome; extend it the same way debcontrol's wiki
@@ -142,25 +173,32 @@ superadmin-only; no alerting in v1 (dashboard/overview only).
 ## Checklist for every change
 
 1. **Company scoping.** Any new read/write path touching a honeypot,
-   event, or company must go through
-   `app.auth.scope.ensure_company_access`/`visible_company_id` — never
-   trust a `company_id`/`honeypot_id` from the client without checking it
-   against the current user first.
+   event, company, or scheduled task must go through
+   `app.auth.scope`/`app.scheduling.targets` — never trust a
+   `company_id`/`honeypot_id` from the client without checking it against
+   the current user first, and never reuse a `write=True` scope check for
+   a read-only listing (see "Architecture" above).
 2. **Wiki parity.** Update the relevant `wiki/*.md` page(s) in the same
    change — `wiki/Home.md`'s feature table, `wiki/Architecture.md` for
    *why*/how it works.
 3. **i18n parity.** Any new or changed user-facing string goes through
    `t(request, "...")` and gets a key in `app/i18n/locales/en.json` *and*
    `cs.json`.
-4. **Upgrade safety.** Once this app has a real deployment with data, a
-   new column must be nullable or have a safe server default, and a
-   renamed/removed route or config key must not break someone silently.
+4. **Upgrade safety.** This app has a real Alembic migration and is meant
+   to be deployed with real data — a new column must be nullable or have a
+   safe server default, and a renamed/removed route or config key must not
+   break someone silently.
 5. **Security.** CSRF on every mutating web route, `require_write` +
-   company scoping on both the web and (once built) API side, secrets only
-   ever `encrypt_secret`/stored hashed, no new inline script/style (CSP).
+   company scoping on both the web and API side, secrets only ever
+   `encrypt_secret`/stored hashed, no new inline script/style (CSP).
 6. **Current, not legacy, tech.** Match what's already here (Python 3.14,
    SQLAlchemy 2.0 async, Pydantic v2, FastAPI, htmx 2.x).
-7. **Tag and release.** Once `APP_VERSION`/`pyproject.toml` are bumped and
+7. **Test it.** Add/extend a test in `tests/` for the change — the suite
+   runs against in-memory SQLite (see `tests/conftest.py`), so it's fast
+   and needs no real Postgres/Redis. Run the whole gate (`ruff check .`,
+   `mypy app alembic tests`, `pytest`, `alembic heads`) before considering
+   the change done.
+8. **Tag and release.** Once `APP_VERSION`/`pyproject.toml` are bumped and
    the change is committed and pushed, tag it (`git tag vX.Y.Z` + `git push
    --tags`) and cut a GitHub release (`gh release create vX.Y.Z`).
 

@@ -19,21 +19,40 @@ from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.core.version import APP_VERSION
 from app.db.session import AsyncSessionLocal
+from app.scheduling.builtin_actions import register_builtin_actions
 from app.web.routes import (
     api_docs,
+    api_v1,
+    api_v1_account,
+    api_v1_audit,
+    api_v1_dashboard,
+    api_v1_scheduling,
+    api_v1_settings,
+    api_v1_users,
     audit,
     auth,
     companies,
     dashboard,
     honeypots,
+    inform,
     ingest,
-    settings as settings_routes,
+    live_ws,
+    scheduling,
+    terminal_ws,
     theme,
     users,
+)
+from app.web.routes import (
+    settings as settings_routes,
 )
 
 settings = get_settings()
 configure_logging(settings.log_level)
+# Populates app.scheduling.actions' registry — the "New scheduled task"
+# form reads from it. Idempotent, and also called from
+# app.scheduling.jobs (and again in each forked Celery worker child) so
+# the worker processes have it too without needing to import this module.
+register_builtin_actions()
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "web" / "static"
@@ -158,11 +177,25 @@ def create_app() -> FastAPI:
     app.include_router(dashboard.router)
     app.include_router(honeypots.router)
     app.include_router(companies.router)
+    app.include_router(scheduling.router)
     app.include_router(audit.router)
+    app.include_router(inform.router)
     app.include_router(ingest.router)
+    app.include_router(api_v1.router)
+    app.include_router(api_v1_scheduling.router)
+    app.include_router(api_v1_users.router)
+    app.include_router(api_v1_audit.router)
+    app.include_router(api_v1_settings.router)
+    app.include_router(api_v1_dashboard.router)
+    app.include_router(api_v1_account.router)
     app.include_router(users.router)
     app.include_router(settings_routes.router)
     app.include_router(theme.router)
+    # No HTTP dependency here — WebSocket connections never go through
+    # `app.auth.middleware`, so each of these routers does its own auth
+    # entirely inside the handler. See terminal_ws.py's module docstring.
+    app.include_router(terminal_ws.router)
+    app.include_router(live_ws.router)
 
     @app.get("/", include_in_schema=False)
     async def root() -> Response:

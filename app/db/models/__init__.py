@@ -10,6 +10,16 @@ from app.db.models.company import Company
 from app.db.models.company_snapshot import CompanySnapshot
 from app.db.models.honeypot import Honeypot
 from app.db.models.honeypot_event import HoneypotEvent
+from app.db.models.honeypot_monitoring_sample import HoneypotMonitoringSample
+from app.db.models.honeypot_package import HoneypotPackage
+from app.db.models.honeypot_reachability_sample import HoneypotReachabilitySample
+from app.db.models.honeypot_service import HoneypotService
+from app.db.models.honeypot_tag import Tag
+from app.db.models.honeypot_update_run import HoneypotUpdateRun
+from app.db.models.pending_honeypot import PendingHoneypot
+from app.db.models.saved_honeypot_view import SavedHoneypotView
+from app.db.models.scheduled_task import ScheduledTask
+from app.db.models.ssh_identity import SSHIdentity
 from app.db.models.totp_recovery_code import TotpRecoveryCode
 from app.db.models.user import User
 from app.db.models.user_session import UserSession
@@ -24,6 +34,16 @@ __all__ = [
     "CompanySnapshot",
     "Honeypot",
     "HoneypotEvent",
+    "HoneypotMonitoringSample",
+    "HoneypotPackage",
+    "HoneypotReachabilitySample",
+    "HoneypotService",
+    "HoneypotUpdateRun",
+    "PendingHoneypot",
+    "SSHIdentity",
+    "SavedHoneypotView",
+    "ScheduledTask",
+    "Tag",
     "TotpRecoveryCode",
     "User",
     "UserSession",
