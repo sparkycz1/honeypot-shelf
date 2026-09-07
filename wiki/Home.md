@@ -12,8 +12,10 @@ This project reuses debcontrol's (a sister project managing Debian
 machines over SSH) technology stack, project layout, and entire auth
 system — see [CLAUDE.md](../CLAUDE.md) for what was reused verbatim and
 what's different here (no roles/groups — a flat per-company
-read/read-write model; no SSH machine management; honeypots push events in
-rather than being polled).
+read/read-write model). **Monitoring (event ingestion, dashboard) and
+remote management (SSH terminal, host config/IP changes) are both in
+scope** — see "SSH-based remote management" below; this scaffold only has
+the monitoring half built so far.
 
 ## 📑 Wiki contents
 
@@ -30,37 +32,58 @@ Dashboard, and read-only Honeypots/Companies/Users/Audit/Settings pages.
 Alembic migration, tests. See [CLAUDE.md](../CLAUDE.md)'s "Current state"
 section for the exact list.
 
-### Open product questions
+### Product decisions (settled)
 
-These were still unanswered when this scaffold was written — check with
-whoever's driving the product before building the corresponding feature,
-or check recent commits/issues in case they've since been settled:
+- **Who can create a company/honeypot/user?** Superadmin only. A company
+  user (`READ` or `READ_WRITE`) never creates these — only global admins
+  do. Matches the current nav (Users/Companies/Settings/Audit are all
+  superadmin-gated).
+- **What does `READ_WRITE` mean on a honeypot?** More than HoneyHive-side
+  metadata — it includes **reaching into the honeypot itself**: an
+  interactive terminal, host configuration changes, IP/network settings.
+  This is a much bigger feature than the current scaffold has — see
+  "SSH-based remote management" below.
+- **Alerting**: out of scope for v1 — this is a dashboard/overview tool,
+  not a notification system. (The existing `AppSettings.syslog_*`
+  forwarding-to-Wazuh path, copied from debcontrol, still exists as an
+  escape hatch for anyone who wants alerting via their SIEM instead.)
+- **Audit log / Settings visibility**: superadmin-only, staying as-is.
 
-- **Who can register a new honeypot / create a company / create a user?**
-  Superadmin-only (simplest, matches this scaffold's current nav — Users/
-  Companies/Settings/Audit are all superadmin-gated), or can a company's
-  own `READ_WRITE` user manage their own company's honeypots/users too?
-- **What does "write access" mean for a honeypot?** Renaming/relocating/
-  adding notes and deleting it in HoneyHive only (this app never reaches
-  back into a honeypot), or does it eventually include pushing OpenCanary
-  config changes to the Pi (which would need a very different, SSH-based
-  mechanism this project deliberately doesn't have today)?
-- **Should the audit log / Settings ever be visible to a non-superadmin?**
-  Currently both are superadmin-only, mirroring debcontrol's "audit is a
-  security control over the whole deployment, no partial view" stance —
-  but debcontrol only had one tenant; a company here might reasonably want
-  its own audit trail.
-- **Alerting.** Nothing pages/emails/webhooks anyone today — is that in
-  scope (per-event-type or per-honeypot-offline notifications), and via
-  what channel (email, the existing syslog-forwarding-to-Wazuh path,
-  something else)?
+### SSH-based remote management — the next major piece to build
+
+`READ_WRITE` on a honeypot needs to behave like debcontrol's
+`machine.manage` + `action.terminal`, scoped to the honeypots in a user's
+own company: an interactive browser SSH terminal, and the ability to push
+host configuration (network/IP settings, presumably OpenCanary's own
+config too — confirm exact scope before building) to the Raspberry Pi.
+This scaffold deliberately shipped **without** any SSH client code (see
+CLAUDE.md's original "deliberately not reused" list) — that assumption no
+longer holds and needs walking back:
+
+- Re-add `asyncssh` as a dependency, and an SSH identity mechanism
+  (`app/ssh/`, `SSHIdentity` model) — debcontrol's own implementation
+  (host-key pinning, one shared keypair, rotation) is the reference to
+  port from, adapted so a honeypot's SSH credential is scoped to its
+  `Company` like everything else here.
+- A `terminal_ws.py`-equivalent WebSocket route, gated by `READ_WRITE` +
+  `ensure_company_access` instead of a `Permission` — WebSockets bypass
+  `app.auth.middleware` entirely (Starlette doesn't run HTTP middleware
+  for `scope["type"] == "websocket"`), so this route re-implements the
+  session-cookie + access check itself, exactly like debcontrol's does.
+- Host key pinning matters *more* here than in debcontrol, not less — a
+  honeypot is an intentionally-exposed, high-risk box; never connect
+  without an explicitly confirmed fingerprint.
+- Decide, before building, exactly what "host configuration" covers
+  (network/IP only? OpenCanary's own YAML config, restarting the service
+  after? both?) and whether it's the same one shared SSH identity per
+  Company (like debcontrol's fleet-wide one) or genuinely per-honeypot.
+
+### Still-open questions
+
 - **Event retention & volume.** `EVENT_RETENTION_DAYS` defaults to 180 —
-  is that right for the expected event volume per honeypot, and does
-  anything need events kept longer (compliance, a customer-facing
-  report)?
+  right for the expected event volume per honeypot?
 - **Per-honeypot ingest tokens.** The model (`Honeypot.ingest_token_hash`)
   and the shared `INGEST_TOKEN` fallback both exist, but nothing in the UI
-  generates/rotates a per-honeypot token yet — worth building before many
-  honeypots share one bearer token in practice?
+  generates/rotates a per-honeypot token yet.
 - **A map/geo view, CSV export of events, per-event-type dashboards** —
   none of these exist yet; worth asking which (if any) matter for v1.
