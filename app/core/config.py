@@ -127,6 +127,18 @@ class Settings(BaseSettings):
         default=600, alias="HONEYPOT_OFFLINE_AFTER_SECONDS"
     )
 
+    # --- Branding (nav-bar/login logo, favicon) ---
+    # Either an absolute/relative URL (http://, https://) or a filesystem
+    # path readable inside the `web` container. A URL is linked directly;
+    # a filesystem path is served by the app itself at `/branding/logo` (see
+    # app/web/routes/branding.py) — mount it into the container first (see
+    # docker-compose.yml's commented-out `branding` volume). Unset means
+    # "use the built-in bee mark". See wiki/Installation.md#custom-logo--favicon.
+    logo_source: str | None = Field(default=None, alias="LOGO_SOURCE")
+    # Same idea as `logo_source`, for the browser-tab favicon. Unset means
+    # "use the built-in bee mark".
+    favicon_source: str | None = Field(default=None, alias="FAVICON_SOURCE")
+
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
     # IANA timezone name (e.g. "Europe/Prague") the UI renders timestamps
