@@ -129,6 +129,56 @@ self-service today; a future "require 2FA for every user" toggle would
 need to live on `AppSettings` instead, checked in
 `app.auth.middleware`.
 
+WebAuthn's origin check and OIDC's `redirect_uri` both depend on
+`request.url.scheme` being correct, which needs
+`app.core.proxy_headers.ProxyHeadersMiddleware` (registered outermost in
+`app.main`) to have corrected it from `X-Forwarded-Proto` first when the
+app sits behind a TLS-terminating reverse proxy — otherwise both derive
+"http" no matter what the browser actually used, and WebAuthn fails with
+"Unexpected client data origin". See that module's own docstring and
+`Settings.trusted_proxy_ips` for why trusting it by default is safe, and
+[Installation](Installation.md) for the `TRUSTED_PROXY_IPS` setting. The
+same middleware also fixes `app.audit.log_event`'s recorded source IP and
+the login rate limiter behind a proxy — see "Real client IP behind a
+proxy" below.
+
+**Login is two steps**, not one form: `GET /login` collects only the
+username (plus the OIDC button, if enabled — its label reads "Log in with
+OIDC" unless `AppSettings.oidc_provider_name` names the actual provider,
+e.g. "Entra ID", set on Settings → Integrations), then `GET
+/login/password?username=...` offers a passkey *or* a password for that
+account — a passkey there signs straight in with no password ever
+submitted, the same GitHub/Google-style "next screen" shape. `username`
+travels between the two as a plain query param, the same way `next`
+already does elsewhere — it isn't a secret, and nothing trusts it for
+anything beyond "whose passkeys to offer"; the real authentication
+(password, still checked by the unchanged `POST /login` that screen's
+password form submits to; or WebAuthn) is what actually verifies the
+account. The passkey button is always shown on step two regardless of
+whether the named account actually has one or even exists —
+`app.web.routes.auth._resolve_webauthn_login_user`'s own docstring covers
+why that's deliberate (enumeration-resistance: a nonexistent username and
+a real one with no passkey get an identical error). A passkey used this
+way needs no further second factor — it already *is* one — so it goes
+straight to `_finish_login`, the same function a post-password TOTP/
+passkey confirmation ends at. TOTP/passkey-as-second-factor after a
+password (`/login/totp`) is unchanged.
+
+**Real client IP behind a proxy.** `app.audit.log_event`'s recorded
+`ip_address` and the login/TOTP rate limiter's per-source bucket key both
+read `request.client.host` — correct out of the box when this app's own
+network namespace is what a reverse proxy connects to, but the proxy's
+own IP once one runs as a separate host/container (e.g. Traefik on a
+different machine) instead. `Settings.trust_forwarded_for`
+(`TRUST_FORWARDED_FOR`, off by default) tells the same
+`ProxyHeadersMiddleware` above to also correct `request.client` from
+`X-Forwarded-For` — off by default, unlike scheme trust, because trusting
+it from just anyone would let an attacker spoof a different "source" on
+every login/TOTP attempt and defeat the rate limiter entirely. Only turn
+it on once `TRUSTED_PROXY_IPS` is narrowed to your real proxy's own
+address (not the default `*`) — see `app.core.proxy_headers`'s own
+docstring.
+
 ## 🍯 Honeypot data model
 
 - **`Company`** — a tenant. One row per customer.

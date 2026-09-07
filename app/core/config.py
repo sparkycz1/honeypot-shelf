@@ -7,6 +7,7 @@ committed — see `.env.example`.
 
 from __future__ import annotations
 
+import ipaddress
 from functools import lru_cache
 from urllib.parse import quote
 
@@ -138,6 +139,62 @@ class Settings(BaseSettings):
     # Same idea as `logo_source`, for the browser-tab favicon. Unset means
     # "use the built-in bee mark".
     favicon_source: str | None = Field(default=None, alias="FAVICON_SOURCE")
+
+    # Which reverse proxies to trust `X-Forwarded-Proto` from, for deriving
+    # the *scheme* (http/https, ws/wss) a request actually arrived as —
+    # nothing else (host/port already come through correctly from a
+    # forwarded Host header, which every reverse proxy passes through
+    # untouched by default). Without this, a TLS-terminating proxy leaves
+    # the app seeing plain "http" for every request no matter what the
+    # browser actually used, which breaks WebAuthn/passkeys (the verified
+    # origin has to match exactly what the browser sent) and OIDC login
+    # (the redirect_uri built from the request would have the wrong
+    # scheme). Comma-separated IPs/CIDRs, or the default "*" to trust any
+    # peer — safe here even from an untrusted direct client, since the
+    # only things derived from the corrected scheme are values a forged
+    # header can only cause to *mismatch* a cryptographic check elsewhere
+    # (WebAuthn's browser-signed origin, an OIDC provider's own registered
+    # redirect_uri) and fail closed, never one it can forge a match for.
+    # Narrow this to your actual proxy's IP/subnet if you'd rather not rely
+    # on that reasoning. See app.core.proxy_headers.
+    trusted_proxy_ips: str = Field(default="*", alias="TRUSTED_PROXY_IPS")
+
+    @property
+    def trust_all_proxies(self) -> bool:
+        return self.trusted_proxy_ips.strip() == "*"
+
+    @property
+    def trusted_proxy_networks(
+        self,
+    ) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
+        """Parsed `trusted_proxy_ips` as `ipaddress` networks — empty when
+        `trust_all_proxies` is True (that case is checked separately, since
+        "*" isn't a valid network literal). A bare IP (no `/prefix`) is
+        accepted via `ip_network(..., strict=False)`, same as a /32 or /128."""
+        if self.trust_all_proxies:
+            return []
+        networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+        for part in self.trusted_proxy_ips.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            networks.append(ipaddress.ip_network(part, strict=False))
+        return networks
+
+    # Whether to also trust `X-Forwarded-For` from a `trusted_proxy_ips`
+    # peer, to correct `request.client.host` (the audit log's `ip_address`
+    # column, and the login/TOTP rate limiter's per-source bucket key —
+    # app/auth/rate_limit.py) to the real client behind a reverse proxy
+    # instead of the proxy's own address. Off by default, unlike scheme
+    # trust above: this one *is* a real risk to default on — a client that
+    # can set an arbitrary X-Forwarded-For on each request (true of anyone
+    # reaching this app directly, bypassing your real proxy, e.g. if this
+    # app's port is also exposed) could make every login/TOTP attempt look
+    # like a different source and defeat the rate limiter entirely if this
+    # were trusted from just anyone. Turn this on only once you've also
+    # narrowed `TRUSTED_PROXY_IPS` above to your actual proxy's own
+    # address/subnet (not the default "*") — see app.core.proxy_headers.
+    trust_forwarded_for: bool = Field(default=False, alias="TRUST_FORWARDED_FOR")
 
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
