@@ -18,8 +18,16 @@ system (local/LDAP/OIDC login, sessions, TOTP, WebAuthn/passkeys, per-user
 API tokens, audit log, CSRF/CSP/security headers). Deliberately **not**
 reused: debcontrol's `Role`/`Permission` matrix (replaced by a much flatter
 model — see below), its machine-group scoping (replaced by `Company`
-scoping), SSH machine management, scheduling, and the AI assistant — none
-of that applies here. When in doubt about *why* something is built a
+scoping), scheduling, and the AI assistant.
+
+**SSH-based remote management IS in scope, not yet built.** `READ_WRITE`
+on a `Honeypot` is meant to include an interactive terminal and host
+configuration/IP changes — i.e. this project needs debcontrol's SSH client
+layer (`app/ssh/`, `SSHIdentity`, host-key pinning, `terminal_ws.py`)
+ported in and scoped per company, not just the monitoring/ingest half this
+scaffold currently has. See
+[wiki/Home.md](wiki/Home.md#ssh-based-remote-management--the-next-major-piece-to-build)
+before starting that work. When in doubt about *why* something is built a
 certain way and it isn't explained below, the debcontrol repo/wiki is
 probably the reference this copied from.
 
@@ -78,25 +86,24 @@ sessions, TOTP, WebAuthn, LDAP, OIDC, API tokens, rate limiting, CSRF,
 audit log), company scoping, the event-ingest endpoint
 (`POST /api/ingest/{honeypot_id}/events`), the Dashboard, and read-only
 Honeypots/Companies/Users/Audit/Settings pages. **Not yet built**: create/
-edit/delete forms for honeypots, companies, and users; the REST API
-(`/api/v1/...`); an initial Alembic migration (no DB has been migrated
-against these models yet — generate one with `alembic revision
+edit/delete forms for honeypots, companies, and users; the SSH-based
+terminal/host-config management `READ_WRITE` is meant to grant (see
+above — this is the single biggest missing piece, not a minor gap); the
+REST API (`/api/v1/...`); an initial Alembic migration (no DB has been
+migrated against these models yet — generate one with `alembic revision
 --autogenerate` against a real Postgres before first deploy); a test
-suite; i18n coverage beyond the site chrome. See the open questions this
-was handed back with (ask the user, or check recent commit messages/PRs if
-they've since been answered) before building any of these — several
-depend on product decisions that weren't settled yet when this scaffold
-was written: who can create a honeypot/company/user (superadmin-only, or
-can a company's own `READ_WRITE` user do it for their own company?),
-whether the audit log and Settings should ever be visible to a non-
-superadmin, and what "write access" concretely means for a honeypot
-(rename/relocate/delete only, or also editing its OpenCanary config
-remotely — which this app does **not** do today; see below).
+suite; i18n coverage beyond the site chrome.
+
+Settled product decisions (see [wiki/Home.md](wiki/Home.md) for the full
+list): only a superadmin creates companies/honeypots/users — a company's
+own `READ_WRITE` user never does; the audit log and Settings stay
+superadmin-only; no alerting in v1 (dashboard/overview only).
 
 ## Architecture, beyond what one file shows
 
-- **Honeypots are not managed like debcontrol's machines.** HoneyHive
-  never SSHes into a honeypot and has no live agent polling it. A
+- **Monitoring today is one-way and agentless; remote management (SSH) is
+  planned but not built** (see above). Right now HoneyHive never SSHes
+  into a honeypot and has no live agent polling it — a
   honeypot's own forwarder (see
   [wiki/Honeypot-Onboarding.md](wiki/Honeypot-Onboarding.md)) pushes
   OpenCanary's JSON events to `POST /api/ingest/{honeypot_id}/events`;
