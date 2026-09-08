@@ -1,8 +1,12 @@
 """"Initialize" — provisions a brand new Raspberry Pi OS 13 device (not yet
 managed by HoneyHive at all) into a working OpenCanary honeypot over SSH.
 See `app.ssh.initialize` for exactly what the provisioning script does and
-`app.tasks.jobs.run_honeypot_initialize` for the background task this
-dispatches.
+`app.web.routes.initialize_ws` for where it's actually run — this module
+only ever handles the form (`GET`/`POST /initialize`) and the run page
+shell (`GET /initialize/run/{run_id}`); the SSH connection and live output
+streaming happen entirely in that WebSocket module, the same split
+`app.web.routes.honeypots`/`app.web.routes.terminal_ws` already use for
+the interactive terminal.
 
 Deliberately **not** honeypot-scoped and **doesn't create a `Honeypot`
 row** — it's a standalone tool that runs before a device exists in
@@ -21,26 +25,35 @@ so they can note it down; nothing about it is stored anywhere.
 Gated by `require_write` (not superadmin-only) — same tier as managing
 honeypots within one's own company, since this is preparation for exactly
 that, not company/user/company management.
+
+**Why a `run_id` + redirect instead of running it inline in this POST**:
+a run can take up to `app.ssh.initialize.INITIALIZE_RUN_MAX_SECONDS`
+(an hour) and the operator needs to *see* it happen live — that needs a
+long-lived WebSocket, which a plain POST handler can't hand back. The
+POST here only validates the form and stashes the (never persisted to
+disk) connection details — including the one-time password/NetBird key,
+if given — in `PENDING_RUNS`, an in-process dict keyed by a random
+`run_id`; the redirect target's page immediately opens a WebSocket to
+`/initialize/run/{run_id}/ws`, which pops (single-use) and actually runs
+it. **This assumes a single web process** (true today — see the plain
+`CMD ["uvicorn", ...]` with no `--workers` in the `Dockerfile`; a
+multi-worker deployment would need this moved to Redis instead, the same
+way `app.services.live_updates` already is for a similar reason).
 """
 
 from __future__ import annotations
 
-import asyncio
 import re
+import secrets
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 
-from celery.exceptions import TimeoutError as CeleryTimeoutError
-from fastapi import APIRouter, Depends, Form, Request, Response
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Depends, Form, Request, Response, status
+from fastapi.responses import RedirectResponse
 
-from app.audit import log_event
 from app.auth.dependencies import require_write
-from app.core.config import get_settings
 from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie, verify_csrf
-from app.db.models.audit_log import AuditOutcome
 from app.db.models.honeypot import AuthMethod
-from app.db.session import get_db
-from app.ssh.initialize import INITIALIZE_RUN_TIMEOUT_EXTRA_SECONDS
-from app.tasks import jobs as tasks
 from app.web.templating import templates
 
 router = APIRouter(prefix="/initialize", dependencies=[Depends(require_write)])
@@ -52,9 +65,44 @@ router = APIRouter(prefix="/initialize", dependencies=[Depends(require_write)])
 # safe rather than needing shell-escaping tricks there.
 _DEVICE_NAME_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
 
+# How long an unclaimed run stays pending before `_purge_stale_runs` drops
+# it — generous enough for a slow page load, short enough that a form
+# submitted and then abandoned doesn't leave a password sitting in memory
+# indefinitely.
+_PENDING_RUN_TTL_SECONDS = 15 * 60
 
-async def _render(
-    request: Request, db: AsyncSession, *, errors: list[str] | None = None, **extra: object
+
+@dataclass
+class PendingInitializeRun:
+    """One `POST /initialize` submission, staged for `initialize_ws` to
+    pick up — see this module's own docstring for why this exists instead
+    of running inline. Never written to disk or the DB; popped (removed)
+    the moment a WebSocket actually starts using it."""
+
+    ip_address: str
+    port: int
+    username: str
+    device_name: str
+    auth_method: str
+    password: str | None
+    netbird_setup_key: str | None
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+
+# Module-level, not `app.state` — see the module docstring's single-process
+# caveat either way. `initialize_ws` imports this dict directly.
+PENDING_RUNS: dict[str, PendingInitializeRun] = {}
+
+
+def _purge_stale_runs() -> None:
+    cutoff = datetime.now(UTC) - timedelta(seconds=_PENDING_RUN_TTL_SECONDS)
+    stale = [run_id for run_id, run in PENDING_RUNS.items() if run.created_at < cutoff]
+    for run_id in stale:
+        PENDING_RUNS.pop(run_id, None)
+
+
+async def _render_form(
+    request: Request, *, errors: list[str] | None = None, **extra: object
 ) -> Response:
     csrf_token, new_cookie = get_or_create_csrf_token(request)
     context: dict[str, object] = {
@@ -69,14 +117,13 @@ async def _render(
 
 
 @router.get("")
-async def initialize_form(request: Request, db: AsyncSession = Depends(get_db)) -> Response:
-    return await _render(request, db)
+async def initialize_form(request: Request) -> Response:
+    return await _render_form(request)
 
 
 @router.post("", dependencies=[Depends(verify_csrf)])
-async def initialize_run(
+async def initialize_submit(
     request: Request,
-    db: AsyncSession = Depends(get_db),
     ip_address: str = Form(...),
     device_name: str = Form(...),
     username: str = Form(...),
@@ -106,66 +153,61 @@ async def initialize_run(
     if auth_method == AuthMethod.PASSWORD.value and not password:
         errors.append("A password is required for password authentication.")
 
-    form_values = {
-        "ip_address": ip_address,
-        "device_name": device_name,
-        "username": username,
-        "port": port,
-        "auth_method": auth_method,
-    }
     if errors:
-        return await _render(request, db, errors=errors, **form_values)
+        return await _render_form(
+            request,
+            errors=errors,
+            ip_address=ip_address,
+            device_name=device_name,
+            username=username,
+            port=port,
+            auth_method=auth_method,
+        )
 
-    settings = get_settings()
-    async_result = tasks.run_honeypot_initialize.delay(
-        ip_address,
-        port,
-        username,
-        device_name,
-        auth_method,
-        password or None,
-        netbird_setup_key.strip() or None,
+    _purge_stale_runs()
+    run_id = secrets.token_urlsafe(24)
+    PENDING_RUNS[run_id] = PendingInitializeRun(
+        ip_address=ip_address,
+        port=port,
+        username=username,
+        device_name=device_name,
+        auth_method=auth_method,
+        password=password or None,
+        netbird_setup_key=netbird_setup_key.strip() or None,
+    )
+    return RedirectResponse(
+        url=f"/initialize/run/{run_id}", status_code=status.HTTP_303_SEE_OTHER
     )
 
-    error: str | None = None
-    output: str | None = None
-    fingerprint: str | None = None
-    try:
-        result = await asyncio.to_thread(
-            async_result.get,
-            timeout=settings.ssh_connect_timeout + INITIALIZE_RUN_TIMEOUT_EXTRA_SECONDS + 10,
-        )
-        if isinstance(result, dict):
-            fingerprint = result.get("fingerprint")
-            if result.get("ok"):
-                output = result.get("output")
-            else:
-                error = str(result.get("error") or "Unknown error.")
-    except CeleryTimeoutError:
-        error = (
-            "The setup script did not finish in time. It may still be running on the "
-            "device — check back, or re-run once it's had time to finish."
-        )
-    except Exception as exc:  # noqa: BLE001 - reported, not swallowed
-        error = str(exc)
 
-    await log_event(
-        db,
-        request=request,
-        action="honeypot.initialize.run",
-        summary=f'Ran Initialize on "{device_name}" ({ip_address})',
-        outcome=AuditOutcome.SUCCESS if error is None else AuditOutcome.FAILURE,
-        target_type="device",
-        target_label=f"{device_name} ({ip_address})",
-        details={"error": error, "fingerprint": fingerprint} if (error or fingerprint) else None,
-    )
+@router.get("/run/{run_id}")
+async def initialize_run_page(request: Request, run_id: str) -> Response:
+    """The run's own page — connects `initialize_ws`'s WebSocket
+    immediately on load (see `static/js/initialize.js`) to stream live
+    output and step progress. Only peeks at `PENDING_RUNS` (doesn't pop
+    it — the WebSocket does, once it actually starts using it), so a
+    refresh of this page before the socket connects still works.
+    """
+    _purge_stale_runs()
+    run = PENDING_RUNS.get(run_id)
+    if run is None:
+        # Never existed, expired, or a run already claimed and finished —
+        # either way there's nothing left to show; back to a fresh form
+        # rather than an error page for what's usually just a stale
+        # bookmark/refresh-after-completion.
+        return RedirectResponse(url="/initialize", status_code=status.HTTP_303_SEE_OTHER)
 
-    return await _render(
+    csrf_token, new_cookie = get_or_create_csrf_token(request)
+    response = templates.TemplateResponse(
         request,
-        db,
-        errors=[],
-        **form_values,
-        output=output,
-        run_error=error,
-        fingerprint=fingerprint,
+        "initialize/run.html",
+        {
+            "run_id": run_id,
+            "device_name": run.device_name,
+            "ip_address": run.ip_address,
+            "csrf_token": csrf_token,
+        },
     )
+    if new_cookie:
+        set_csrf_cookie(response, new_cookie)
+    return response

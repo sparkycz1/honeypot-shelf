@@ -35,7 +35,7 @@ Raspberry Pi into a working honeypot (packages, OpenCanary, NetBird) over
 SSH before it's ever added to HoneyHive; Company management and
 fleet-wide/"All honeypots" bulk actions; Scheduling; the REST API
 mirroring all of the above; Users and Settings (LDAP/OIDC/syslog
-forwarding, SSH key rotation, retention policies). An 81-test suite
+forwarding, SSH key rotation, retention policies). An 86-test suite
 covers the RBAC/scoping-sensitive paths; `ruff check .` and `mypy app
 alembic tests` are both fully clean. See [CLAUDE.md](../CLAUDE.md)'s
 "Current state" section for exact gaps (mainly: i18n coverage is still

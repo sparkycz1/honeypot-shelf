@@ -7,13 +7,27 @@ honeypot over SSH, in one run: base + admin-tool packages, a Python venv
 with OpenCanary/scapy/pcapy-ng, the `opencanary.service` systemd unit,
 locale (English + Czech, matching this app's own two) and timezone
 (Europe/Prague), a full `apt` upgrade, the team's `vim`/`bash.bashrc`
-config, the device's hostname/`/etc/hosts` entry, and
+config, the device's hostname/`/etc/hosts` entry,
 [NetBird](https://netbird.io) (repo + package, and joining your network if
-a setup key is given). Adapted from the team's own Ansible playbook — see
-`app.ssh.initialize`'s module docstring for exactly what changed and why
-this runs as one shell script instead of a real `ansible-playbook`
-invocation (same reasoning as the "Run initial setup" onboarding step
-below).
+a setup key is given), generating OpenCanary's own config
+(`opencanaryd --copyconfig`), and — confirmed against
+[OpenCanary's own wiki](https://github.com/thinkst/opencanary/wiki) as the
+only two modules that need it — the host-side setup **portscan** and
+**smb** each need beyond just flipping `enabled` in that config (see
+"Modules prepared, not enabled" below). Adapted from the team's own
+Ansible playbook — see `app.ssh.initialize`'s module docstring for exactly
+what changed and why this runs as one shell script instead of a real
+`ansible-playbook` invocation (same reasoning as the "Run initial setup"
+onboarding step below).
+
+**You see it happen, live**: the run page opens a WebSocket
+(`app.web.routes.initialize_ws`) the moment it loads — a banner at the top
+tracks which phase is currently running ("Installing packages", "Upgrading
+the system", ...), and the script's actual output streams into the panel
+below it line by line as it's produced, the same "watch it happen" feel as
+the interactive SSH terminal. A run can take up to an hour on a slow Pi
+(the `apt full-upgrade` and compiling `pcapy-ng` are the long parts) — the
+socket stays open the whole time.
 
 **This is a separate, earlier step from onboarding a `Honeypot` already
 in HoneyHive** ([Architecture.md](Architecture.md)'s onboarding
@@ -60,14 +74,44 @@ Connecting as `root` needs no sudo. Otherwise:
   needs either password auth instead, or NOPASSWD sudo granted by hand
   first.
 
+## Modules prepared, not enabled
+
+`opencanaryd --copyconfig` generates `/etc/opencanaryd/opencanary.conf`
+(skipped if it already exists — a re-run never clobbers a hand-edited
+config). Every module ships however `--copyconfig` defaults it —
+**disabled** — same as any other module; Initialize never flips
+`"<module>.enabled"` to `true` for you. What it does do, for the two
+modules that need real host-OS setup beyond that (confirmed against
+OpenCanary's own wiki — every other module is a self-contained listener,
+nothing further to prepare):
+
+- **portscan** — Debian 12+ dropped file-based kernel logging in favor of
+  journald-only, and defaults to the nftables-backed `iptables` binary;
+  neither works with the portscan module as shipped. Fixed by loading
+  rsyslog's `imjournal` module (bridges journald back to a plain
+  `/var/log/kern.log`) and switching the `iptables` alternative to
+  `iptables-legacy` — see
+  [OpenCanary's wiki](https://github.com/thinkst/opencanary/wiki/OpenCanary-Wiki#portscan-not-working-on-debian-12).
+- **smb** — Samba itself is installed and configured with a `full_audit`
+  VFS module (`/etc/samba/smb.conf`) that logs file access to syslog
+  facility `local7`, which rsyslog then routes to a plain
+  `/var/log/samba-audit.log` OpenCanary tails — see
+  [OpenCanary's wiki](https://github.com/thinkst/opencanary/wiki/Opencanary-and-Samba).
+  **Samba's own `smbd`/`nmbd` systemd services are left disabled** —
+  prepared, not live; nothing listens on the network from this until an
+  operator deliberately enables both those services and the `smb` module.
+
+Both modules' relevant config keys (`portscan.iptables_path`,
+`smb.auditfile`) are already pointed at the right paths — enabling either
+module afterward (`opencanary.conf` + `systemctl enable --now smbd nmbd`
+for Samba) is all that's left to do.
+
 ## What it doesn't do
 
 - **Doesn't create a `Honeypot` row.** Standalone tool — add the device
   separately afterward.
-- **Doesn't configure OpenCanary's own modules/config** (`/opt/myenv`'s
-  `opencanary.conf`) — every module ships disabled by default; that's a
-  manual step (or your own separate config-management step) after
-  Initialize finishes.
+- **Doesn't enable any OpenCanary module** — see "Modules prepared, not
+  enabled" above.
 - **Doesn't wire up event forwarding** — see
   [Honeypot Onboarding](Honeypot-Onboarding.md) for `POST
   /api/ingest/{honeypot_id}/events`, which needs the `Honeypot` row this

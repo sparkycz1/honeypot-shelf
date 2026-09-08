@@ -185,17 +185,35 @@ docstring.
 this app that connects over SSH to a device **that has no `Honeypot` row
 at all** — every other SSH-connecting feature (`app.ssh.*`, all gated
 through a real `Honeypot`) requires one first. It's a standalone,
-one-shot provisioning script (`app.ssh.initialize`, dispatched by
-`app.tasks.jobs.run_honeypot_initialize`) adapted from the team's own
-Ansible playbook, run before a device is ever added to HoneyHive.
-Because there's no prior `Honeypot.host_key_fingerprint` to check
-against, host-key trust here is deliberately trust-on-first-use — the one
-explicit exception to the strict pinned-verification policy
+one-shot provisioning script (`app.ssh.initialize`) adapted from the
+team's own Ansible playbook, run before a device is ever added to
+HoneyHive. Because there's no prior `Honeypot.host_key_fingerprint` to
+check against, host-key trust here is deliberately trust-on-first-use —
+the one explicit exception to the strict pinned-verification policy
 `app.ssh.client` otherwise enforces everywhere. A throwaway, never-
 persisted `Honeypot` instance carries the connection details through to
-the same `open_connection`/`run_command` helpers every other honeypot
-feature uses, so that policy still applies uniformly once the
-(TOFU-trusted) fingerprint is set on it.
+the same `open_connection` helper (via the new `open_process_session`,
+`app.ssh.client`'s non-interactive-streaming sibling of
+`open_shell_session`) every other honeypot feature uses, so that policy
+still applies uniformly once the (TOFU-trusted) fingerprint is set on it.
+
+**Runs live in the web process, not Celery** — `app.web.routes.
+initialize_ws`, the same WebSocket-direct-from-`asyncssh` shape
+`terminal_ws.py` already uses for the interactive terminal, not the
+dispatch-a-task-and-block-on-`.get()` pattern every other long SSH
+operation in this app uses. A run can take up to an hour (`apt
+full-upgrade`, compiling `pcapy-ng`) and the operator needs to *see* it
+happening — a live output stream needs a long-lived connection a Celery
+task can't hand back to an HTTP request. `POST /initialize` only
+validates the form and stages the (never-persisted) connection details —
+including a one-time password/NetBird key, if given — in
+`app.web.routes.initialize.PENDING_RUNS`, an **in-process** dict keyed by
+a random `run_id`; the redirected-to run page's WebSocket pops (single
+use) and actually runs it. This assumes a single web process, true today
+(see the `Dockerfile`'s plain `CMD ["uvicorn", ...]`, no `--workers`) —
+same constraint `app.services.live_updates` already has for a related
+reason, and the same fix (move it to Redis) would apply if that ever
+changes.
 
 ## 🍯 Honeypot data model
 

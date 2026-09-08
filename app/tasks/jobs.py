@@ -37,7 +37,6 @@ from sqlalchemy import delete, func, select
 from app.audit import log_event
 from app.core.app_settings import get_or_create_app_settings
 from app.core.config import get_settings
-from app.core.security import decrypt_secret
 from app.db import session as db_session
 from app.db.models.audit_log import AuditLogEntry
 from app.db.models.company import Company
@@ -59,19 +58,12 @@ from app.services.live_updates import (
     KIND_UPDATES,
     publish_honeypot_event,
 )
-from app.ssh.client import discover_host_key_fingerprint, test_connection
+from app.ssh.client import test_connection
 from app.ssh.credentials import resolve_honeypot_credential
 from app.ssh.exceptions import SSHConnectionError
 from app.ssh.exec import run_command
 from app.ssh.facts import gather_facts
 from app.ssh.identity import get_or_create_identity
-from app.ssh.initialize import (
-    INITIALIZE_RUN_TIMEOUT_EXTRA_SECONDS,
-    INITIALIZE_SUCCESS_MARKER,
-    build_initialize_command,
-    service_user_for,
-    wrap_for_sudo,
-)
 from app.ssh.logs import LogAccessError, view_file, view_journal
 from app.ssh.monitoring import gather_monitoring_sample
 from app.ssh.onboarding import ONBOARD_SUCCESS_MARKER, ONBOARD_USERNAME, build_onboarding_command
@@ -430,114 +422,6 @@ async def _run_honeypot_onboarding(honeypot_id: str) -> dict[str, Any]:
 )
 def run_honeypot_onboarding(honeypot_id: str) -> dict[str, Any]:
     return asyncio.run(_run_honeypot_onboarding(honeypot_id))
-
-
-async def _run_honeypot_initialize(
-    ip_address: str,
-    port: int,
-    username: str,
-    device_name: str,
-    auth_method: str,
-    password: str | None,
-    netbird_setup_key: str | None,
-) -> dict[str, Any]:
-    """Provisions a brand new, not-yet-managed Raspberry Pi OS 13 device
-    into a working OpenCanary honeypot — see `app.ssh.initialize` for
-    exactly what the script does.
-
-    Unlike every other SSH-connecting task in this module, there is no
-    `Honeypot` row to read a pinned host key fingerprint or credential
-    from — the whole point of Initialize is to run *before* a device is
-    ever added to HoneyHive. Host-key trust here is deliberately
-    trust-on-first-use (see `app.web.routes.initialize`'s own docstring
-    for why that is an explicit, narrow exception to this app's normal
-    strict-pinning policy) rather than the confirm-then-pin flow "Add
-    honeypot" uses. A throwaway, never-persisted `Honeypot` instance
-    carries the connection details through to `app.ssh.exec.run_command`/
-    `app.ssh.client.open_connection`, which only ever read attributes off
-    it — nothing here is added to the DB session.
-    """
-    settings = get_settings()
-
-    try:
-        fingerprint = await discover_host_key_fingerprint(
-            ip_address, port, settings.ssh_connect_timeout
-        )
-    except SSHConnectionError as exc:
-        return {"ok": False, "error": str(exc)}
-
-    device = Honeypot(
-        name=device_name,
-        ip_address=ip_address,
-        port=port,
-        username=username,
-        host_key_fingerprint=fingerprint,
-    )
-
-    async with db_session.AsyncSessionLocal() as session:
-        if auth_method == AuthMethod.PASSWORD.value:
-            device.auth_method = AuthMethod.PASSWORD
-            secret = password
-        else:
-            device.auth_method = AuthMethod.SSH_KEY
-            identity = await get_or_create_identity(session)
-            secret = decrypt_secret(identity.private_key_encrypted)
-
-        app_settings = await get_or_create_app_settings(session)
-        netbird_management_url = app_settings.netbird_management_url
-
-    script = build_initialize_command(
-        device_name=device_name,
-        service_user=service_user_for(username),
-        netbird_setup_key=netbird_setup_key,
-        netbird_management_url=netbird_management_url,
-    )
-    script = wrap_for_sudo(
-        script,
-        ssh_username=username,
-        sudo_password=password if auth_method == AuthMethod.PASSWORD.value else None,
-    )
-
-    try:
-        result = await run_command(
-            device,
-            secret,
-            script,
-            settings.ssh_connect_timeout,
-            settings.ssh_connect_timeout + INITIALIZE_RUN_TIMEOUT_EXTRA_SECONDS,
-        )
-    except SSHConnectionError as exc:
-        logger.warning("run_honeypot_initialize failed for %s: %s", device_name, exc)
-        return {"ok": False, "error": str(exc), "fingerprint": fingerprint}
-
-    if result.exit_status != 0 or INITIALIZE_SUCCESS_MARKER not in result.output:
-        return {
-            "ok": False,
-            "error": f"Setup script exited {result.exit_status}: {result.output or '(no output)'}",
-            "fingerprint": fingerprint,
-        }
-
-    return {"ok": True, "output": result.output, "fingerprint": fingerprint}
-
-
-@celery_app.task(
-    name="app.tasks.jobs.run_honeypot_initialize",
-    time_limit=get_settings().ssh_connect_timeout + INITIALIZE_RUN_TIMEOUT_EXTRA_SECONDS + 15,
-)
-def run_honeypot_initialize(
-    ip_address: str,
-    port: int,
-    username: str,
-    device_name: str,
-    auth_method: str,
-    password: str | None,
-    netbird_setup_key: str | None,
-) -> dict[str, Any]:
-    return asyncio.run(
-        _run_honeypot_initialize(
-            ip_address, port, username, device_name, auth_method, password, netbird_setup_key
-        )
-    )
 
 
 async def _check_honeypot_readiness(honeypot_id: str) -> dict[str, Any]:

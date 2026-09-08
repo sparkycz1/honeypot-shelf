@@ -12,23 +12,6 @@
     </div>
   {% endif %}
 
-  {% if run_error %}
-    <div class="alert alert-error">
-      <p>{{ run_error }}</p>
-    </div>
-  {% elif output %}
-    <div class="alert alert-ok">
-      <p>{{ t(request, "initialize.success") }}</p>
-    </div>
-  {% endif %}
-
-  {% if fingerprint %}
-    <div class="panel">
-      <p>{{ t(request, "initialize.fingerprint_note") }}</p>
-      <p><code>{{ fingerprint }}</code></p>
-    </div>
-  {% endif %}
-
   <form method="post" action="/initialize" class="form" autocomplete="off">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
@@ -70,9 +53,4 @@
 
     <button type="submit" class="button">{{ t(request, "initialize.submit") }}</button>
   </form>
-
-  {% if output %}
-    <h2>{{ t(request, "initialize.output") }}</h2>
-    <pre class="log-output">{{ output }}</pre>
-  {% endif %}
 {% endblock %}

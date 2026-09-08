@@ -9,6 +9,7 @@ import re
 
 from app.db.models.user import AccessLevel
 from app.ssh.initialize import build_initialize_command, service_user_for, wrap_for_sudo
+from app.web.routes.initialize import PENDING_RUNS
 from tests.conftest import create_company
 
 
@@ -47,7 +48,11 @@ async def test_read_only_user_cannot_reach_initialize(client, login_as, db_sessi
     assert response.status_code == 403
 
 
-async def test_post_initialize_dispatches_task_and_shows_output(client, celery_calls):
+async def test_post_initialize_stages_a_pending_run_and_redirects(client):
+    """POST doesn't run anything inline (it can take up to an hour) — it
+    stages a `PendingInitializeRun` and redirects to the run page, which
+    connects `initialize_ws`'s WebSocket to actually do the work. See
+    app.web.routes.initialize's module docstring."""
     form = await client.get("/initialize")
     csrf_token = _csrf_from(form)
 
@@ -63,18 +68,38 @@ async def test_post_initialize_dispatches_task_and_shows_output(client, celery_c
             "netbird_setup_key": "",
             "csrf_token": csrf_token,
         },
+        follow_redirects=False,
     )
-    assert response.status_code == 200
-    assert "app.tasks.jobs.run_honeypot_initialize" in celery_calls.names
-    args = celery_calls[-1][1]
-    assert args[0] == "192.0.2.10"
-    assert args[3] == "acme-honey1"
+    assert response.status_code == 303
+    location = response.headers["location"]
+    assert location.startswith("/initialize/run/")
+    run_id = location.removeprefix("/initialize/run/")
+
+    run = PENDING_RUNS.get(run_id)
+    assert run is not None
+    assert run.ip_address == "192.0.2.10"
+    assert run.device_name == "acme-honey1"
+    assert run.auth_method == "ssh_key"
+
+    run_page = await client.get(location)
+    assert run_page.status_code == 200
+    assert f'data-ws-path="/initialize/run/{run_id}/ws"' in run_page.text
+    assert "acme-honey1" in run_page.text
+
+    PENDING_RUNS.pop(run_id, None)
 
 
-async def test_post_initialize_rejects_invalid_device_name(client, celery_calls):
+async def test_get_run_page_for_an_unknown_run_id_redirects_to_the_form(client):
+    response = await client.get("/initialize/run/does-not-exist", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/initialize"
+
+
+async def test_post_initialize_rejects_invalid_device_name(client):
     form = await client.get("/initialize")
     csrf_token = _csrf_from(form)
 
+    before = set(PENDING_RUNS)
     response = await client.post(
         "/initialize",
         data={
@@ -87,7 +112,7 @@ async def test_post_initialize_rejects_invalid_device_name(client, celery_calls)
         },
     )
     assert response.status_code == 200
-    assert "app.tasks.jobs.run_honeypot_initialize" not in celery_calls.names
+    assert set(PENDING_RUNS) == before
 
 
 async def test_post_initialize_without_csrf_is_rejected(client):
@@ -133,6 +158,62 @@ def test_build_initialize_command_joins_netbird_when_setup_key_given():
     )
     expected = "netbird up --setup-key abc123 --management-url https://netbird.example.com:443"
     assert expected in script
+
+
+def test_build_initialize_command_generates_config_only_if_missing():
+    script = build_initialize_command(
+        device_name="acme-honey1",
+        service_user="pi",
+        netbird_setup_key=None,
+        netbird_management_url=None,
+    )
+    assert "[ -f /etc/opencanaryd/opencanary.conf ] ||" in script
+    assert "opencanaryd --copyconfig" in script
+
+
+def test_build_initialize_command_prepares_portscan():
+    script = build_initialize_command(
+        device_name="acme-honey1",
+        service_user="pi",
+        netbird_setup_key=None,
+        netbird_management_url=None,
+    )
+    assert 'module(load="imjournal")' in script
+    assert "kern.log" in script
+    assert "update-alternatives --set iptables /usr/sbin/iptables-legacy" in script
+    assert '"portscan.iptables_path"' in script
+
+
+def test_build_initialize_command_prepares_samba_with_service_disabled():
+    script = build_initialize_command(
+        device_name="acme-honey1",
+        service_user="pi",
+        netbird_setup_key=None,
+        netbird_management_url=None,
+    )
+    assert "/etc/samba/smb.conf" in script
+    assert "vfs object = full_audit" in script
+    assert "netbios name = acme-honey1" in script
+    assert '"smb.auditfile"' in script
+    assert "systemctl disable --now smbd" in script
+    assert "systemctl disable --now nmbd" in script
+    # Prepared, not switched on — enabling either module is a separate,
+    # deliberate manual step.
+    assert '"smb.enabled": true' not in script
+    assert '"portscan.enabled": true' not in script
+
+
+def test_build_initialize_command_emits_step_markers():
+    from app.ssh.initialize import STEP_MARKER_PREFIX
+
+    script = build_initialize_command(
+        device_name="acme-honey1",
+        service_user="pi",
+        netbird_setup_key=None,
+        netbird_management_url=None,
+    )
+    assert f"echo '{STEP_MARKER_PREFIX}Installing packages'" in script
+    assert f"echo '{STEP_MARKER_PREFIX}Preparing Samba (service left disabled)'" in script
 
 
 def test_wrap_for_sudo_root_needs_no_sudo():

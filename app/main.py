@@ -39,6 +39,7 @@ from app.web.routes import (
     inform,
     ingest,
     initialize,
+    initialize_ws,
     live_ws,
     scheduling,
     terminal_ws,
@@ -213,6 +214,7 @@ def create_app() -> FastAPI:
     # `app.auth.middleware`, so each of these routers does its own auth
     # entirely inside the handler. See terminal_ws.py's module docstring.
     app.include_router(terminal_ws.router)
+    app.include_router(initialize_ws.router)
     app.include_router(live_ws.router)
 
     @app.get("/", include_in_schema=False)

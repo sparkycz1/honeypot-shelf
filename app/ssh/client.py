@@ -210,6 +210,31 @@ async def open_shell_session(
     return conn, process
 
 
+async def open_process_session(
+    honeypot: Honeypot, secret: str | None, command: str, timeout_seconds: int
+) -> tuple[asyncssh.SSHClientConnection, asyncssh.SSHClientProcess[str]]:
+    """Open a connection (same strict pinned host-key verification as
+    `open_connection`) and start running `command` on it as a single,
+    non-interactive process — no PTY, `stderr` merged into `stdout`,
+    decoded as UTF-8 text (`encoding="utf-8"`, unlike `open_shell_session`'s
+    raw bytes — a plain script's own printed output has no terminal escape
+    sequences or partial-UTF-8-boundary concern to preserve). Used by
+    `app.web.routes.initialize_ws` to stream a provisioning script's
+    output live rather than waiting for it to finish and returning
+    everything at once, the way `app.ssh.exec.run_command` does.
+
+    Same ownership contract as `open_shell_session`: the caller owns both
+    the connection and the process and must close them on every exit path.
+    """
+    conn = await open_connection(honeypot, secret, timeout_seconds)
+    try:
+        process = await conn.create_process(command, encoding="utf-8", stderr=asyncssh.STDOUT)
+    except (asyncssh.Error, OSError) as exc:
+        conn.close()
+        raise SSHConnectionError(f"Failed to start the provisioning script: {exc}") from exc
+    return conn, process
+
+
 async def test_connection(honeypot: Honeypot, secret: str | None, timeout_seconds: int) -> str:
     """Check honeypot reachability and return the output of a simple diagnostic command."""
     async with await open_connection(honeypot, secret, timeout_seconds) as conn:
