@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% from "partials/_tabnav.html" import render as render_tabnav %}
+
+{% block title %}Status — {{ honeypot.name }} — HoneyHive{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>{{ honeypot.name }}</h1>
+  </div>
+
+  {{ render_tabnav(tabs, active_tab) }}
+
+  {% if error %}
+    <div class="alert alert-error">
+      <p>{{ error }}</p>
+    </div>
+  {% endif %}
+
+  <section class="panel">
+    <h2>Read-only root filesystem</h2>
+    <p class="hint">
+      Protects the SD card from write wear — everything on <code>/</code> becomes
+      read-only via Raspberry Pi OS's own overlay filesystem. OpenCanary's own log
+      still writes fine: it lives on a 512&nbsp;MB tmpfs ramdisk at
+      <code>/mnt/tmpfs</code> instead (see the Logs tab's "Honeypot logs" shortcut).
+      Takes effect on the <strong>next reboot</strong> either direction.
+    </p>
+
+    {% if readonly_state %}
+      <p>
+        Currently booted:
+        {% if readonly_state == 'enabled' %}
+          <span class="badge badge-ok">read-only</span>
+        {% else %}
+          <span class="badge badge-warn">writable</span>
+        {% endif %}
+      </p>
+    {% endif %}
+
+    <div class="page-header-actions">
+      <form method="post" action="/honeypots/{{ honeypot.id }}/status/readonly">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="enable" value="true">
+        <button type="submit" class="button"
+                {% if not honeypot.host_key_fingerprint %}disabled{% endif %}>
+          Enable read-only
+        </button>
+      </form>
+      <form method="post" action="/honeypots/{{ honeypot.id }}/status/readonly">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="enable" value="false">
+        <button type="submit" class="button button-secondary"
+                {% if not honeypot.host_key_fingerprint %}disabled{% endif %}>
+          Disable read-only (for updates)
+        </button>
+      </form>
+    </div>
+    <p class="hint">
+      Disable before running system updates on the Updates tab — <code>apt</code>
+      can't write to a read-only root — then re-enable and reboot once you're done.
+    </p>
+    {% if not honeypot.host_key_fingerprint %}
+      <p class="hint">Confirm the server's key fingerprint on the Overview tab first.</p>
+    {% endif %}
+  </section>
+{% endblock %}

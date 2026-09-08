@@ -28,14 +28,16 @@ See [README](README.md) for the full page list. Start with
 Built and verified end-to-end (real Postgres, migrated, exercised through
 the actual app, not just unit tests): the full auth stack; company-scoped
 RBAC; event ingestion and the Dashboard; full Honeypot management
-(create/edit/delete, host-key discovery/trust, the SSH terminal, Logs,
-facts/packages/services refresh, system updates with live output, power
-actions); [Initialize](Honeypot-Initialize.md) — provisioning a brand new
+(create/edit/delete, host-key discovery/trust, the SSH terminal, Logs
+(journal, a clickable file browser, and a shortcut to OpenCanary's own
+log), facts/packages/services refresh, system updates with live output,
+power actions, and a Honeypot Status tab toggling the read-only root
+filesystem for SD card longevity); [Initialize](Honeypot-Initialize.md) — provisioning a brand new
 Raspberry Pi into a working honeypot (packages, OpenCanary, NetBird) over
 SSH before it's ever added to HoneyHive; Company management and
 fleet-wide/"All honeypots" bulk actions; Scheduling; the REST API
 mirroring all of the above; Users and Settings (LDAP/OIDC/syslog
-forwarding, SSH key rotation, retention policies). An 86-test suite
+forwarding, SSH key rotation, retention policies). A 101-test suite
 covers the RBAC/scoping-sensitive paths; `ruff check .` and `mypy app
 alembic tests` are both fully clean. See [CLAUDE.md](../CLAUDE.md)'s
 "Current state" section for exact gaps (mainly: i18n coverage is still

@@ -215,6 +215,25 @@ same constraint `app.services.live_updates` already has for a related
 reason, and the same fix (move it to Redis) would apply if that ever
 changes.
 
+## 🔒 Honeypot Status: read-only root filesystem
+
+The Honeypot Status tab's one action (`app.ssh.readonly`) toggles a
+managed honeypot's root filesystem between writable and read-only, to
+protect its SD card from write wear over a long unattended run. Uses
+Raspberry Pi OS's own built-in overlay filesystem support
+(`raspi-config nonint do_overlayfs 0|1`) rather than hand-written
+`/etc/fstab` edits — the officially supported, vendor-tested mechanism for
+exactly this, and trivially reversible the same way. Status is read live
+(`findmnt -n -o FSTYPE /` — `overlay` means currently booted read-only),
+never persisted; like the Logs tab, there's no DB column for this.
+**Takes effect on next reboot**, not immediately, and must be disabled
+before running system updates (`apt` can't write to a read-only root) —
+see that tab's own hint text. [Initialize](Honeypot-Initialize.md) sets up
+the `/mnt/tmpfs` ramdisk this depends on (OpenCanary's own log still needs
+somewhere to write) but never enables the toggle itself — that stays a
+separate, deliberate, per-honeypot action once a device is fully
+provisioned.
+
 ## 🍯 Honeypot data model
 
 - **`Company`** — a tenant. One row per customer.

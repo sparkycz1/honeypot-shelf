@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% from "partials/_tabnav.html" import render as render_tabnav %}
+
+{% block title %}Config — {{ honeypot.name }} — HoneyHive{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>{{ honeypot.name }}</h1>
+  </div>
+
+  {{ render_tabnav(tabs, active_tab) }}
+
+  <section class="panel">
+    <h2>Honeypot config</h2>
+    <p class="hint">
+      Editing OpenCanary's own <code>opencanary.conf</code> (which modules are
+      enabled, their ports/behavior) directly from here is planned but not built
+      yet — use the Terminal or Logs tab in the meantime.
+    </p>
+  </section>
+{% endblock %}
