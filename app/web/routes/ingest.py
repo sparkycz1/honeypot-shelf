@@ -83,7 +83,9 @@ async def ingest_event(
     event = HoneypotEvent(
         honeypot_id=honeypot.id,
         company_id=honeypot.company_id,
-        event_type=str(payload.get("logtype") or payload.get("logdata", {}).get("type") or "UNKNOWN"),
+        event_type=str(
+            payload.get("logtype") or payload.get("logdata", {}).get("type") or "UNKNOWN"
+        ),
         occurred_at=_parse_occurred_at(payload),
         src_ip=payload.get("src_host"),
         src_port=payload.get("src_port"),

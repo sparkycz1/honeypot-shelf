@@ -74,11 +74,9 @@ There is no supported way to run the app itself outside Docker:
 
 **Before committing**, run the same gate debcontrol's history consistently
 uses: `ruff check .`, `mypy app alembic tests`, `pytest`, `alembic heads`
-(single head) — all clean. (At the time of the last verified pass:
-`pytest` was clean at 45/45; `ruff check .` had ~95 line-length-only
-`E501`s left over from the mechanical port and no `mypy` run yet — treat
-both as known cleanup debt, not a reason to skip the gate on your own
-change.)
+(single head) — all clean. (At the time of the last verified pass: 81/81
+`pytest`, `ruff check .` and `mypy app alembic tests` both fully clean —
+see "Current state" below for what that cleanup pass found and fixed.)
 
 **Every round of changes** bumps `APP_VERSION` in `app/core/version.py`
 **and** `version` in `pyproject.toml` together (patch for a small fix,
@@ -104,7 +102,7 @@ key rotation, retention policies), Initialize (`app.ssh.initialize`,
 working OpenCanary honeypot over SSH, before it's ever added to
 HoneyHive: packages, the OpenCanary venv/service, locale/timezone,
 hostname, and NetBird — see [wiki/Honeypot-Initialize.md](wiki/Honeypot-Initialize.md)),
-and an initial Alembic migration. An 80-test suite covers auth, company
+and an initial Alembic migration. An 81-test suite covers auth, company
 scoping, ingest, the dashboard, honeypot/company/schedule CRUD, `pg_enum`,
 i18n, config, Initialize's script builder, and the proxy-headers/
 CSP-safety regression guards below.
@@ -128,22 +126,30 @@ a guarantee nothing was missed — re-check a claim like this against the
 actual files on disk before trusting it, the same way this bug was found.
 
 **Known gaps, not yet done**: i18n coverage is still just the site
-chrome plus the auth/footer/toolbar strings touched by the debcontrol
-sync above (most of the ported pages' strings are still plain English,
-same "not yet translated" state debcontrol itself is in for many pages);
-the ~95 `ruff` line-length warnings from the mechanical port haven't been
-manually wrapped; `mypy --strict` has now been run for the first time
-(added while building Initialize) and surfaced 16 pre-existing errors
-scattered across `app/web/routes/{honeypots,api_v1,api_v1_users,
-scheduling,api_v1_scheduling}.py` and `app/tasks/jobs.py`/
-`app/scheduling/jobs.py` (mostly `X | None` used where a non-`None` type
-is expected, plus one real `honeypots_visible_to()` call-signature
-mismatch in `honeypots.py:835`) — none of them touched by that change,
-left as tracked debt rather than fixed opportunistically; `tests/`
-itself can't be added to a mypy run yet either (`tests/conftest.py:
-Source file found twice under different module names` — needs
-`--explicit-package-bases` or a `tests/__init__.py`, neither in place);
-no CI workflow file exists yet. None of these block using the app.
+chrome plus the auth/footer/toolbar/Initialize strings touched so far
+(most of the ported pages' strings are still plain English, same "not yet
+translated" state debcontrol itself is in for many pages); no CI workflow
+file exists (deliberately out of scope — this repo relies on the local
+gate below instead). `ruff check .` and `mypy app alembic tests` are both
+now fully clean (as of the Initialize change): the ~95 line-length
+warnings left over from the mechanical port were wrapped by hand, and the
+first-ever `mypy --strict` run surfaced 16 pre-existing errors — mostly
+`X | None` used where a non-`None` type was expected (a pydantic schema
+field left `Optional` because a route resolves it, not because it can
+actually be `None` by the time it's used — fixed with a narrowing
+`assert` plus a comment at each call site) — and one real bug:
+`app/web/routes/honeypots.py`'s package-search endpoint called
+`honeypots_visible_to()` as if it were an async DB query (`await
+honeypots_visible_to(db, current_user)`) when it's actually a plain sync
+function returning a `Select` to compose further, taking only `user` —
+every search with a non-empty query raised a `TypeError`, uncaught by any
+existing test. `tests/` needed a `tests/__init__.py` (resolves
+`tests/conftest.py: Source file found twice under different module
+names`) plus a `[[tool.mypy.overrides]]` disabling four separate
+strict-mode flags for `tests.*` (only `disallow_untyped_defs` was
+disabled before; incomplete annotations, untyped calls, and `Any`
+returns — all normal in test fixtures — were still erroring). None of
+this blocks using the app.
 
 Settled product decisions (see [wiki/Home.md](wiki/Home.md) for the full
 list): only a superadmin creates companies/honeypots/users — a company's

@@ -259,7 +259,12 @@ async def _view_honeypot_log_file(
 
         try:
             output = await view_file(
-                honeypot, secret, settings.ssh_connect_timeout, path=path, lines=lines, search=search
+                honeypot,
+                secret,
+                settings.ssh_connect_timeout,
+                path=path,
+                lines=lines,
+                search=search,
             )
         except LogAccessError as exc:
             return {"ok": False, "error": str(exc)}
@@ -274,7 +279,9 @@ async def _view_honeypot_log_file(
     name="app.tasks.jobs.view_honeypot_log_file",
     time_limit=get_settings().ssh_connect_timeout + _SSH_COMMAND_EXTRA_SECONDS,
 )
-def view_honeypot_log_file(honeypot_id: str, *, path: str, lines: int, search: str) -> dict[str, Any]:
+def view_honeypot_log_file(
+    honeypot_id: str, *, path: str, lines: int, search: str
+) -> dict[str, Any]:
     return asyncio.run(_view_honeypot_log_file(honeypot_id, path=path, lines=lines, search=search))
 
 
@@ -635,7 +642,9 @@ async def _refresh_all_honeypot_readiness() -> None:
     """
     async with db_session.AsyncSessionLocal() as session:
         result = await session.execute(
-            select(Honeypot.id).where(Honeypot.is_active, Honeypot.host_key_fingerprint.is_not(None))
+            select(Honeypot.id).where(
+                Honeypot.is_active, Honeypot.host_key_fingerprint.is_not(None)
+            )
         )
         honeypot_ids = [row[0] for row in result.all()]
 
@@ -690,7 +699,9 @@ async def _ping_all_honeypots() -> None:
     `Honeypot.reachability_check_interval_seconds` — this job does the
     sweep, minus whichever honeypots aren't due yet, and returns."""
     async with db_session.AsyncSessionLocal() as session:
-        result = await session.execute(select(Honeypot).where(Honeypot.is_active))
+        result = await session.execute(
+            select(Honeypot).where(Honeypot.is_active, Honeypot.ip_address.is_not(None))
+        )
         honeypots = _due_honeypots(
             list(result.scalars().all()),
             last_checked_at=lambda m: m.last_ping_at,
@@ -705,6 +716,10 @@ async def _ping_all_honeypots() -> None:
             semaphore = asyncio.Semaphore(get_settings().reachability_check_concurrency)
 
             async def _check(honeypot: Honeypot) -> tuple[Honeypot, ReachabilityResult]:
+                # ip_address can't be None here — filtered by the query above
+                # — but the column stays nullable on Honeypot itself, so
+                # mypy still sees `str | None` without this assert.
+                assert honeypot.ip_address is not None
                 async with semaphore:
                     outcome = await check_reachable(honeypot.ip_address, honeypot.port)
                     return honeypot, outcome
@@ -874,7 +889,9 @@ async def _refresh_all_honeypot_packages() -> None:
     """
     async with db_session.AsyncSessionLocal() as session:
         result = await session.execute(
-            select(Honeypot.id).where(Honeypot.is_active, Honeypot.host_key_fingerprint.is_not(None))
+            select(Honeypot.id).where(
+                Honeypot.is_active, Honeypot.host_key_fingerprint.is_not(None)
+            )
         )
         honeypot_ids = [row[0] for row in result.all()]
 
@@ -937,7 +954,9 @@ async def _refresh_all_honeypot_services() -> None:
     (`FACTS_REFRESH_INTERVAL_SECONDS`) as `_refresh_all_honeypot_packages`."""
     async with db_session.AsyncSessionLocal() as session:
         result = await session.execute(
-            select(Honeypot.id).where(Honeypot.is_active, Honeypot.host_key_fingerprint.is_not(None))
+            select(Honeypot.id).where(
+                Honeypot.is_active, Honeypot.host_key_fingerprint.is_not(None)
+            )
         )
         honeypot_ids = [row[0] for row in result.all()]
 
@@ -1337,7 +1356,9 @@ async def _check_all_honeypot_updates() -> None:
     """
     async with db_session.AsyncSessionLocal() as session:
         result = await session.execute(
-            select(Honeypot.id).where(Honeypot.is_active, Honeypot.host_key_fingerprint.is_not(None))
+            select(Honeypot.id).where(
+                Honeypot.is_active, Honeypot.host_key_fingerprint.is_not(None)
+            )
         )
         honeypot_ids = [row[0] for row in result.all()]
 

@@ -83,3 +83,18 @@ def _csrf_from(response) -> str:
     match = re.search(r'name="csrf_token" value="([^"]+)"', response.text)
     assert match, "no csrf_token found in response"
     return match.group(1)
+
+
+async def test_package_search_with_a_query_does_not_crash(client, db_session_factory):
+    """Regression test — `honeypots_visible_to()` is a plain sync function
+    returning a `Select`, not a coroutine (see its own docstring); a stray
+    `await` in front of it made this endpoint raise a TypeError on every
+    search with a non-empty query. Caught by mypy, not by any prior test."""
+    company = await create_company(db_session_factory)
+    async with db_session_factory() as db:
+        honeypot = Honeypot(company_id=company.id, name="acme-honey1")
+        db.add(honeypot)
+        await db.commit()
+
+    response = await client.get("/honeypots/package-search", params={"q": "openssl"})
+    assert response.status_code == 200

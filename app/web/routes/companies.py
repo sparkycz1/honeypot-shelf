@@ -449,7 +449,9 @@ async def company_detail(
     company = await _get_company_or_404(company_id, db, current_user)
 
     members_query = (
-        select(Honeypot).options(selectinload(Honeypot.company)).where(Honeypot.company_id == company_id)
+        select(Honeypot)
+        .options(selectinload(Honeypot.company))
+        .where(Honeypot.company_id == company_id)
     )
     if q.strip():
         members_query = members_query.where(honeypot_search_clause(q))
