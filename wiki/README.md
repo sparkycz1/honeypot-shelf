@@ -38,6 +38,8 @@ enabled, and it lives in its own separate git repository
   product questions this project is waiting on
 - [Installation](Installation.md) — Docker quick start, with or without Caddy
 - [Architecture](Architecture.md) — stack choices, RBAC, and the security model
+- [Initialize](Honeypot-Initialize.md) — provisioning a brand new
+  Raspberry Pi into a working OpenCanary honeypot over SSH
 - [Honeypot Onboarding](Honeypot-Onboarding.md) — what a Raspberry Pi
   running OpenCanary needs to start reporting to HoneyHive
 - [Reverse Proxy: Caddy](Reverse-Proxy-Caddy.md) — using the bundled Caddy service

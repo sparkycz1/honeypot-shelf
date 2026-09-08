@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t(request, "initialize.title") }} — HoneyHive{% endblock %}
+
+{% block content %}
+  <h1>{{ t(request, "initialize.title") }}</h1>
+  <p class="hint">{{ t(request, "initialize.intro") }}</p>
+
+  {% if errors %}
+    <div class="alert alert-error">
+      {% for error in errors %}<p>{{ error }}</p>{% endfor %}
+    </div>
+  {% endif %}
+
+  {% if run_error %}
+    <div class="alert alert-error">
+      <p>{{ run_error }}</p>
+    </div>
+  {% elif output %}
+    <div class="alert alert-ok">
+      <p>{{ t(request, "initialize.success") }}</p>
+    </div>
+  {% endif %}
+
+  {% if fingerprint %}
+    <div class="panel">
+      <p>{{ t(request, "initialize.fingerprint_note") }}</p>
+      <p><code>{{ fingerprint }}</code></p>
+    </div>
+  {% endif %}
+
+  <form method="post" action="/initialize" class="form" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <label for="ip_address">{{ t(request, "initialize.field.ip_address") }}</label>
+    <input type="text" id="ip_address" name="ip_address" required maxlength="255"
+           placeholder="e.g. 192.0.2.10" value="{{ ip_address or '' }}">
+
+    <label for="device_name">{{ t(request, "initialize.field.device_name") }}</label>
+    <input type="text" id="device_name" name="device_name" required maxlength="63"
+           placeholder="e.g. acme-honey1" value="{{ device_name or '' }}">
+    <p class="hint">{{ t(request, "initialize.field.device_name_hint") }}</p>
+
+    <label for="username">{{ t(request, "initialize.field.username") }}</label>
+    <input type="text" id="username" name="username" required maxlength="255"
+           placeholder="root" value="{{ username or '' }}">
+    <p class="hint">{{ t(request, "initialize.field.username_hint") }}</p>
+
+    <label for="port">{{ t(request, "initialize.field.port") }}</label>
+    <input type="number" id="port" name="port" min="1" max="65535" value="{{ port or 22 }}">
+
+    <label for="auth_method">{{ t(request, "initialize.field.auth_method") }}</label>
+    <select id="auth_method" name="auth_method">
+      <option value="ssh_key" {% if auth_method == 'password' %}{% else %}selected{% endif %}>
+        {{ t(request, "initialize.field.auth_method.ssh_key") }}
+      </option>
+      <option value="password" {% if auth_method == 'password' %}selected{% endif %}>
+        {{ t(request, "initialize.field.auth_method.password") }}
+      </option>
+    </select>
+    <p class="hint">{{ t(request, "initialize.field.auth_method_hint") }}</p>
+
+    <label for="password">{{ t(request, "initialize.field.password") }}</label>
+    <input type="password" id="password" name="password" autocomplete="new-password">
+    <p class="hint">{{ t(request, "initialize.field.password_hint") }}</p>
+
+    <label for="netbird_setup_key">{{ t(request, "initialize.field.netbird_setup_key") }}</label>
+    <input type="text" id="netbird_setup_key" name="netbird_setup_key" autocomplete="off">
+    <p class="hint">{{ t(request, "initialize.field.netbird_setup_key_hint") }}</p>
+
+    <button type="submit" class="button">{{ t(request, "initialize.submit") }}</button>
+  </form>
+
+  {% if output %}
+    <h2>{{ t(request, "initialize.output") }}</h2>
+    <pre class="log-output">{{ output }}</pre>
+  {% endif %}
+{% endblock %}

@@ -99,10 +99,15 @@ output, power actions), Company CRUD and bulk actions ("All honeypots"),
 Scheduling (cron-driven actions, company-scoped via
 `ScheduledTask.owner_company_id`), the REST API mirroring all of the above
 (`/api/v1/...`), Users/Settings (LDAP/OIDC/syslog-forwarding config, SSH
-key rotation, retention policies), and an initial Alembic migration. A
-61-test suite covers auth, company scoping, ingest, the dashboard,
-honeypot/company/schedule CRUD, `pg_enum`, i18n, config, and the proxy-
-headers/CSP-safety regression guards below.
+key rotation, retention policies), Initialize (`app.ssh.initialize`,
+`/initialize` — provisions a brand new Raspberry Pi OS 13 device into a
+working OpenCanary honeypot over SSH, before it's ever added to
+HoneyHive: packages, the OpenCanary venv/service, locale/timezone,
+hostname, and NetBird — see [wiki/Honeypot-Initialize.md](wiki/Honeypot-Initialize.md)),
+and an initial Alembic migration. An 80-test suite covers auth, company
+scoping, ingest, the dashboard, honeypot/company/schedule CRUD, `pg_enum`,
+i18n, config, Initialize's script builder, and the proxy-headers/
+CSP-safety regression guards below.
 
 Periodically synced against upstream debcontrol for fixes/features that
 apply here too (see that project's own release history) — most recently
@@ -127,10 +132,18 @@ chrome plus the auth/footer/toolbar strings touched by the debcontrol
 sync above (most of the ported pages' strings are still plain English,
 same "not yet translated" state debcontrol itself is in for many pages);
 the ~95 `ruff` line-length warnings from the mechanical port haven't been
-manually wrapped; `mypy --strict` hasn't been run against this codebase
-yet (debcontrol's own code is strict-typed, but the porting/adaptation
-here wasn't type-checked as it went); no CI workflow file exists yet.
-None of these block using the app.
+manually wrapped; `mypy --strict` has now been run for the first time
+(added while building Initialize) and surfaced 16 pre-existing errors
+scattered across `app/web/routes/{honeypots,api_v1,api_v1_users,
+scheduling,api_v1_scheduling}.py` and `app/tasks/jobs.py`/
+`app/scheduling/jobs.py` (mostly `X | None` used where a non-`None` type
+is expected, plus one real `honeypots_visible_to()` call-signature
+mismatch in `honeypots.py:835`) — none of them touched by that change,
+left as tracked debt rather than fixed opportunistically; `tests/`
+itself can't be added to a mypy run yet either (`tests/conftest.py:
+Source file found twice under different module names` — needs
+`--explicit-package-bases` or a `tests/__init__.py`, neither in place);
+no CI workflow file exists yet. None of these block using the app.
 
 Settled product decisions (see [wiki/Home.md](wiki/Home.md) for the full
 list): only a superadmin creates companies/honeypots/users — a company's

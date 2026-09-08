@@ -149,3 +149,23 @@
       <button type="submit" class="button">Save</button>
     </form>
   </section>
+
+  <section class="panel">
+    <h2>NetBird</h2>
+    <p class="hint">
+      Used by <a href="/initialize">Initialize</a> to join a freshly
+      provisioned honeypot to your NetBird network. Leave blank for
+      NetBird Cloud (the public management service) — only set this for a
+      self-hosted management server.
+    </p>
+    <form method="post" action="/settings/netbird" class="form" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+      <label for="netbird_management_url">Management URL</label>
+      <input type="text" id="netbird_management_url" name="netbird_management_url"
+             placeholder="https://netbird.example.com:443"
+             value="{{ app_settings.netbird_management_url or '' }}">
+
+      <button type="submit" class="button">Save</button>
+    </form>
+  </section>
