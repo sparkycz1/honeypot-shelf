@@ -19,10 +19,32 @@
     <p>{{ company.description }}</p>
   {% endif %}
 
+  <div class="stat-grid">
+    <div class="stat-card">
+      <span class="stat-value">{{ users | length }}</span>
+      <span class="stat-label">{{ t(request, "companies.detail.stat_users") }}</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-value">{{ stats.total }}</span>
+      <span class="stat-label">{{ t(request, "companies.detail.stat_honeypots") }}</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-value">{{ stats.reachable }}</span>
+      <span class="stat-label">{{ t(request, "companies.detail.stat_reachable") }}</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-value">{{ stats.needs_updates }}</span>
+      <span class="stat-label">{{ t(request, "companies.detail.stat_needs_updates") }}</span>
+    </div>
+  </div>
+
   <section class="panel">
     <div class="page-header">
       <h2>{{ t(request, "companies.detail.users_heading") }}</h2>
-      <a class="button" href="/users/new?company_id={{ company.id }}">{{ t(request, "companies.detail.add_user") }}</a>
+      <div class="page-header-actions">
+        <a class="button button-secondary" href="/users?company_id={{ company.id }}">{{ t(request, "companies.detail.view_all_users") }}</a>
+        <a class="button" href="/users/new?company_id={{ company.id }}">{{ t(request, "companies.detail.add_user") }}</a>
+      </div>
     </div>
     {% if not users %}
       <p class="hint">{{ t(request, "companies.detail.users_empty") }}</p>

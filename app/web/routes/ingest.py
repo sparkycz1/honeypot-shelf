@@ -17,6 +17,7 @@ forwarder can stay a thin, close-to-`curl` shim.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Any
@@ -45,9 +46,14 @@ async def _authenticate_honeypot(
 
     settings = get_settings()
     token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
-    is_shared_token = raw_token == settings.ingest_token.get_secret_value()
-    is_per_honeypot_token = (
-        honeypot.ingest_token_hash is not None and honeypot.ingest_token_hash == token_hash
+    # Constant-time comparisons — a naive `==` leaks how many leading bytes
+    # matched through response timing, same reasoning as every other
+    # secret comparison in this app (session/API tokens, CSRF).
+    is_shared_token = hmac.compare_digest(
+        raw_token, settings.ingest_token.get_secret_value()
+    )
+    is_per_honeypot_token = honeypot.ingest_token_hash is not None and hmac.compare_digest(
+        honeypot.ingest_token_hash, token_hash
     )
     if not (is_shared_token or is_per_honeypot_token):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Invalid ingest token.")

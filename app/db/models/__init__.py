@@ -16,9 +16,11 @@ from app.db.models.honeypot_reachability_sample import HoneypotReachabilitySampl
 from app.db.models.honeypot_service import HoneypotService
 from app.db.models.honeypot_tag import Tag
 from app.db.models.honeypot_update_run import HoneypotUpdateRun
+from app.db.models.initialize_run import InitializeRun
 from app.db.models.pending_honeypot import PendingHoneypot
 from app.db.models.saved_honeypot_view import SavedHoneypotView
 from app.db.models.scheduled_task import ScheduledTask
+from app.db.models.scheduled_task_run import ScheduledTaskRun
 from app.db.models.ssh_identity import SSHIdentity
 from app.db.models.totp_recovery_code import TotpRecoveryCode
 from app.db.models.user import User
@@ -39,10 +41,12 @@ __all__ = [
     "HoneypotReachabilitySample",
     "HoneypotService",
     "HoneypotUpdateRun",
+    "InitializeRun",
     "PendingHoneypot",
     "SSHIdentity",
     "SavedHoneypotView",
     "ScheduledTask",
+    "ScheduledTaskRun",
     "Tag",
     "TotpRecoveryCode",
     "User",

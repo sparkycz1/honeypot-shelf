@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t(request, "initialize.history.title") }} — HoneyHive{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>{{ t(request, "initialize.history.title") }}</h1>
+    <a class="button button-secondary" href="/initialize">{{ t(request, "initialize.history.back") }}</a>
+  </div>
+  <p class="hint">{{ t(request, "initialize.history.hint") }}</p>
+
+  {% if runs %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>{{ t(request, "initialize.history.col_finished") }}</th>
+          <th>{{ t(request, "initialize.history.col_device") }}</th>
+          <th>{{ t(request, "initialize.history.col_ip") }}</th>
+          <th>{{ t(request, "initialize.history.col_status") }}</th>
+          <th>{{ t(request, "initialize.history.col_by") }}</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for run in runs %}
+          <tr>
+            <td>{{ run.finished_at | local_time('%Y-%m-%d %H:%M:%S %Z') }}</td>
+            <td>{{ run.device_name }}</td>
+            <td>{{ run.ip_address }}</td>
+            <td>
+              {% if run.success %}
+                <span class="badge badge-ok">{{ t(request, "initialize.history.status_succeeded") }}</span>
+              {% else %}
+                <span class="badge badge-error">{{ t(request, "initialize.history.status_failed") }}</span>
+              {% endif %}
+            </td>
+            <td>{{ run.triggered_by }}</td>
+            <td><a href="/initialize/history/{{ run.id }}">{{ t(request, "initialize.history.details") }}</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="empty-state">
+      <p>{{ t(request, "initialize.history.empty") }}</p>
+    </div>
+  {% endif %}
+{% endblock %}

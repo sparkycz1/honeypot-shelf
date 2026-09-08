@@ -49,3 +49,64 @@ async def test_deleting_a_company_deletes_its_honeypots(client, db_session_facto
         assert await db.get(Company, company.id) is None
         result = await db.execute(select(Honeypot))
         assert result.scalars().all() == []
+
+
+async def test_company_detail_shows_users_and_stats(client, db_session_factory):
+    """The company page's own users list (with an "Add user" link) and the
+    honeypot/user stat cards — see the "Company page simplified" change."""
+    from app.db.models.user import AccessLevel, AuthProvider, User
+
+    async with db_session_factory() as db:
+        company = Company(name="Acme")
+        db.add(company)
+        await db.flush()
+        db.add(Honeypot(company_id=company.id, name="acme-honey1"))
+        db.add(
+            User(
+                username="acme-user",
+                company_id=company.id,
+                access_level=AccessLevel.READ,
+                auth_provider=AuthProvider.LOCAL,
+            )
+        )
+        await db.commit()
+        await db.refresh(company)
+
+    response = await client.get(f"/companies/{company.id}")
+    assert response.status_code == 200
+    assert "acme-user" in response.text
+    assert "acme-honey1" in response.text
+    assert f'href="/users/new?company_id={company.id}"' in response.text
+    assert f'href="/honeypots/new?company_id={company.id}"' in response.text
+    # The "Updates"/"Power" tabs were removed from a single company's page.
+    assert f'/companies/{company.id}/updates"' not in response.text
+    assert f'/companies/{company.id}/power"' not in response.text
+
+
+async def test_users_list_filters_by_company(client, db_session_factory):
+    from app.db.models.user import AccessLevel, AuthProvider, User
+
+    async with db_session_factory() as db:
+        company_a = Company(name="Acme")
+        company_b = Company(name="Beta")
+        db.add_all([company_a, company_b])
+        await db.flush()
+        db.add(User(
+            username="acme-user",
+            company_id=company_a.id,
+            access_level=AccessLevel.READ,
+            auth_provider=AuthProvider.LOCAL,
+        ))
+        db.add(User(
+            username="beta-user",
+            company_id=company_b.id,
+            access_level=AccessLevel.READ,
+            auth_provider=AuthProvider.LOCAL,
+        ))
+        await db.commit()
+        await db.refresh(company_a)
+
+    response = await client.get("/users", params={"company_id": str(company_a.id)})
+    assert response.status_code == 200
+    assert "acme-user" in response.text
+    assert "beta-user" not in response.text

@@ -5,8 +5,15 @@
 {% block content %}
   <div class="page-header">
     <h1>{{ t(request, "nav.users") }}</h1>
-    <a class="button" href="/users/new">{{ t(request, "users.list.add_button") }}</a>
+    <a class="button" href="/users/new{% if filtered_company %}?company_id={{ filtered_company.id }}{% endif %}">{{ t(request, "users.list.add_button") }}</a>
   </div>
+
+  {% if filtered_company %}
+    <p class="hint">
+      {{ t(request, "users.list.filtered_by_company", company=filtered_company.name) }}
+      <a href="/users">{{ t(request, "users.list.clear_filter") }}</a>
+    </p>
+  {% endif %}
 
   <table class="data-table">
     <thead>

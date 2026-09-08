@@ -45,16 +45,26 @@ from __future__ import annotations
 
 import re
 import secrets
+import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, Form, Request, Response, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import require_write
 from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie, verify_csrf
 from app.db.models.honeypot import AuthMethod
+from app.db.models.initialize_run import InitializeRun
+from app.db.session import get_db
 from app.web.templating import templates
+
+# How many past runs the history list shows — a debugging aid, not an
+# audit trail (the audit log already keeps every run's outcome forever);
+# no pagination needed at this scale.
+_HISTORY_PAGE_SIZE = 50
 
 router = APIRouter(prefix="/initialize", dependencies=[Depends(require_write)])
 
@@ -220,3 +230,33 @@ async def initialize_run_page(request: Request, run_id: str) -> Response:
     if new_cookie:
         set_csrf_cookie(response, new_cookie)
     return response
+
+
+@router.get("/history")
+async def initialize_history(request: Request, db: AsyncSession = Depends(get_db)) -> Response:
+    """The last `_HISTORY_PAGE_SIZE` runs, most recent first — see
+    `InitializeRun`'s module docstring for why this exists (the live
+    WebSocket output is otherwise gone the moment the run page is
+    closed, which makes debugging a failed provisioning after the fact
+    impossible)."""
+    result = await db.execute(
+        select(InitializeRun)
+        .order_by(InitializeRun.finished_at.desc())
+        .limit(_HISTORY_PAGE_SIZE)
+    )
+    runs = result.scalars().all()
+    return templates.TemplateResponse(
+        request, "initialize/history.html", {"runs": runs}
+    )
+
+
+@router.get("/history/{run_id}")
+async def initialize_history_detail(
+    request: Request, run_id: uuid.UUID, db: AsyncSession = Depends(get_db)
+) -> Response:
+    run = await db.get(InitializeRun, run_id)
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found.")
+    return templates.TemplateResponse(
+        request, "initialize/history_detail.html", {"run": run}
+    )

@@ -37,11 +37,16 @@ for every OpenCanary module (FTP/HTTP(S)/SSH/Telnet/databases/RDP/VNC/
 SIP/SNMP/NTP/TFTP/Git/LLMNR/a generic TCP banner/portscan/Samba));
 [Initialize](Honeypot-Initialize.md) — provisioning a brand new
 Raspberry Pi into a working honeypot (packages, OpenCanary, NetBird) over
-SSH before it's ever added to HoneyHive; Company management and
-fleet-wide/"All honeypots" bulk actions; Scheduling; the REST API
-mirroring all of the above; Users and Settings (LDAP/OIDC/syslog
+SSH before it's ever added to HoneyHive, with a persisted run history for
+debugging a failed provisioning after the fact; Company management (each
+company's own page shows just its users and its honeypots, each with a
+link to add another) and fleet-wide/"All honeypots" bulk actions;
+Scheduling, including a per-schedule run history and one-click retry for a
+failed firing; a per-honeypot ingest token (rotate/revoke from that
+honeypot's Settings tab), alternative to the shared `INGEST_TOKEN`; the
+REST API mirroring all of the above; Users and Settings (LDAP/OIDC/syslog
 forwarding, SSH key rotation, retention policies); full **English and
-Czech i18n** across every page, not just the site chrome. A 120-test
+Czech i18n** across every page, not just the site chrome. A 126-test
 suite covers the RBAC/scoping-sensitive paths; `ruff check .` and `mypy
 app alembic tests` are both fully clean. See [CLAUDE.md](../CLAUDE.md)'s
 "Current state" section for what's left (mainly: no CI workflow file).

@@ -6,11 +6,14 @@ app.ssh.initialize.
 from __future__ import annotations
 
 import re
+import uuid
+from datetime import UTC, datetime
 
-from app.db.models.user import AccessLevel
+from app.db.models.user import AccessLevel, User
 from app.ssh.initialize import build_initialize_command, service_user_for, wrap_for_sudo
-from app.web.routes.initialize import PENDING_RUNS
-from tests.conftest import create_company
+from app.web.routes.initialize import PENDING_RUNS, PendingInitializeRun
+from app.web.routes.initialize_ws import _persist_initialize_run
+from tests.conftest import ADMIN_USERNAME, create_company
 
 
 def _csrf_from(response) -> str:
@@ -111,6 +114,48 @@ async def test_post_initialize_rejects_malformed_netbird_url(client):
     )
     assert response.status_code == 200
     assert "http://" in response.text
+
+
+async def test_initialize_run_history(client, db_session_factory):
+    """`_persist_initialize_run` (called from `initialize_ws`'s `finally`
+    block once a run finishes) is what makes a failed provisioning
+    debuggable after the WebSocket/tab is gone — see `InitializeRun`'s
+    module docstring. Exercised directly here rather than through a real
+    SSH connection, same as the rest of this file does for the script
+    builder."""
+    user = User(username=ADMIN_USERNAME, is_superadmin=True)
+    run = PendingInitializeRun(
+        ip_address="192.0.2.20",
+        port=22,
+        username="root",
+        device_name="acme-honey2",
+        auth_method="ssh_key",
+        password=None,
+        netbird_setup_key=None,
+        netbird_management_url=None,
+    )
+    await _persist_initialize_run(
+        db_session_factory,
+        user=user,
+        run=run,
+        started_at=datetime.now(UTC),
+        error="Setup script exited 1.",
+        fingerprint=None,
+        output_lines=["line one", "line two"],
+    )
+
+    history = await client.get("/initialize/history")
+    assert history.status_code == 200
+    assert "acme-honey2" in history.text
+
+    match = re.search(r'/initialize/history/([0-9a-f-]+)"', history.text)
+    assert match, "no history detail link found"
+    run_id = uuid.UUID(match.group(1))
+
+    detail = await client.get(f"/initialize/history/{run_id}")
+    assert detail.status_code == 200
+    assert "line one" in detail.text
+    assert "Setup script exited 1." in detail.text
 
 
 async def test_get_run_page_for_an_unknown_run_id_redirects_to_the_form(client):
