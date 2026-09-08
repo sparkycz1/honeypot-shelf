@@ -20,7 +20,47 @@
   {% endif %}
 
   <section class="panel">
-    <h2>{{ t(request, "companies.detail.honeypots_heading") }}</h2>
+    <div class="page-header">
+      <h2>{{ t(request, "companies.detail.users_heading") }}</h2>
+      <a class="button" href="/users/new?company_id={{ company.id }}">{{ t(request, "companies.detail.add_user") }}</a>
+    </div>
+    {% if not users %}
+      <p class="hint">{{ t(request, "companies.detail.users_empty") }}</p>
+    {% else %}
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>{{ t(request, "users.field.username") }}</th>
+            <th>{{ t(request, "account.profile.access") }}</th>
+            <th>{{ t(request, "users.list.status") }}</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for member in users %}
+            <tr>
+              <td>{{ member.display_name or member.username }}</td>
+              <td>{{ t(request, "users.field.access_level_read_write") if member.access_level.value == "read_write" else t(request, "users.field.access_level_read_only") }}</td>
+              <td>
+                {% if member.is_active %}
+                  <span class="badge badge-ok">{{ t(request, "users.list.active_badge") }}</span>
+                {% else %}
+                  <span class="badge badge-error">{{ t(request, "users.list.disabled_badge") }}</span>
+                {% endif %}
+              </td>
+              <td><a href="/users/{{ member.id }}/edit">{{ t(request, "users.list.edit_link") }}</a></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <div class="page-header">
+      <h2>{{ t(request, "companies.detail.honeypots_heading") }}</h2>
+      <a class="button" href="/honeypots/new?company_id={{ company.id }}">{{ t(request, "companies.detail.add_honeypot") }}</a>
+    </div>
     {% include "partials/honeypot_search_form.html" %}
     {% if not honeypots %}
       {% if q %}
@@ -52,37 +92,11 @@
               </td>
               <td>{{ honeypot.username }}</td>
               <td>{% include "partials/honeypot_update_status_cell.html" %}</td>
-              <td>
-                <form method="post"
-                      action="/companies/{{ company.id }}/honeypots/{{ honeypot.id }}/remove">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                  <button type="submit" class="button button-secondary">{{ t(request, "companies.detail.remove") }}</button>
-                </form>
-              </td>
+              <td><a href="/honeypots/{{ honeypot.id }}">{{ t(request, "honeypots.table.details") }}</a></td>
             </tr>
           {% endfor %}
         </tbody>
       </table>
-    {% endif %}
-  </section>
-
-  <section class="panel">
-    <h2>{{ t(request, "companies.detail.add_heading") }}</h2>
-    {% if not available_honeypots %}
-      <p class="hint">{{ t(request, "companies.detail.add_empty") }}</p>
-    {% else %}
-      <form method="post" action="/companies/{{ company.id }}/honeypots" class="form">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <label for="honeypot_id">{{ t(request, "companies.detail.add_label") }}</label>
-        <select id="honeypot_id" name="honeypot_id" required>
-          {% for honeypot in available_honeypots %}
-            <option value="{{ honeypot.id }}">
-              {{ honeypot.name }}{% if honeypot.company %} ({{ t(request, "companies.detail.currently_in", company=honeypot.company.name) }}){% endif %}
-            </option>
-          {% endfor %}
-        </select>
-        <button type="submit" class="button">{{ t(request, "companies.detail.add_submit") }}</button>
-      </form>
     {% endif %}
   </section>
 {% endblock %}

@@ -86,6 +86,7 @@ class PendingInitializeRun:
     auth_method: str
     password: str | None
     netbird_setup_key: str | None
+    netbird_management_url: str | None
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
@@ -131,10 +132,12 @@ async def initialize_submit(
     auth_method: str = Form(AuthMethod.SSH_KEY.value),
     password: str = Form(""),
     netbird_setup_key: str = Form(""),
+    netbird_management_url: str = Form(""),
 ) -> Response:
     ip_address = ip_address.strip()
     device_name = device_name.strip()
     username = username.strip()
+    netbird_management_url = netbird_management_url.strip()
 
     errors: list[str] = []
     if not ip_address:
@@ -152,6 +155,11 @@ async def initialize_submit(
         errors.append("Unknown authentication method.")
     if auth_method == AuthMethod.PASSWORD.value and not password:
         errors.append("A password is required for password authentication.")
+    if netbird_management_url and not (
+        netbird_management_url.startswith("http://")
+        or netbird_management_url.startswith("https://")
+    ):
+        errors.append('NetBird management URL must start with "http://" or "https://".')
 
     if errors:
         return await _render_form(
@@ -174,6 +182,7 @@ async def initialize_submit(
         auth_method=auth_method,
         password=password or None,
         netbird_setup_key=netbird_setup_key.strip() or None,
+        netbird_management_url=netbird_management_url or None,
     )
     return RedirectResponse(
         url=f"/initialize/run/{run_id}", status_code=status.HTTP_303_SEE_OTHER

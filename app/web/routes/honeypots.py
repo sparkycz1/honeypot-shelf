@@ -467,6 +467,10 @@ async def new_honeypot_form(
             "form": {
                 "name": request.query_params.get("name", ""),
                 "ip_address": request.query_params.get("ip_address", ""),
+                # Pre-selects the company `<select>` when linked from that
+                # company's own page ("Add honeypot") — still just a regular
+                # field the operator can change before submitting.
+                "company_id": request.query_params.get("company_id", ""),
             },
             "csrf_token": csrf_token,
         },

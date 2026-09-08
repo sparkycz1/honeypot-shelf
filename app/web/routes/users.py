@@ -98,7 +98,10 @@ async def new_user_form(request: Request, db: AsyncSession = Depends(get_db)) ->
             "access_levels": list(AccessLevel),
             "companies": await _get_companies(db),
             "errors": [],
-            "form": {},
+            # Pre-selects the company `<select>` when linked from that
+            # company's own page ("Add user") — purely a UI convenience,
+            # still just a regular field on the form the operator can change.
+            "form": {"company_id": request.query_params.get("company_id", "")},
             "csrf_token": request.state.csrf_token,
         },
     )
