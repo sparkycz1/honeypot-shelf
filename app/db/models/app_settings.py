@@ -145,12 +145,14 @@ class AppSettings(Base):
     # login.html.
     oidc_provider_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
-    # --- NetBird (app.ssh.initialize) ---
-    # Self-hosted management server URL, e.g. "https://netbird.example.com:443".
-    # Blank (the default) means "NetBird Cloud" — `netbird up` omits
-    # `--management-url` entirely rather than passing an empty string, so a
-    # freshly-initialized honeypot joins the public management service.
-    netbird_management_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # NetBird's management URL is no longer a global setting — it's entered
+    # fresh on each Initialize run instead (`app.web.routes.initialize`'s
+    # `PendingInitializeRun.netbird_management_url`), the same one-time-use
+    # pattern already used for the SSH password and the NetBird setup key.
+    # A previous revision stored it here; see the Alembic migration that
+    # drops this column for why (nothing else in this app needs it once a
+    # honeypot is initialized — `netbird up` doesn't persist it anywhere
+    # HoneyHive reads back).
 
     # --- Syslog forwarding of audit log entries (app.audit_syslog), e.g. to
     # a SIEM such as Wazuh. Best-effort/fire-and-forget: the DB row is always

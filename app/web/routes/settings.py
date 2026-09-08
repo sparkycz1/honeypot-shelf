@@ -496,32 +496,6 @@ async def update_oidc_settings(
     return RedirectResponse(url="/settings?tab=integrations", status_code=status.HTTP_303_SEE_OTHER)
 
 
-@router.post("/netbird", dependencies=[Depends(verify_csrf)])
-async def update_netbird_settings(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    netbird_management_url: str = Form(""),
-) -> Response:
-    app_settings = await get_or_create_app_settings(db)
-
-    url = netbird_management_url.strip()
-    if url and not (url.startswith("http://") or url.startswith("https://")):
-        return await _render_settings(
-            request,
-            db,
-            ['Management URL must start with "http://" or "https://".'],
-            tab="integrations",
-        )
-
-    app_settings.netbird_management_url = url or None
-    await db.commit()
-
-    await log_event(
-        db, request=request, action="settings.netbird.update", summary="Updated NetBird settings"
-    )
-    return RedirectResponse(url="/settings?tab=integrations", status_code=status.HTTP_303_SEE_OTHER)
-
-
 @router.post("/syslog", dependencies=[Depends(verify_csrf)])
 async def update_syslog_settings(
     request: Request,

@@ -34,7 +34,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.audit import log_event
 from app.auth.sessions import SESSION_COOKIE_NAME, get_valid_session
-from app.core.app_settings import get_or_create_app_settings
 from app.core.config import get_settings
 from app.core.security import decrypt_secret
 from app.db.models.audit_log import AuditOutcome
@@ -188,14 +187,12 @@ async def initialize_websocket(websocket: WebSocket, run_id: str) -> None:
                 device.auth_method = AuthMethod.SSH_KEY
                 identity = await get_or_create_identity(db)
                 secret = decrypt_secret(identity.private_key_encrypted)
-            app_settings = await get_or_create_app_settings(db)
-            netbird_management_url = app_settings.netbird_management_url
 
         script = build_initialize_command(
             device_name=run.device_name,
             service_user=service_user_for(run.username),
             netbird_setup_key=run.netbird_setup_key,
-            netbird_management_url=netbird_management_url,
+            netbird_management_url=run.netbird_management_url,
         )
         script = wrap_for_sudo(
             script,

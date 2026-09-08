@@ -48,8 +48,9 @@ pins its host key the usual, non-TOFU way, then (optionally) run its own
 | Device name | Set as the device's hostname and `/etc/hosts` entry. Must be a valid hostname (letters/digits/hyphens). |
 | User | `root`, or any other account already reachable over SSH. Anything other than `root` runs the whole script via `sudo`. |
 | SSH port | Defaults to 22. |
-| Authentication | HoneyHive's own shared identity key (assumed already authorized on the device — e.g. preseeded via RPi Imager; see Settings for the public key) or a one-time password. Neither the password nor the NetBird setup key below is ever stored — both are used for this one run only. |
-| NetBird setup key | Optional. NetBird installs either way; a setup key also joins the device to your network right away (`netbird up --setup-key ...`). Get one from your NetBird management console. The management server URL (blank = NetBird Cloud) is configured once, globally, on Settings → Integrations. |
+| Authentication | HoneyHive's own shared identity key (assumed already authorized on the device — e.g. preseeded via RPi Imager; see Settings for the public key) or a one-time password. Neither the password nor the two NetBird fields below is ever stored — all three are used for this one run only. |
+| NetBird setup key | Optional. NetBird installs either way; a setup key also joins the device to your network right away (`netbird up --setup-key ...`). Get one from your NetBird management console. |
+| NetBird management URL | Optional. Blank = NetBird Cloud (the public management service); set this only for a self-hosted management server. Entered fresh on every run — like the SSH password and the setup key above, never stored anywhere in HoneyHive. |
 
 ## Host-key trust is deliberately trust-on-first-use here
 

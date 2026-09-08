@@ -59,17 +59,13 @@ ALL_HONEYPOTS_CONFIRM_PHRASE = "ALL HONEYPOTS"
 
 def _company_tabs(request: Request, company: Company) -> list[tuple[str, str, str]]:
     """The (key, label, url) tabs shown on every one of this company's own
-    pages — mirrors `app.web.routes.honeypots._honeypot_tabs`. No "Settings"
-    tab: unlike a honeypot, a company has nothing else to configure yet beyond
-    its name/description (set once at creation) and deletion, which stays a
-    single button on the Overview tab. Reuses the honeypot tabs' own
-    `honeypots.tabs.*` keys — identical English text ("Overview"/"Updates"/
-    "Power"), no reason to duplicate the translation."""
+    pages. Just "Overview" — a single company's own page deliberately shows
+    only its users and its honeypots (see the product decision in
+    CLAUDE.md/wiki/Home.md); the fleet-wide bulk update/power tools stay on
+    "All honeypots" (`companies/all.html`), not here."""
     base = f"/companies/{company.id}"
     return [
         ("overview", t(request, "honeypots.tabs.overview"), base),
-        ("updates", t(request, "honeypots.tabs.updates"), f"{base}/updates"),
-        ("power", t(request, "honeypots.tabs.power"), f"{base}/power"),
     ]
 
 
@@ -441,10 +437,14 @@ async def company_detail(
     q: str = "",
     tag: str = "",
 ) -> Response:
-    """Unlike debcontrol's machine groups, a honeypot's company isn't
-    editable from here — every `Honeypot` requires exactly one `Company`
-    (DB-enforced, not nullable), so "move a honeypot in/out of this
-    company" doesn't make sense as a membership action the way optional
+    """A single company's own page shows only two things, per the product
+    decision recorded in CLAUDE.md/wiki/Home.md: its users, and its
+    honeypots — each with a link to add another (`/users/new` and
+    `/honeypots/new`, both superadmin-only forms, pre-selecting this
+    company). Unlike debcontrol's machine groups, a honeypot's company
+    isn't editable from here as a membership action — every `Honeypot`
+    requires exactly one `Company` (DB-enforced, not nullable), so "move a
+    honeypot in/out of this company" doesn't make sense the way optional
     group membership did. Reassigning a honeypot to a different company is
     part of its own edit form (`app/web/routes/honeypots.py`, superadmin-
     only there too via the company `<select>`)."""
@@ -462,6 +462,11 @@ async def company_detail(
     result = await db.execute(members_query.order_by(Honeypot.name))
     honeypots = result.scalars().all()
 
+    users_result = await db.execute(
+        select(User).where(User.company_id == company_id).order_by(User.username)
+    )
+    users = users_result.scalars().all()
+
     csrf_token, new_cookie = get_or_create_csrf_token(request)
     response = templates.TemplateResponse(
         request,
@@ -471,6 +476,7 @@ async def company_detail(
             "tabs": _company_tabs(request, company),
             "active_tab": "overview",
             "honeypots": honeypots,
+            "users": users,
             "all_tags": await _get_all_tags(db),
             "q": q,
             "tag": tag,
@@ -480,188 +486,6 @@ async def company_detail(
     if new_cookie:
         set_csrf_cookie(response, new_cookie)
     return response
-
-
-@router.get("/{company_id}/updates")
-async def company_updates_tab(
-    request: Request,
-    company_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> Response:
-    company = await _get_company_or_404(company_id, db, current_user)
-    csrf_token, new_cookie = get_or_create_csrf_token(request)
-    response = templates.TemplateResponse(
-        request,
-        "companies/updates.html",
-        {
-            "company": company,
-            "tabs": _company_tabs(request, company),
-            "active_tab": "updates",
-            "csrf_token": csrf_token,
-        },
-    )
-    if new_cookie:
-        set_csrf_cookie(response, new_cookie)
-    return response
-
-
-@router.get("/{company_id}/power")
-async def company_power_tab(
-    request: Request,
-    company_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> Response:
-    company = await _get_company_or_404(company_id, db, current_user)
-    return templates.TemplateResponse(
-        request,
-        "companies/power.html",
-        {
-            "company": company,
-            "tabs": _company_tabs(request, company),
-            "active_tab": "power",
-            "power_skipped": request.query_params.get("power_skipped"),
-        },
-    )
-
-
-@router.post("/{company_id}/updates", dependencies=[_updates, Depends(verify_csrf)])
-async def trigger_company_update(
-    request: Request,
-    company_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-    strategy: UpgradeStrategy = Form(...),
-) -> Response:
-    company = await _get_company_or_404(company_id, db, current_user)
-    batch_id, skipped = await trigger_updates(db, company.honeypots, strategy)
-
-    await log_event(
-        db,
-        request=request,
-        action="company.updates.run",
-        summary=f'Triggered {strategy.value.replace("_", "-")} on company "{company.name}"',
-        target_type="company",
-        target_id=company.id,
-        target_label=company.name,
-        details={"strategy": strategy.value, "batch_id": str(batch_id), "skipped": skipped},
-    )
-
-    redirect_url = f"/companies/batches/{batch_id}"
-    if skipped:
-        redirect_url += f"?skipped={skipped}"
-    return RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
-
-
-@router.post("/{company_id}/check-updates", dependencies=[_updates, Depends(verify_csrf)])
-async def trigger_company_check_updates(
-    request: Request,
-    company_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> Response:
-    company = await _get_company_or_404(company_id, db, current_user)
-    skipped = await trigger_check_updates(company.honeypots)
-    await log_event(
-        db,
-        request=request,
-        action="company.updates.check",
-        summary=f'Checked for updates on company "{company.name}"',
-        target_type="company",
-        target_id=company.id,
-        target_label=company.name,
-        details={"skipped": skipped},
-    )
-    return RedirectResponse(
-        url=f"/companies/{company_id}/updates", status_code=status.HTTP_303_SEE_OTHER
-    )
-
-
-@router.get("/{company_id}/power/{action}")
-async def company_power_confirm(
-    request: Request,
-    company_id: uuid.UUID,
-    action: PowerAction,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> Response:
-    company = await _get_company_or_404(company_id, db, current_user)
-    csrf_token, new_cookie = get_or_create_csrf_token(request)
-    response = templates.TemplateResponse(
-        request,
-        "companies/power_confirm.html",
-        {
-            "action": action,
-            "target_label": f'every honeypot in "{company.name}"',
-            "confirm_phrase": company.name,
-            "action_url": f"/companies/{company_id}/power",
-            "cancel_url": f"/companies/{company_id}/power",
-            "error": None,
-            "csrf_token": csrf_token,
-        },
-    )
-    if new_cookie:
-        set_csrf_cookie(response, new_cookie)
-    return response
-
-
-@router.post("/{company_id}/power", dependencies=[_power, Depends(verify_csrf)])
-async def company_power_action(
-    request: Request,
-    company_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-    action: PowerAction = Form(...),
-    confirm_name: str = Form(...),
-) -> Response:
-    company = await _get_company_or_404(company_id, db, current_user)
-
-    if confirm_name.strip() != company.name:
-        await log_event(
-            db,
-            request=request,
-            action=f"company.power.{action.value}",
-            summary=f'Blocked {action.value} on company "{company.name}": confirmation mismatch',
-            outcome=AuditOutcome.DENIED,
-            target_type="company",
-            target_id=company.id,
-            target_label=company.name,
-        )
-        csrf_token, new_cookie = get_or_create_csrf_token(request)
-        response = templates.TemplateResponse(
-            request,
-            "companies/power_confirm.html",
-            {
-                "action": action,
-                "target_label": f'every honeypot in "{company.name}"',
-                "confirm_phrase": company.name,
-                "action_url": f"/companies/{company_id}/power",
-                "cancel_url": f"/companies/{company_id}/power",
-                "error": f'That doesn\'t match — type "{company.name}" exactly to confirm.',
-                "csrf_token": csrf_token,
-            },
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-        )
-        if new_cookie:
-            set_csrf_cookie(response, new_cookie)
-        return response
-
-    skipped = await send_power_to_honeypots(company.honeypots, action)
-    await log_event(
-        db,
-        request=request,
-        action=f"company.power.{action.value}",
-        summary=f'Sent {action.value} to company "{company.name}"',
-        target_type="company",
-        target_id=company.id,
-        target_label=company.name,
-        details={"skipped": skipped},
-    )
-    redirect_url = f"/companies/{company_id}/power"
-    if skipped:
-        redirect_url += f"?power_skipped={skipped}"
-    return RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
 
 
 async def _visible_batch_runs(

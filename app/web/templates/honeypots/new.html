@@ -58,9 +58,9 @@
     {% if current_user.is_superadmin %}
       <label for="company_id">{{ t(request, 'honeypots.edit.company') }}</label>
       <select id="company_id" name="company_id" required>
-        <option value="" disabled selected>{{ t(request, 'honeypots.new.choose_company') }}</option>
+        <option value="" disabled {{ 'selected' if not form.company_id else '' }}>{{ t(request, 'honeypots.new.choose_company') }}</option>
         {% for company in companies %}
-          <option value="{{ company.id }}">{{ company.name }}</option>
+          <option value="{{ company.id }}" {{ 'selected' if form.company_id == company.id | string else '' }}>{{ company.name }}</option>
         {% endfor %}
       </select>
     {% endif %}

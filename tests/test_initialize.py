@@ -37,7 +37,7 @@ async def test_get_initialize_form_has_expected_fields(client):
     response = await client.get("/initialize")
     assert response.status_code == 200
     for field in ("ip_address", "device_name", "username", "port", "auth_method", "password",
-                  "netbird_setup_key"):
+                  "netbird_setup_key", "netbird_management_url"):
         assert f'name="{field}"' in response.text
 
 
@@ -66,6 +66,7 @@ async def test_post_initialize_stages_a_pending_run_and_redirects(client):
             "auth_method": "ssh_key",
             "password": "",
             "netbird_setup_key": "",
+            "netbird_management_url": "https://netbird.example.com:443",
             "csrf_token": csrf_token,
         },
         follow_redirects=False,
@@ -80,6 +81,7 @@ async def test_post_initialize_stages_a_pending_run_and_redirects(client):
     assert run.ip_address == "192.0.2.10"
     assert run.device_name == "acme-honey1"
     assert run.auth_method == "ssh_key"
+    assert run.netbird_management_url == "https://netbird.example.com:443"
 
     run_page = await client.get(location)
     assert run_page.status_code == 200
@@ -87,6 +89,28 @@ async def test_post_initialize_stages_a_pending_run_and_redirects(client):
     assert "acme-honey1" in run_page.text
 
     PENDING_RUNS.pop(run_id, None)
+
+
+async def test_post_initialize_rejects_malformed_netbird_url(client):
+    form = await client.get("/initialize")
+    csrf_token = _csrf_from(form)
+
+    response = await client.post(
+        "/initialize",
+        data={
+            "ip_address": "192.0.2.10",
+            "device_name": "acme-honey1",
+            "username": "root",
+            "port": "22",
+            "auth_method": "ssh_key",
+            "password": "",
+            "netbird_setup_key": "",
+            "netbird_management_url": "not-a-url",
+            "csrf_token": csrf_token,
+        },
+    )
+    assert response.status_code == 200
+    assert "http://" in response.text
 
 
 async def test_get_run_page_for_an_unknown_run_id_redirects_to_the_form(client):
