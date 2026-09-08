@@ -3,21 +3,21 @@
 
 {% block title %}{{ t(request, 'honeypots.title') }} — HoneyHive{% endblock %}
 
-{% macro status_badge(honeypot) %}
+{% macro status_badge(request, honeypot) %}
   {% if honeypot.is_reachable is none %}
-    <span class="badge badge-warn">unknown</span>
+    <span class="badge badge-warn">{{ t(request, 'honeypots.list.status_unknown') }}</span>
   {% elif honeypot.is_reachable %}
-    <span class="badge badge-ok">online</span>
+    <span class="badge badge-ok">{{ t(request, 'honeypots.list.status_online') }}</span>
   {% else %}
-    <span class="badge badge-error">offline</span>
+    <span class="badge badge-error">{{ t(request, 'honeypots.list.status_offline') }}</span>
   {% endif %}
 {% endmacro %}
 
-{% macro host_key_badge(honeypot) %}
+{% macro host_key_badge(request, honeypot) %}
   {% if honeypot.host_key_fingerprint %}
-    <span class="badge badge-ok">pinned</span>
+    <span class="badge badge-ok">{{ t(request, 'honeypots.list.host_key_pinned') }}</span>
   {% else %}
-    <span class="badge badge-warn">unconfirmed</span>
+    <span class="badge badge-warn">{{ t(request, 'honeypots.list.host_key_unconfirmed') }}</span>
   {% endif %}
 {% endmacro %}
 
@@ -190,7 +190,7 @@
                      aria-label="Select {{ honeypot.name }}">
               {{ render_os_badge(honeypot.os_id, size=18) }}
               <a href="/honeypots/{{ honeypot.id }}" class="honeypot-compact-name">{{ honeypot.name }}</a>
-              {{ status_badge(honeypot) }}
+              {{ status_badge(request, honeypot) }}
               {{ tag_chips(honeypot) }}
             </li>
           {% endfor %}
@@ -217,9 +217,9 @@
                 </dd>
               </dl>
               <div class="honeypot-card-badges">
-                {{ status_badge(honeypot) }}
+                {{ status_badge(request, honeypot) }}
                 {% include "partials/honeypot_update_status_cell.html" %}
-                {{ host_key_badge(honeypot) }}
+                {{ host_key_badge(request, honeypot) }}
               </div>
               {% set sample = latest_monitoring.get(honeypot.id) %}
               {% if sample %}
@@ -275,9 +275,9 @@
                     <span class="hint">—</span>
                   {% endif %}
                 </td>
-                <td>{{ status_badge(honeypot) }}</td>
+                <td>{{ status_badge(request, honeypot) }}</td>
                 <td>{% include "partials/honeypot_update_status_cell.html" %}</td>
-                <td>{{ host_key_badge(honeypot) }}</td>
+                <td>{{ host_key_badge(request, honeypot) }}</td>
                 <td><a href="/honeypots/{{ honeypot.id }}">{{ t(request, 'honeypots.table.details') }}</a></td>
               </tr>
             {% endfor %}

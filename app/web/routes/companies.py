@@ -39,7 +39,7 @@ from app.services.honeypot_actions import (
 from app.ssh.power import PowerAction
 from app.web.honeypot_search import honeypot_search_clause
 from app.web.routes.honeypots import _HONEYPOT_LIST_PAGE_SIZE
-from app.web.templating import templates
+from app.web.templating import t, templates
 
 # Companies are superadmin-only end to end (create/rename/delete, and the
 # bulk update/power/tag actions below) — per the product decision recorded
@@ -57,17 +57,19 @@ _power = Depends(require_superadmin)
 ALL_HONEYPOTS_CONFIRM_PHRASE = "ALL HONEYPOTS"
 
 
-def _company_tabs(company: Company) -> list[tuple[str, str, str]]:
+def _company_tabs(request: Request, company: Company) -> list[tuple[str, str, str]]:
     """The (key, label, url) tabs shown on every one of this company's own
     pages — mirrors `app.web.routes.honeypots._honeypot_tabs`. No "Settings"
     tab: unlike a honeypot, a company has nothing else to configure yet beyond
     its name/description (set once at creation) and deletion, which stays a
-    single button on the Overview tab."""
+    single button on the Overview tab. Reuses the honeypot tabs' own
+    `honeypots.tabs.*` keys — identical English text ("Overview"/"Updates"/
+    "Power"), no reason to duplicate the translation."""
     base = f"/companies/{company.id}"
     return [
-        ("overview", "Overview", base),
-        ("updates", "Updates", f"{base}/updates"),
-        ("power", "Power", f"{base}/power"),
+        ("overview", t(request, "honeypots.tabs.overview"), base),
+        ("updates", t(request, "honeypots.tabs.updates"), f"{base}/updates"),
+        ("power", t(request, "honeypots.tabs.power"), f"{base}/power"),
     ]
 
 
@@ -466,7 +468,7 @@ async def company_detail(
         "companies/detail.html",
         {
             "company": company,
-            "tabs": _company_tabs(company),
+            "tabs": _company_tabs(request, company),
             "active_tab": "overview",
             "honeypots": honeypots,
             "all_tags": await _get_all_tags(db),
@@ -494,7 +496,7 @@ async def company_updates_tab(
         "companies/updates.html",
         {
             "company": company,
-            "tabs": _company_tabs(company),
+            "tabs": _company_tabs(request, company),
             "active_tab": "updates",
             "csrf_token": csrf_token,
         },
@@ -517,7 +519,7 @@ async def company_power_tab(
         "companies/power.html",
         {
             "company": company,
-            "tabs": _company_tabs(company),
+            "tabs": _company_tabs(request, company),
             "active_tab": "power",
             "power_skipped": request.query_params.get("power_skipped"),
         },

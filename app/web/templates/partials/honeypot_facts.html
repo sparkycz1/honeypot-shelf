@@ -1,30 +1,29 @@
-<h2>Facts</h2>
+<h2>{{ t(request, "partials.facts.heading") }}</h2>
 
 {% if error %}
   <div class="alert alert-error">
-    <p>Could not refresh facts: {{ error }}</p>
+    <p>{{ t(request, "partials.facts.refresh_error") }} {{ error }}</p>
   </div>
 {% endif %}
 
 {% if not honeypot.facts_updated_at %}
   <p class="hint">
-    Not gathered yet — this happens automatically once the host key
-    fingerprint is confirmed above, and refreshes periodically after that.
+    {{ t(request, "partials.facts.not_gathered_yet") }}
   </p>
 {% else %}
   <dl class="detail-list">
-    <dt>Hostname</dt><dd>{{ honeypot.discovered_hostname or '—' }}</dd>
-    <dt>OS version</dt><dd>{{ honeypot.os_version or '—' }}</dd>
-    <dt>Kernel</dt><dd>{{ honeypot.kernel_version or '—' }}</dd>
-    <dt>CPU</dt><dd>{{ honeypot.cpu_model or '—' }}</dd>
-    <dt>CPU architecture</dt><dd>{{ honeypot.cpu_architecture or '—' }}</dd>
-    <dt>CPU cores</dt><dd>{{ honeypot.cpu_cores if honeypot.cpu_cores is not none else '—' }}</dd>
-    <dt>RAM</dt>
+    <dt>{{ t(request, "partials.facts.field.hostname") }}</dt><dd>{{ honeypot.discovered_hostname or '—' }}</dd>
+    <dt>{{ t(request, "partials.facts.field.os_version") }}</dt><dd>{{ honeypot.os_version or '—' }}</dd>
+    <dt>{{ t(request, "partials.facts.field.kernel") }}</dt><dd>{{ honeypot.kernel_version or '—' }}</dd>
+    <dt>{{ t(request, "partials.facts.field.cpu") }}</dt><dd>{{ honeypot.cpu_model or '—' }}</dd>
+    <dt>{{ t(request, "partials.facts.field.cpu_architecture") }}</dt><dd>{{ honeypot.cpu_architecture or '—' }}</dd>
+    <dt>{{ t(request, "partials.facts.field.cpu_cores") }}</dt><dd>{{ honeypot.cpu_cores if honeypot.cpu_cores is not none else '—' }}</dd>
+    <dt>{{ t(request, "partials.facts.field.ram") }}</dt>
     <dd>
       {{ '%.1f GB' % (honeypot.ram_bytes / 1073741824) if honeypot.ram_bytes else '—' }}
       {% if honeypot.ram_speed_mhz %}({{ honeypot.ram_speed_mhz }} MHz){% endif %}
     </dd>
-    <dt>Disks</dt>
+    <dt>{{ t(request, "partials.facts.field.disks") }}</dt>
     <dd>
       {% if honeypot.disks %}
         {% for disk in honeypot.disks %}
@@ -34,10 +33,10 @@
         —
       {% endif %}
     </dd>
-    <dt>Uptime</dt><dd>{{ honeypot.uptime_seconds | format_uptime }}</dd>
-    <dt>Processes</dt>
+    <dt>{{ t(request, "partials.facts.field.uptime") }}</dt><dd>{{ honeypot.uptime_seconds | format_uptime }}</dd>
+    <dt>{{ t(request, "partials.facts.field.processes") }}</dt>
     <dd>{{ honeypot.process_count if honeypot.process_count is not none else '—' }}</dd>
-    <dt>Network</dt>
+    <dt>{{ t(request, "partials.facts.field.network") }}</dt>
     <dd>
       {% if honeypot.network_interfaces %}
         {% for iface in honeypot.network_interfaces %}
@@ -47,7 +46,7 @@
         —
       {% endif %}
     </dd>
-    <dt>Last refreshed</dt><dd>{{ honeypot.facts_updated_at | local_time('%Y-%m-%d %H:%M %Z') }}</dd>
+    <dt>{{ t(request, "partials.facts.field.last_refreshed") }}</dt><dd>{{ honeypot.facts_updated_at | local_time('%Y-%m-%d %H:%M %Z') }}</dd>
   </dl>
 {% endif %}
 
@@ -59,8 +58,8 @@
   hx-swap="innerHTML"
   {% if not honeypot.host_key_fingerprint %}disabled{% endif %}
 >
-  Refresh facts now
+  {{ t(request, "partials.facts.refresh_button") }}
 </button>
 {% if not honeypot.host_key_fingerprint %}
-  <p class="hint">Confirm the server's key fingerprint above first.</p>
+  <p class="hint">{{ t(request, "partials.confirm_fingerprint_first") }}</p>
 {% endif %}

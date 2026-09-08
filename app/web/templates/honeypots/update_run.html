@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 
-{% block title %}Update run — {{ honeypot.name }} — HoneyHive{% endblock %}
+{% block title %}{{ t(request, "honeypots.updates.run.title") }} — {{ honeypot.name }} — HoneyHive{% endblock %}
 
 {% block content %}
   <div class="page-header">
-    <h1>Update run — {{ honeypot.name }}</h1>
-    <a class="button button-secondary" href="/honeypots/{{ honeypot.id }}">Back to honeypot</a>
+    <h1>{{ t(request, "honeypots.updates.run.heading") }} — {{ honeypot.name }}</h1>
+    <a class="button button-secondary" href="/honeypots/{{ honeypot.id }}">{{ t(request, "honeypots.updates.run.back") }}</a>
   </div>
 
   <section class="panel">

@@ -1,14 +1,14 @@
 {% extends "base.html" %}
 
-{% block title %}Edit {{ target_user.username }} — HoneyHive{% endblock %}
+{% block title %}{{ t(request, "users.edit.title", username=target_user.username) }} — HoneyHive{% endblock %}
 
 {% block content %}
   <div class="page-header">
-    <h1>Edit user</h1>
+    <h1>{{ t(request, "users.edit.heading") }}</h1>
     <form method="post" action="/users/{{ target_user.id }}/delete"
-          class="inline-form" data-confirm='Delete user "{{ target_user.username }}"? This cannot be undone.'>
+          class="inline-form" data-confirm='{{ t(request, "users.edit.delete_confirm", username=target_user.username) }}'>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button type="submit" class="button button-danger">Delete user</button>
+      <button type="submit" class="button button-danger">{{ t(request, "users.edit.delete_button") }}</button>
     </form>
   </div>
 
@@ -22,89 +22,89 @@
     <form method="post" action="/users/{{ target_user.id }}/edit" class="form" autocomplete="off">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
-      <label for="username">Username</label>
+      <label for="username">{{ t(request, "users.field.username") }}</label>
       <input type="text" id="username" name="username" required maxlength="64"
              pattern="[a-z0-9][a-z0-9_.\-]{2,63}" value="{{ target_user.username }}">
 
-      <label for="display_name">Display name</label>
+      <label for="display_name">{{ t(request, "users.field.display_name") }}</label>
       <input type="text" id="display_name" name="display_name" maxlength="255"
              value="{{ target_user.display_name or '' }}">
 
-      <label for="auth_provider">Login method</label>
+      <label for="auth_provider">{{ t(request, "users.field.auth_provider") }}</label>
       <select id="auth_provider" name="auth_provider" required>
         {% for provider in auth_providers %}
           <option value="{{ provider.value }}" {{ 'selected' if provider == target_user.auth_provider else '' }}>{{ provider.value }}</option>
         {% endfor %}
       </select>
 
-      <label for="password">Password (only when switching to "local")</label>
+      <label for="password">{{ t(request, "users.edit.password_label") }}</label>
       <input type="password" id="password" name="password" autocomplete="new-password" minlength="12">
-      <p class="hint">Leave blank to keep the existing password unchanged.</p>
+      <p class="hint">{{ t(request, "users.edit.password_hint") }}</p>
 
       <label>
         <input type="checkbox" name="is_active" {{ 'checked' if target_user.is_active else '' }}>
-        Active — unchecking immediately signs this user out everywhere
+        {{ t(request, "users.edit.active_label") }}
       </label>
 
       <label>
         <input type="checkbox" name="api_access_enabled" {{ 'checked' if target_user.api_access_enabled else '' }}>
-        API access — allows this user to create and use their own API tokens
+        {{ t(request, "users.field.api_access") }}
       </label>
-      <p class="hint">Unchecking this immediately stops any of this user's existing API tokens from working, no separate revocation needed.</p>
+      <p class="hint">{{ t(request, "users.edit.api_access_hint") }}</p>
 
       <fieldset>
-        <legend>Access</legend>
+        <legend>{{ t(request, "account.profile.access") }}</legend>
         <label>
           <input type="checkbox" id="is_superadmin" name="is_superadmin"
                  {{ 'checked' if target_user.is_superadmin else '' }}
                  data-toggle-hidden="company-scope-fields">
-          Superadmin — sees and manages every company
+          {{ t(request, "users.field.superadmin") }}
         </label>
 
         <div id="company-scope-fields" {{ 'hidden' if target_user.is_superadmin else '' }}>
-          <label for="company_id">Company</label>
+          <label for="company_id">{{ t(request, "users.field.company") }}</label>
           <select id="company_id" name="company_id">
-            <option value="" disabled {{ 'selected' if not target_user.company_id else '' }}>Choose a company…</option>
+            <option value="" disabled {{ 'selected' if not target_user.company_id else '' }}>{{ t(request, "users.field.choose_company") }}</option>
             {% for company in companies %}
               <option value="{{ company.id }}" {{ 'selected' if target_user.company_id == company.id else '' }}>{{ company.name }}</option>
             {% endfor %}
           </select>
 
-          <label for="access_level">Access level</label>
+          <label for="access_level">{{ t(request, "users.field.access_level") }}</label>
           <select id="access_level" name="access_level">
             {% for level in access_levels %}
-              <option value="{{ level.value }}" {{ 'selected' if target_user.access_level == level else '' }}>{{ "Read + write" if level.value == "read_write" else "Read only" }}</option>
+              <option value="{{ level.value }}" {{ 'selected' if target_user.access_level == level else '' }}>{{ t(request, "users.field.access_level_read_write") if level.value == "read_write" else t(request, "users.field.access_level_read_only") }}</option>
             {% endfor %}
           </select>
         </div>
-        <p class="hint">You can't change your own scope — ask another superadmin.</p>
+        <p class="hint">{{ t(request, "users.edit.own_scope_hint") }}</p>
       </fieldset>
 
-      <button type="submit" class="button">Save</button>
-      <a class="button button-secondary" href="/users">Cancel</a>
+      <button type="submit" class="button">{{ t(request, "common.save") }}</button>
+      <a class="button button-secondary" href="/users">{{ t(request, "common.cancel") }}</a>
     </form>
   </section>
 
   {% if target_user.auth_provider.value == 'local' %}
     <section class="panel">
-      <h2>Reset password</h2>
-      <p class="hint">Sets a new password and signs this user out everywhere — they must change it on next login.</p>
+      <h2>{{ t(request, "users.edit.reset_password_heading") }}</h2>
+      <p class="hint">{{ t(request, "users.edit.reset_password_hint") }}</p>
       <form method="post" action="/users/{{ target_user.id }}/reset-password" class="form" autocomplete="off"
-            data-confirm="Reset this user's password and sign them out everywhere?">
+            data-confirm="{{ t(request, 'users.edit.reset_password_confirm') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <label for="new_password">New password</label>
+        <label for="new_password">{{ t(request, "users.edit.new_password_label") }}</label>
         <input type="password" id="new_password" name="new_password" autocomplete="new-password" minlength="12" required>
-        <button type="submit" class="button button-secondary">Reset password</button>
+        <button type="submit" class="button button-secondary">{{ t(request, "users.edit.reset_password_button") }}</button>
       </form>
     </section>
   {% endif %}
 
   <section class="panel">
-    <h2>Sessions</h2>
+    <h2>{{ t(request, "users.edit.sessions_heading") }}</h2>
     <form method="post" action="/users/{{ target_user.id }}/sessions/revoke-all"
-          data-confirm="Sign this user out of every session?">
+          data-confirm="{{ t(request, 'users.edit.log_out_confirm') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button type="submit" class="button button-secondary">Log out everywhere</button>
+      <button type="submit" class="button button-secondary">{{ t(request, "users.edit.log_out_button") }}</button>
     </form>
   </section>
 {% endblock %}

@@ -1,17 +1,16 @@
 {% from "partials/_services_summary.html" import render as render_services_summary %}
-{{ render_services_summary(honeypot, service_counts, oob=True) }}
+{{ render_services_summary(request, honeypot, service_counts, oob=True) }}
 
 <div id="services-panel" class="modal-body">
   {% if error %}
     <div class="alert alert-error">
-      <p>Could not refresh services: {{ error }}</p>
+      <p>{{ t(request, "partials.services.refresh_error") }} {{ error }}</p>
     </div>
   {% endif %}
 
   {% if not honeypot.services_updated_at %}
     <p class="hint">
-      Not gathered yet — this happens automatically once the host key
-      fingerprint is confirmed above, and refreshes periodically after that.
+      {{ t(request, "partials.services.not_gathered_yet") }}
     </p>
   {% else %}
     <form
@@ -21,14 +20,14 @@
       class="search-form"
       id="service-filters"
     >
-      <input type="search" name="svc_q" value="{{ svc_q }}" placeholder="Search services by unit name...">
+      <input type="search" name="svc_q" value="{{ svc_q }}" placeholder="{{ t(request, 'partials.services.search_placeholder') }}">
       <select name="svc_state">
-        <option value="" {% if not svc_state %}selected{% endif %}>Any state</option>
+        <option value="" {% if not svc_state %}selected{% endif %}>{{ t(request, "partials.services.filter.any_state") }}</option>
         <option value="active" {% if svc_state == 'active' %}selected{% endif %}>active</option>
         <option value="failed" {% if svc_state == 'failed' %}selected{% endif %}>failed</option>
         <option value="inactive" {% if svc_state == 'inactive' %}selected{% endif %}>inactive</option>
       </select>
-      <button type="submit" class="button">Filter</button>
+      <button type="submit" class="button">{{ t(request, "partials.services.filter_button") }}</button>
       {% if svc_q or svc_state %}
         <a
           class="button button-secondary"
@@ -37,7 +36,7 @@
           hx-target="#services-panel"
           hx-swap="outerHTML"
         >
-          Clear
+          {{ t(request, "partials.services.clear_filters") }}
         </a>
       {% endif %}
     </form>
@@ -46,9 +45,9 @@
       <table class="data-table">
         <thead>
           <tr>
-            <th>Unit</th>
-            <th>State</th>
-            <th>Description</th>
+            <th>{{ t(request, "partials.services.column.unit") }}</th>
+            <th>{{ t(request, "partials.services.column.state") }}</th>
+            <th>{{ t(request, "partials.services.column.description") }}</th>
           </tr>
         </thead>
         <tbody>
@@ -66,7 +65,7 @@
         </tbody>
       </table>
     {% else %}
-      <p class="hint">No services match this filter.</p>
+      <p class="hint">{{ t(request, "partials.services.no_match") }}</p>
     {% endif %}
   {% endif %}
 
@@ -79,9 +78,9 @@
     hx-swap="outerHTML"
     {% if not honeypot.host_key_fingerprint %}disabled{% endif %}
   >
-    Refresh services now
+    {{ t(request, "partials.services.refresh_button") }}
   </button>
   {% if not honeypot.host_key_fingerprint %}
-    <p class="hint">Confirm the server's key fingerprint above first.</p>
+    <p class="hint">{{ t(request, "partials.confirm_fingerprint_first") }}</p>
   {% endif %}
 </div>

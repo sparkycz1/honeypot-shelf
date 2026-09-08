@@ -9,7 +9,7 @@
     <form method="post" action="/companies/{{ company.id }}/delete"
           data-confirm="Delete this company? Honeypots in it will be unassigned, not deleted.">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button type="submit" class="button button-danger">Delete company</button>
+      <button type="submit" class="button button-danger">{{ t(request, "companies.detail.delete") }}</button>
     </form>
   </div>
 
@@ -20,21 +20,21 @@
   {% endif %}
 
   <section class="panel">
-    <h2>Honeypots in this company</h2>
+    <h2>{{ t(request, "companies.detail.honeypots_heading") }}</h2>
     {% include "partials/honeypot_search_form.html" %}
     {% if not honeypots %}
       {% if q %}
-        <p class="hint">No honeypots in this company match "{{ q }}".</p>
+        <p class="hint">{{ t(request, "companies.detail.no_match", query=q) }}</p>
       {% else %}
-        <p class="hint">No honeypots in this company yet.</p>
+        <p class="hint">{{ t(request, "companies.detail.empty") }}</p>
       {% endif %}
     {% else %}
       <table class="data-table">
         <thead>
           <tr>
-            <th>Name</th>
-            <th>User</th>
-            <th>Updates</th>
+            <th>{{ t(request, "companies.all.col_name") }}</th>
+            <th>{{ t(request, "companies.detail.col_user") }}</th>
+            <th>{{ t(request, "companies.all.col_updates") }}</th>
             <th></th>
           </tr>
         </thead>
@@ -56,7 +56,7 @@
                 <form method="post"
                       action="/companies/{{ company.id }}/honeypots/{{ honeypot.id }}/remove">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                  <button type="submit" class="button button-secondary">Remove</button>
+                  <button type="submit" class="button button-secondary">{{ t(request, "companies.detail.remove") }}</button>
                 </form>
               </td>
             </tr>
@@ -67,21 +67,21 @@
   </section>
 
   <section class="panel">
-    <h2>Add a honeypot to this company</h2>
+    <h2>{{ t(request, "companies.detail.add_heading") }}</h2>
     {% if not available_honeypots %}
-      <p class="hint">No other honeypots available to add.</p>
+      <p class="hint">{{ t(request, "companies.detail.add_empty") }}</p>
     {% else %}
       <form method="post" action="/companies/{{ company.id }}/honeypots" class="form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <label for="honeypot_id">Honeypot</label>
+        <label for="honeypot_id">{{ t(request, "companies.detail.add_label") }}</label>
         <select id="honeypot_id" name="honeypot_id" required>
           {% for honeypot in available_honeypots %}
             <option value="{{ honeypot.id }}">
-              {{ honeypot.name }}{% if honeypot.company %} (currently in {{ honeypot.company.name }}){% endif %}
+              {{ honeypot.name }}{% if honeypot.company %} ({{ t(request, "companies.detail.currently_in", company=honeypot.company.name) }}){% endif %}
             </option>
           {% endfor %}
         </select>
-        <button type="submit" class="button">Add to company</button>
+        <button type="submit" class="button">{{ t(request, "companies.detail.add_submit") }}</button>
       </form>
     {% endif %}
   </section>

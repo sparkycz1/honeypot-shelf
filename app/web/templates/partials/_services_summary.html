@@ -3,7 +3,7 @@
    itself, once as an out-of-band swap (oob=True) inside the lazily-loaded
    modal body, and rendered directly (neither flag) by this section's own
    poll endpoint. #}
-{% macro render(honeypot, service_counts, oob=False, poll=False) %}
+{% macro render(request, honeypot, service_counts, oob=False, poll=False) %}
 <div
   id="services-summary"
   {% if oob %}hx-swap-oob="true"{% endif %}

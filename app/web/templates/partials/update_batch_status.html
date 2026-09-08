@@ -9,9 +9,9 @@
   <table class="data-table">
     <thead>
       <tr>
-        <th>Honeypot</th>
-        <th>Strategy</th>
-        <th>Status</th>
+        <th>{{ t(request, "partials.updates.honeypot") }}</th>
+        <th>{{ t(request, "partials.updates.strategy") }}</th>
+        <th>{{ t(request, "partials.updates.status") }}</th>
         <th></th>
       </tr>
     </thead>
@@ -21,15 +21,17 @@
           <td><a href="/honeypots/{{ run.honeypot_id }}">{{ run.honeypot.name }}</a></td>
           <td>{{ 'dist-upgrade' if run.strategy.value == 'dist_upgrade' else 'full-upgrade' }}</td>
           <td>
-            {% if run.status.value in ('pending', 'running') %}
-              <span class="badge badge-warn">{{ run.status.value }}</span>
+            {% if run.status.value == 'pending' %}
+              <span class="badge badge-warn">{{ t(request, "partials.updates.status_pending") }}</span>
+            {% elif run.status.value == 'running' %}
+              <span class="badge badge-warn">{{ t(request, "partials.updates.status_running") }}</span>
             {% elif run.status.value == 'succeeded' %}
-              <span class="badge badge-ok">succeeded</span>
+              <span class="badge badge-ok">{{ t(request, "partials.updates.status_succeeded") }}</span>
             {% else %}
-              <span class="badge badge-error">failed</span>
+              <span class="badge badge-error">{{ t(request, "partials.updates.status_failed") }}</span>
             {% endif %}
           </td>
-          <td><a href="/honeypots/{{ run.honeypot_id }}/updates/{{ run.id }}">Details</a></td>
+          <td><a href="/honeypots/{{ run.honeypot_id }}/updates/{{ run.id }}">{{ t(request, "partials.updates.details") }}</a></td>
         </tr>
       {% endfor %}
     </tbody>

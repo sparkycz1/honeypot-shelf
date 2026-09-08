@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "partials/_tabnav.html" import render as render_tabnav %}
 
-{% block title %}Power — {{ company.name }} — HoneyHive{% endblock %}
+{% block title %}{{ t(request, "companies.power.title") }} — {{ company.name }} — HoneyHive{% endblock %}
 
 {% block content %}
   <div class="page-header">
@@ -12,20 +12,18 @@
 
   {% if power_skipped %}
     <div class="alert alert-warn">
-      <p>{{ power_skipped }} honeypot(s) were skipped — no confirmed host key fingerprint yet.</p>
+      <p>{{ t(request, "companies.power.skipped", count=power_skipped) }}</p>
     </div>
   {% endif %}
 
   <section class="panel">
-    <h2>Power</h2>
+    <h2>{{ t(request, "companies.power.heading") }}</h2>
     <p class="hint">
-      Sends the command to every honeypot in this company with a confirmed
-      host key fingerprint — others are skipped. Requires typing the company
-      name to confirm.
+      {{ t(request, "companies.power.hint") }}
     </p>
     <div class="page-header-actions">
-      <a class="button button-secondary" href="/companies/{{ company.id }}/power/reboot">Reboot company</a>
-      <a class="button button-danger" href="/companies/{{ company.id }}/power/shutdown">Shut down company</a>
+      <a class="button button-secondary" href="/companies/{{ company.id }}/power/reboot">{{ t(request, "companies.power.reboot_company") }}</a>
+      <a class="button button-danger" href="/companies/{{ company.id }}/power/shutdown">{{ t(request, "companies.power.shutdown_company") }}</a>
     </div>
   </section>
 {% endblock %}

@@ -37,11 +37,11 @@ Raspberry Pi into a working honeypot (packages, OpenCanary, NetBird) over
 SSH before it's ever added to HoneyHive; Company management and
 fleet-wide/"All honeypots" bulk actions; Scheduling; the REST API
 mirroring all of the above; Users and Settings (LDAP/OIDC/syslog
-forwarding, SSH key rotation, retention policies). A 101-test suite
-covers the RBAC/scoping-sensitive paths; `ruff check .` and `mypy app
-alembic tests` are both fully clean. See [CLAUDE.md](../CLAUDE.md)'s
-"Current state" section for exact gaps (mainly: i18n coverage is still
-just the site chrome).
+forwarding, SSH key rotation, retention policies); full **English and
+Czech i18n** across every page, not just the site chrome. A 101-test
+suite covers the RBAC/scoping-sensitive paths; `ruff check .` and `mypy
+app alembic tests` are both fully clean. See [CLAUDE.md](../CLAUDE.md)'s
+"Current state" section for what's left (mainly: no CI workflow file).
 
 ### Product decisions (settled)
 
@@ -78,5 +78,3 @@ just the site chrome).
   built) considered sufficient for that?
 - **A map/geo view, CSV export of events, per-event-type dashboards** —
   none of these exist yet; worth asking which (if any) matter for v1.
-- **i18n**: worth investing in full Czech coverage beyond the site chrome
-  before going live, or is English-only acceptable for now?

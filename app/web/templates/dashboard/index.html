@@ -1,46 +1,46 @@
 {% extends "base.html" %}
 {% from "macros/charts.html" import sparkline %}
 
-{% block title %}Dashboard — HoneyHive{% endblock %}
+{% block title %}{{ t(request, "nav.dashboard") }} — HoneyHive{% endblock %}
 
 {% block content %}
-  <h1>Dashboard</h1>
+  <h1>{{ t(request, "nav.dashboard") }}</h1>
 
   <section class="panel">
-    <h2>{{ "All companies" if current_user.is_superadmin else current_user.company.name }}</h2>
+    <h2>{{ t(request, "dashboard.all_companies") if current_user.is_superadmin else current_user.company.name }}</h2>
     <div class="stat-grid">
       <div class="stat-card">
         <span class="stat-value">{{ honeypot_stats.total }}</span>
-        <span class="stat-label">Honeypots</span>
+        <span class="stat-label">{{ t(request, "nav.honeypots") }}</span>
       </div>
       <div class="stat-card">
         <span class="stat-value">{{ honeypot_stats.online }}</span>
-        <span class="stat-label">Online</span>
+        <span class="stat-label">{{ t(request, "dashboard.online") }}</span>
       </div>
       <div class="stat-card">
         <span class="stat-value">{{ honeypot_stats.offline }}</span>
-        <span class="stat-label">Offline</span>
+        <span class="stat-label">{{ t(request, "dashboard.offline") }}</span>
       </div>
       <div class="stat-card">
         <span class="stat-value">{{ event_stats.last_24h }}</span>
-        <span class="stat-label">Events (24h)</span>
+        <span class="stat-label">{{ t(request, "dashboard.events_24h") }}</span>
       </div>
       <div class="stat-card">
         <span class="stat-value">{{ event_stats.last_7d }}</span>
-        <span class="stat-label">Events (7d)</span>
+        <span class="stat-label">{{ t(request, "dashboard.events_7d") }}</span>
       </div>
     </div>
     <p class="hint">
-      <a href="/honeypots">All honeypots</a>
-      {% if current_user.is_superadmin %} · <a href="/companies">{{ company_count }} compan{{ 'y' if company_count == 1 else 'ies' }}</a>{% endif %}
+      <a href="/honeypots">{{ t(request, "dashboard.all_honeypots") }}</a>
+      {% if current_user.is_superadmin %} · <a href="/companies">{{ company_count }} {{ t(request, "dashboard.company_singular") if company_count == 1 else t(request, "dashboard.company_plural") }}</a>{% endif %}
     </p>
   </section>
 
   {% if company_breakdown %}
   <section class="panel">
-    <h2>By company</h2>
+    <h2>{{ t(request, "dashboard.by_company") }}</h2>
     <table class="data-table">
-      <thead><tr><th>Company</th><th>Honeypots</th><th>Online</th><th>Events (24h)</th></tr></thead>
+      <thead><tr><th>{{ t(request, "dashboard.company") }}</th><th>{{ t(request, "nav.honeypots") }}</th><th>{{ t(request, "dashboard.online") }}</th><th>{{ t(request, "dashboard.events_24h") }}</th></tr></thead>
       <tbody>
         {% for row in company_breakdown %}
         <tr>
@@ -57,21 +57,20 @@
 
   {% if daily_snapshots %}
   <section class="panel">
-    <h2>Event trend</h2>
+    <h2>{{ t(request, "dashboard.event_trend") }}</h2>
     <p class="hint">
-      One point per day, {{ daily_snapshots[0].snapshot_date }} to
-      {{ daily_snapshots[-1].snapshot_date }} — see "Dashboard trends" on
-      <a href="/settings">Settings</a> for how long these are kept.
+      {{ t(request, "dashboard.event_trend_hint1", start=daily_snapshots[0].snapshot_date, end=daily_snapshots[-1].snapshot_date) }}
+      <a href="/settings">{{ t(request, "nav.settings") }}</a>{{ t(request, "dashboard.event_trend_hint2") }}
     </p>
-    {{ sparkline(daily_snapshots | map(attribute='event_count') | list, '#e0ab4a') }}
+    {{ sparkline(daily_snapshots | map(attribute='event_count') | list, '#e0ab4a', request=request) }}
   </section>
   {% endif %}
 
   <section class="panel">
-    <h2>Recent events</h2>
+    <h2>{{ t(request, "dashboard.recent_events") }}</h2>
     {% if recent_events %}
       <table class="data-table">
-        <thead><tr><th>When</th><th>Honeypot</th><th>Type</th><th>Source IP</th></tr></thead>
+        <thead><tr><th>{{ t(request, "dashboard.when") }}</th><th>{{ t(request, "nav.honeypots") }}</th><th>{{ t(request, "dashboard.type") }}</th><th>{{ t(request, "dashboard.source_ip") }}</th></tr></thead>
         <tbody>
           {% for event in recent_events %}
           <tr>
@@ -84,8 +83,8 @@
         </tbody>
       </table>
     {% else %}
-      <p class="hint">No events recorded yet.</p>
+      <p class="hint">{{ t(request, "dashboard.no_events") }}</p>
     {% endif %}
-    <p class="hint"><a href="/honeypots">Browse by honeypot</a></p>
+    <p class="hint"><a href="/honeypots">{{ t(request, "dashboard.browse_by_honeypot") }}</a></p>
   </section>
 {% endblock %}

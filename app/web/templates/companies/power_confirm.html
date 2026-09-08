@@ -1,15 +1,14 @@
 {% extends "base.html" %}
 
-{% block title %}{{ 'Reboot' if action.value == 'reboot' else 'Shut down' }} {{ target_label }} — HoneyHive{% endblock %}
+{% block title %}{{ t(request, "companies.power_confirm.reboot") if action.value == 'reboot' else t(request, "companies.power_confirm.shutdown") }} {{ target_label }} — HoneyHive{% endblock %}
 
 {% block content %}
-  <h1>{{ 'Reboot' if action.value == 'reboot' else 'Shut down' }} {{ target_label }}?</h1>
+  <h1>{{ t(request, "companies.power_confirm.reboot") if action.value == 'reboot' else t(request, "companies.power_confirm.shutdown") }} {{ target_label }}?</h1>
 
   <div class="alert alert-warn">
     <p>
-      This sends <code>sudo shutdown {{ '-r' if action.value == 'reboot' else '-h' }} now</code>
-      to {{ target_label }} that has a confirmed host key fingerprint
-      (others are skipped) — immediately, no going back once sent.
+      {{ t(request, "companies.power_confirm.warning_prefix") }} <code>sudo shutdown {{ '-r' if action.value == 'reboot' else '-h' }} now</code>
+      {{ t(request, "companies.power_confirm.warning_suffix", target=target_label) }}
     </p>
   </div>
 
@@ -22,13 +21,13 @@
     <input type="hidden" name="action" value="{{ action.value }}">
 
     <label for="confirm_name">
-      Type <code>{{ confirm_phrase }}</code> to confirm
+      {{ t(request, "companies.power_confirm.type_to_confirm_prefix") }} <code>{{ confirm_phrase }}</code> {{ t(request, "companies.power_confirm.type_to_confirm_suffix") }}
     </label>
     <input type="text" id="confirm_name" name="confirm_name" required autocomplete="off">
 
     <button type="submit" class="button button-danger">
-      Yes, {{ 'reboot' if action.value == 'reboot' else 'shut down' }} {{ target_label }}
+      {{ t(request, "companies.power_confirm.yes_reboot") if action.value == 'reboot' else t(request, "companies.power_confirm.yes_shutdown") }} {{ target_label }}
     </button>
-    <a class="button button-secondary" href="{{ cancel_url }}">Cancel</a>
+    <a class="button button-secondary" href="{{ cancel_url }}">{{ t(request, "common.cancel") }}</a>
   </form>
 {% endblock %}

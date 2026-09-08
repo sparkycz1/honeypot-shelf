@@ -8,7 +8,7 @@
    own min/max — reusable anywhere a small trend line is useful, not just
    the Dashboard (see app/web/routes/dashboard.py for the current caller). #}
 
-{% macro sparkline(values, color, width=560, height=120, pad=12) %}
+{% macro sparkline(values, color, width=560, height=120, pad=12, request=none) %}
   {% set n = values | length %}
   {% set vmin = values | min %}
   {% set vmax = values | max %}
@@ -21,7 +21,8 @@
     {% set _ = coords.append((x | round(1) | string) ~ "," ~ (y | round(1) | string)) %}
   {% endfor %}
   <svg viewBox="0 0 {{ width }} {{ height }}" width="100%" height="{{ height }}"
-       preserveAspectRatio="none" role="img" aria-label="Trend chart">
+       preserveAspectRatio="none" role="img"
+       aria-label="{{ t(request, 'macros.charts.trend_chart_aria') if request else 'Trend chart' }}">
     <polyline fill="none" stroke="{{ color }}" stroke-width="2"
               stroke-linejoin="round" stroke-linecap="round"
               points="{{ coords | join(' ') }}"></polyline>
@@ -31,8 +32,13 @@
     {% endfor %}
   </svg>
   <p class="hint">
-    {{ vmin }}&ndash;{{ vmax }} over {{ n }} day{{ 's' if n != 1 else '' }}
-    (latest: {{ values[-1] }})
+    {% if request %}
+      {{ t(request, 'macros.charts.sparkline_summary_plural', vmin=vmin, vmax=vmax, days=n) if n != 1 else t(request, 'macros.charts.sparkline_summary_singular', vmin=vmin, vmax=vmax, days=n) }}
+      {{ t(request, 'macros.charts.sparkline_latest', latest=values[-1]) }}
+    {% else %}
+      {{ vmin }}&ndash;{{ vmax }} over {{ n }} day{{ 's' if n != 1 else '' }}
+      (latest: {{ values[-1] }})
+    {% endif %}
   </p>
 {% endmacro %}
 
@@ -45,7 +51,7 @@
    `values` may contain `None` (a genuine gap — see
    app.services.monitoring_history's downsampling) — a `None` breaks the
    polyline into a new segment rather than being drawn as 0. #}
-{% macro percent_sparkline(values, color, width=560, height=120, pad=12) %}
+{% macro percent_sparkline(values, color, width=560, height=120, pad=12, request=none) %}
   {% set n = values | length %}
   {% set step = ((width - 2 * pad) / (n - 1)) if n > 1 else 0 %}
   {% set segments = [] %}
@@ -66,7 +72,8 @@
     {% set _ = segments.append(current | join(' ')) %}
   {% endif %}
   <svg viewBox="0 0 {{ width }} {{ height }}" width="100%" height="{{ height }}"
-       preserveAspectRatio="none" role="img" aria-label="Trend chart, 0 to 100 percent">
+       preserveAspectRatio="none" role="img"
+       aria-label="{{ t(request, 'macros.charts.percent_trend_chart_aria') if request else 'Trend chart, 0 to 100 percent' }}">
     {% for segment in segments %}
       <polyline fill="none" stroke="{{ color }}" stroke-width="2"
                 stroke-linejoin="round" stroke-linecap="round"
@@ -92,7 +99,7 @@
    tooltip appends after each formatted number (e.g. " B/s"); pass
    `bytes_rate=True` instead for throughput series, so the JS formats them
    as KB/s-MB/s rather than a raw byte count. #}
-{% macro trend_chart(series, timestamps, width=560, height=140, pad=14, fixed_max=none, unit='', bytes_rate=False) %}
+{% macro trend_chart(series, timestamps, width=560, height=140, pad=14, fixed_max=none, unit='', bytes_rate=False, request=none) %}
   {% set n = timestamps | length %}
   {% set step = ((width - 2 * pad) / (n - 1)) if n > 1 else 0 %}
   {% if fixed_max is not none %}
@@ -115,7 +122,8 @@
        data-series='{{ series | map(attribute="points") | list | tojson }}'
        data-labels='{{ series | map(attribute="label") | list | tojson }}'>
     <svg viewBox="0 0 {{ width }} {{ height }}" width="100%" height="{{ height }}"
-         preserveAspectRatio="none" role="img" aria-label="Interactive trend chart"
+         preserveAspectRatio="none" role="img"
+         aria-label="{{ t(request, 'macros.charts.interactive_trend_chart_aria') if request else 'Interactive trend chart' }}"
          class="trend-chart-svg">
       {% for s in series %}
         {% set segments = [] %}

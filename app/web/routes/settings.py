@@ -38,7 +38,7 @@ from app.ssh.identity import (
     get_or_create_identity,
 )
 from app.tasks.jobs import push_pending_ssh_key
-from app.web.templating import templates
+from app.web.templating import t, templates
 
 router = APIRouter(prefix="/settings", dependencies=[Depends(require_superadmin)])
 
@@ -47,13 +47,15 @@ router = APIRouter(prefix="/settings", dependencies=[Depends(require_superadmin)
 # there's only ever one GET route here, not one per tab, since every POST
 # handler below redirects back to /settings regardless of which tab it
 # belongs to).
-_TABS: list[tuple[str, str, str]] = [
-    ("general", "General", "/settings?tab=general"),
-    ("security", "Security", "/settings?tab=security"),
-    ("integrations", "Integrations", "/settings?tab=integrations"),
-]
-_VALID_TABS = {key for key, _, _ in _TABS}
+_TAB_KEYS = ("general", "security", "integrations")
+_VALID_TABS = set(_TAB_KEYS)
 _DEFAULT_TAB = "general"
+
+
+def _tabs(request: Request) -> list[tuple[str, str, str]]:
+    return [
+        (key, t(request, f"settings.tabs.{key}"), f"/settings?tab={key}") for key in _TAB_KEYS
+    ]
 
 
 def _normalize_tab(tab: str) -> str:
@@ -81,7 +83,7 @@ async def _render_settings(
         "csrf_token": csrf_token,
         "errors": errors,
         "syslog_protocols": list(SyslogProtocol),
-        "tabs": _TABS,
+        "tabs": _tabs(request),
         "active_tab": tab,
         **extra,
     }

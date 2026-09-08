@@ -1,18 +1,18 @@
 {% extends "base.html" %}
 
-{% block title %}{{ 'Reboot' if action.value == 'reboot' else 'Shut down' }} {{ honeypot.name }} — HoneyHive{% endblock %}
+{% block title %}{{ t(request, "honeypots.power_confirm.title_reboot") if action.value == 'reboot' else t(request, "honeypots.power_confirm.title_shutdown") }} {{ honeypot.name }} — HoneyHive{% endblock %}
 
 {% block content %}
-  <h1>{{ 'Reboot' if action.value == 'reboot' else 'Shut down' }} {{ honeypot.name }}?</h1>
+  <h1>{{ t(request, "honeypots.power_confirm.heading_reboot") if action.value == 'reboot' else t(request, "honeypots.power_confirm.heading_shutdown") }} {{ honeypot.name }}?</h1>
 
   <div class="alert alert-warn">
     <p>
-      This sends <code>sudo shutdown {{ '-r' if action.value == 'reboot' else '-h' }} now</code>
-      to <strong>{{ honeypot.name }}</strong> ({{ honeypot.ip_address }}) immediately —
+      {{ t(request, "honeypots.power_confirm.warning_intro") }} <code>sudo shutdown {{ '-r' if action.value == 'reboot' else '-h' }} now</code>
+      {{ t(request, "honeypots.power_confirm.warning_to") }} <strong>{{ honeypot.name }}</strong> ({{ honeypot.ip_address }}) —
       {% if action.value == 'reboot' %}
-        it will restart and be briefly unreachable.
+        {{ t(request, "honeypots.power_confirm.warning_reboot") }}
       {% else %}
-        it will power off and stay unreachable until someone turns it back on.
+        {{ t(request, "honeypots.power_confirm.warning_shutdown") }}
       {% endif %}
     </p>
   </div>
@@ -26,13 +26,13 @@
     <input type="hidden" name="action" value="{{ action.value }}">
 
     <label for="confirm_name">
-      Type the honeypot's name (<code>{{ honeypot.name }}</code>) to confirm
+      {{ t(request, "honeypots.power_confirm.confirm_label") }} (<code>{{ honeypot.name }}</code>) {{ t(request, "honeypots.power_confirm.confirm_label_suffix") }}
     </label>
     <input type="text" id="confirm_name" name="confirm_name" required autocomplete="off">
 
     <button type="submit" class="button button-danger">
-      Yes, {{ 'reboot' if action.value == 'reboot' else 'shut down' }} {{ honeypot.name }}
+      {{ t(request, "honeypots.power_confirm.submit_reboot") if action.value == 'reboot' else t(request, "honeypots.power_confirm.submit_shutdown") }} {{ honeypot.name }}
     </button>
-    <a class="button button-secondary" href="/honeypots/{{ honeypot.id }}/power">Cancel</a>
+    <a class="button button-secondary" href="/honeypots/{{ honeypot.id }}/power">{{ t(request, "common.cancel") }}</a>
   </form>
 {% endblock %}

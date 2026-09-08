@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 
-{% block title %}Add honeypot company — HoneyHive{% endblock %}
+{% block title %}{{ t(request, "companies.new.title") }} — HoneyHive{% endblock %}
 
 {% block content %}
-  <h1>Add honeypot company</h1>
+  <h1>{{ t(request, "companies.new.title") }}</h1>
 
   {% if errors %}
     <div class="alert alert-error">
@@ -14,14 +14,14 @@
   <form method="post" action="/companies" class="form" autocomplete="off">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
-    <label for="name">Name</label>
+    <label for="name">{{ t(request, "companies.new.name_label") }}</label>
     <input type="text" id="name" name="name" required maxlength="255"
            value="{{ form.name or '' }}">
 
-    <label for="description">Description</label>
+    <label for="description">{{ t(request, "companies.new.description_label") }}</label>
     <textarea id="description" name="description" rows="2">{{ form.description or '' }}</textarea>
 
-    <button type="submit" class="button">Save</button>
-    <a class="button button-secondary" href="/companies">Cancel</a>
+    <button type="submit" class="button">{{ t(request, "common.save") }}</button>
+    <a class="button button-secondary" href="/companies">{{ t(request, "common.cancel") }}</a>
   </form>
 {% endblock %}

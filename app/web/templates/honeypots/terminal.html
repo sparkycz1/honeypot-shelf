@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "partials/_tabnav.html" import render as render_tabnav %}
 
-{% block title %}Terminal — {{ honeypot.name }} — HoneyHive{% endblock %}
+{% block title %}{{ t(request, "honeypots.terminal.title") }} — {{ honeypot.name }} — HoneyHive{% endblock %}
 
 {% block extra_head %}
   <link rel="stylesheet" href="/static/css/xterm.css">
@@ -15,10 +15,8 @@
   {{ render_tabnav(tabs, active_tab) }}
 
   <p class="hint">
-    Connecting as <code>{{ honeypot.username }}</code> ({{ honeypot.ip_address }}).
-    This is a full interactive shell — whatever that account (and its sudo
-    rights, if any) can do, you can do here. The session ends automatically
-    after a few hours of use, and immediately if you close this tab.
+    {{ t(request, "honeypots.terminal.connecting_as") }} <code>{{ honeypot.username }}</code> ({{ honeypot.ip_address }}).
+    {{ t(request, "honeypots.terminal.hint") }}
   </p>
   <div id="terminal-status" class="hint" role="status"></div>
   <div

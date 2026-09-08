@@ -5,7 +5,7 @@
    div inside itself. #}
 {% if error %}
   <div class="alert alert-error">
-    <p>Could not check for updates: {{ error }}</p>
+    <p>{{ t(request, "partials.updates.check_failed", error=error) }}</p>
   </div>
 {% endif %}
 
@@ -13,31 +13,27 @@
 
 {% if not honeypot.updates_checked_at %}
   <p class="hint">
-    Not checked yet. This runs automatically on the same periodic sweep as
-    facts, whenever you click "Check for updates now" below, and whenever
-    a scheduled "Check for updates" task fires (see the Scheduling tab) —
-    whichever ran last is what's shown here, including the package names.
+    {{ t(request, "partials.updates.not_checked_yet") }}
   </p>
 {% elif honeypot.upgradable_count is none %}
   <p class="hint">
-    Last check (checked {{ honeypot.updates_checked_at | local_time('%Y-%m-%d %H:%M %Z') }})
-    couldn't determine what's available via apt — see the error above, or
-    try again. (flatpak/snap checks below don't depend on this.)
+    {{ t(request, "partials.updates.last_check_prefix") }} ({{ t(request, "partials.updates.checked_at") }} {{ honeypot.updates_checked_at | local_time('%Y-%m-%d %H:%M %Z') }})
+    {{ t(request, "partials.updates.apt_unknown") }}
   </p>
 {% elif honeypot.upgradable_count == 0 and other_count == 0 %}
-  <p><span class="badge badge-ok">up to date</span>
-    <span class="hint">(checked {{ honeypot.updates_checked_at | local_time('%Y-%m-%d %H:%M %Z') }})</span></p>
+  <p><span class="badge badge-ok">{{ t(request, "partials.updates.up_to_date") }}</span>
+    <span class="hint">({{ t(request, "partials.updates.checked_at") }} {{ honeypot.updates_checked_at | local_time('%Y-%m-%d %H:%M %Z') }})</span></p>
 {% else %}
   <p>
     <span class="badge badge-warn">
-      {{ honeypot.upgradable_count }} apt update{{ 's' if honeypot.upgradable_count != 1 else '' }}
-      {%- if honeypot.security_upgradable_count %}, {{ honeypot.security_upgradable_count }} security{% endif %}
+      {{ honeypot.upgradable_count }} {{ t(request, "partials.updates.apt_update") if honeypot.upgradable_count == 1 else t(request, "partials.updates.apt_updates") }}
+      {%- if honeypot.security_upgradable_count %}, {{ honeypot.security_upgradable_count }} {{ t(request, "partials.updates.security") }}{% endif %}
     </span>
-    <span class="hint">(checked {{ honeypot.updates_checked_at | local_time('%Y-%m-%d %H:%M %Z') }})</span>
+    <span class="hint">({{ t(request, "partials.updates.checked_at") }} {{ honeypot.updates_checked_at | local_time('%Y-%m-%d %H:%M %Z') }})</span>
   </p>
   {% if honeypot.apt_upgradable_packages %}
     <details>
-      <summary>Which apt packages?</summary>
+      <summary>{{ t(request, "partials.updates.which_apt_packages") }}</summary>
       <ul>
         {% for pkg in honeypot.apt_upgradable_packages %}
           <li>
@@ -53,11 +49,11 @@
 
 {% if honeypot.flatpak_upgradable_count %}
   <p><span class="badge badge-warn">
-    {{ honeypot.flatpak_upgradable_count }} flatpak update{{ 's' if honeypot.flatpak_upgradable_count != 1 else '' }}
+    {{ honeypot.flatpak_upgradable_count }} {{ t(request, "partials.updates.flatpak_update") if honeypot.flatpak_upgradable_count == 1 else t(request, "partials.updates.flatpak_updates") }}
   </span></p>
   {% if honeypot.flatpak_upgradable_packages %}
     <details>
-      <summary>Which flatpak apps?</summary>
+      <summary>{{ t(request, "partials.updates.which_flatpak_apps") }}</summary>
       <ul>
         {% for pkg in honeypot.flatpak_upgradable_packages %}
           <li><code>{{ pkg.name }}</code>{% if pkg.new_version %}: {{ pkg.new_version }}{% endif %}</li>
@@ -68,11 +64,11 @@
 {% endif %}
 {% if honeypot.snap_upgradable_count %}
   <p><span class="badge badge-warn">
-    {{ honeypot.snap_upgradable_count }} snap update{{ 's' if honeypot.snap_upgradable_count != 1 else '' }}
+    {{ honeypot.snap_upgradable_count }} {{ t(request, "partials.updates.snap_update") if honeypot.snap_upgradable_count == 1 else t(request, "partials.updates.snap_updates") }}
   </span></p>
   {% if honeypot.snap_upgradable_packages %}
     <details>
-      <summary>Which snaps?</summary>
+      <summary>{{ t(request, "partials.updates.which_snaps") }}</summary>
       <ul>
         {% for pkg in honeypot.snap_upgradable_packages %}
           <li><code>{{ pkg.name }}</code>{% if pkg.new_version %}: {{ pkg.new_version }}{% endif %}</li>
@@ -83,8 +79,8 @@
 {% endif %}
 
 {% if honeypot.reboot_required %}
-  <p><span class="badge badge-error">reboot needed</span>
-    <span class="hint">a newer kernel is installed but not yet running</span></p>
+  <p><span class="badge badge-error">{{ t(request, "partials.updates.reboot_needed") }}</span>
+    <span class="hint">{{ t(request, "partials.updates.reboot_hint") }}</span></p>
 {% endif %}
 
 <button
@@ -95,5 +91,5 @@
   hx-swap="outerHTML"
   {% if not honeypot.host_key_fingerprint %}disabled{% endif %}
 >
-  Check for updates now
+  {{ t(request, "partials.updates.check_now") }}
 </button>

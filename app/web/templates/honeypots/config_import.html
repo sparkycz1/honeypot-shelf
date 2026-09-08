@@ -1,30 +1,21 @@
 {% extends "base.html" %}
 
-{% block title %}Import configuration — HoneyHive{% endblock %}
+{% block title %}{{ t(request, 'honeypots.config_import.title') }} — HoneyHive{% endblock %}
 
 {% block content %}
-  <h1>Import honeypot &amp; company configuration</h1>
+  <h1>{{ t(request, 'honeypots.config_import.heading') }}</h1>
 
   <p class="hint">
-    Paste JSON exported from <a href="/honeypots">Honeypots</a> ("Export
-    config (JSON)"). This creates real honeypots and companies directly — it is
-    <strong>not</strong> the pending-review queue bulk import uses, so it's
-    meant for restoring/migrating already-known configuration, not
-    discovering unknown hosts.
+    {{ t(request, 'honeypots.config_import.hint1_pre') }} <a href="/honeypots">{{ t(request, 'nav.honeypots') }}</a>
+    {{ t(request, 'honeypots.config_import.hint1_mid') }}
+    <strong>{{ t(request, 'honeypots.config_import.not') }}</strong>
+    {{ t(request, 'honeypots.config_import.hint1_post') }}
   </p>
   <p class="hint">
-    This is a structural export/import, not a credentials backup: it never
-    contains (or restores) a honeypot's password/key material or its pinned
-    SSH host-key fingerprint. A honeypot originally using password
-    authentication is imported with "SSH key" instead (there's nothing to
-    re-import) — its name is called out below so you can revisit its
-    credentials. Every imported honeypot starts with no pinned host key,
-    exactly like a freshly hand-added one — use "Discover key fingerprint"
-    and confirm it before anything connects to it.
+    {{ t(request, 'honeypots.config_import.hint2') }}
   </p>
   <p class="hint">
-    A honeypot whose name already exists is skipped, not overwritten — this
-    never changes an existing honeypot's connection details.
+    {{ t(request, 'honeypots.config_import.hint3') }}
   </p>
 
   {% if errors %}
@@ -36,11 +27,10 @@
   {% if result %}
     <div class="alert alert-ok">
       <p>
-        Created {{ result.created_honeypots | length }} honeypot(s) and
-        {{ result.created_companies | length }} company/companies.
+        {{ t(request, 'honeypots.config_import.created', honeypots=result.created_honeypots | length, companies=result.created_companies | length) }}
       </p>
       {% if result.skipped_honeypots %}
-        <p>Skipped {{ result.skipped_honeypots | length }} honeypot(s) (name already exists):</p>
+        <p>{{ t(request, 'honeypots.config_import.skipped', count=result.skipped_honeypots | length) }}</p>
         <ul>
           {% for skipped in result.skipped_honeypots %}
             <li>{{ skipped.name }} — {{ skipped.reason }}</li>
@@ -51,8 +41,7 @@
     {% if result.auth_method_warnings %}
       <div class="alert alert-warn">
         <p>
-          These honeypot(s) originally used password authentication and were
-          imported as "SSH key" instead — revisit their credentials:
+          {{ t(request, 'honeypots.config_import.auth_warning') }}
         </p>
         <ul>
           {% for name in result.auth_method_warnings %}<li>{{ name }}</li>{% endfor %}
@@ -68,9 +57,9 @@
 
   <form method="post" action="/honeypots/config/import" class="form" autocomplete="off">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <label for="json_text">Configuration JSON</label>
+    <label for="json_text">{{ t(request, 'honeypots.config_import.json_label') }}</label>
     <textarea id="json_text" name="json_text" rows="16" required
               placeholder='{"honeypots": [...], "companies": [...]}'></textarea>
-    <button type="submit" class="button">Import</button>
+    <button type="submit" class="button">{{ t(request, 'honeypots.config_import.submit') }}</button>
   </form>
 {% endblock %}

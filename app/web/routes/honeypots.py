@@ -80,7 +80,7 @@ from app.ssh.updates import PendingPackage
 from app.tasks import jobs as tasks
 from app.web.honeypot_search import apply_tag_filter, honeypot_search_clause
 from app.web.routes.audit import _csv_safe
-from app.web.templating import templates
+from app.web.templating import t, templates
 
 # Typed phrase to confirm a power action against an arbitrary ad-hoc
 # selection from the honeypot list — unlike a group or "All honeypots", a
@@ -113,7 +113,7 @@ _terminal = Depends(require_write)
 _FINGERPRINT_RE = re.compile(r"^[A-Za-z0-9]+:[A-Za-z0-9+/=_-]+$")
 
 
-def _honeypot_tabs(honeypot: Honeypot, user: User) -> list[tuple[str, str, str]]:
+def _honeypot_tabs(request: Request, honeypot: Honeypot, user: User) -> list[tuple[str, str, str]]:
     """The (key, label, url) tabs shown on every one of this honeypot's own
     pages — same set and order everywhere, so `partials/_tabnav.html` always
     highlights the right one. Terminal is left out entirely for a
@@ -121,20 +121,20 @@ def _honeypot_tabs(honeypot: Honeypot, user: User) -> list[tuple[str, str, str]]
     tabs at all."""
     base = f"/honeypots/{honeypot.id}"
     tabs = [
-        ("overview", "Overview", base),
-        ("monitoring", "Monitoring", f"{base}/monitoring"),
-        ("updates", "Updates", f"{base}/updates"),
+        ("overview", t(request, "honeypots.tabs.overview"), base),
+        ("monitoring", t(request, "honeypots.tabs.monitoring"), f"{base}/monitoring"),
+        ("updates", t(request, "honeypots.tabs.updates"), f"{base}/updates"),
     ]
     if user.can_write():
-        tabs.append(("terminal", "Terminal", f"{base}/terminal"))
+        tabs.append(("terminal", t(request, "honeypots.tabs.terminal"), f"{base}/terminal"))
         # Logs/Status/Config all share Terminal's write gate rather than
         # being available to a read-only account — see the "Logs" route's
         # own docstring for why.
-        tabs.append(("logs", "Logs", f"{base}/logs"))
-        tabs.append(("status", "Honeypot status", f"{base}/status"))
-        tabs.append(("config", "Honeypot config", f"{base}/config"))
-    tabs.append(("power", "Power", f"{base}/power"))
-    tabs.append(("settings", "Settings", f"{base}/edit"))
+        tabs.append(("logs", t(request, "honeypots.tabs.logs"), f"{base}/logs"))
+        tabs.append(("status", t(request, "honeypots.tabs.status"), f"{base}/status"))
+        tabs.append(("config", t(request, "honeypots.tabs.config"), f"{base}/config"))
+    tabs.append(("power", t(request, "honeypots.tabs.power"), f"{base}/power"))
+    tabs.append(("settings", t(request, "honeypots.tabs.settings"), f"{base}/edit"))
     return tabs
 
 
@@ -1107,7 +1107,7 @@ async def honeypot_detail(
         {
             "honeypot": honeypot,
             "csrf_token": csrf_token,
-            "tabs": _honeypot_tabs(honeypot, current_user),
+            "tabs": _honeypot_tabs(request, honeypot, current_user),
             "active_tab": "overview",
             # The package *rows* themselves are deliberately not fetched
             # here — a honeypot can easily have several hundred installed
@@ -1176,7 +1176,7 @@ async def honeypot_monitoring(
         "honeypots/monitoring.html",
         {
             "honeypot": honeypot,
-            "tabs": _honeypot_tabs(honeypot, current_user),
+            "tabs": _honeypot_tabs(request, honeypot, current_user),
             "active_tab": "monitoring",
             "csrf_token": csrf_token,
             "history": history,
@@ -1337,7 +1337,7 @@ async def edit_honeypot_form(
         "honeypots/edit.html",
         {
             "honeypot": honeypot,
-            "tabs": _honeypot_tabs(honeypot, current_user),
+            "tabs": _honeypot_tabs(request, honeypot, current_user),
             "active_tab": "settings",
             "auth_methods": list(AuthMethod),
             "companies": await _get_companies(db, current_user),
@@ -1413,7 +1413,7 @@ async def run_onboarding_endpoint(
         "honeypots/edit.html",
         {
             "honeypot": honeypot,
-            "tabs": _honeypot_tabs(honeypot, current_user),
+            "tabs": _honeypot_tabs(request, honeypot, current_user),
             "active_tab": "settings",
             "auth_methods": list(AuthMethod),
             "companies": await _get_companies(db, current_user),
@@ -1670,7 +1670,7 @@ async def update_honeypot(
             "honeypots/edit.html",
             {
                 "honeypot": honeypot,
-                "tabs": _honeypot_tabs(honeypot, current_user),
+                "tabs": _honeypot_tabs(request, honeypot, current_user),
                 "active_tab": "settings",
                 "auth_methods": list(AuthMethod),
                 "companies": await _get_companies(db, current_user),
@@ -2248,7 +2248,7 @@ async def honeypot_update_history(
         "honeypots/update_history.html",
         {
             "honeypot": honeypot,
-            "tabs": _honeypot_tabs(honeypot, current_user),
+            "tabs": _honeypot_tabs(request, honeypot, current_user),
             "active_tab": "updates",
             "csrf_token": csrf_token,
             "runs": runs,
@@ -2341,7 +2341,7 @@ async def terminal_page(
         "honeypots/terminal.html",
         {
             "honeypot": honeypot,
-            "tabs": _honeypot_tabs(honeypot, current_user),
+            "tabs": _honeypot_tabs(request, honeypot, current_user),
             "active_tab": "terminal",
         },
     )
@@ -2459,7 +2459,7 @@ async def honeypot_logs(
         "honeypots/logs.html",
         {
             "honeypot": honeypot,
-            "tabs": _honeypot_tabs(honeypot, current_user),
+            "tabs": _honeypot_tabs(request, honeypot, current_user),
             "active_tab": "logs",
             "csrf_token": csrf_token,
             "output": output,
@@ -2501,7 +2501,7 @@ async def honeypot_status_tab(
         "honeypots/status.html",
         {
             "honeypot": honeypot,
-            "tabs": _honeypot_tabs(honeypot, current_user),
+            "tabs": _honeypot_tabs(request, honeypot, current_user),
             "active_tab": "status",
             "csrf_token": csrf_token,
         },
@@ -2551,7 +2551,7 @@ async def honeypot_config_tab(
         "honeypots/config.html",
         {
             "honeypot": honeypot,
-            "tabs": _honeypot_tabs(honeypot, current_user),
+            "tabs": _honeypot_tabs(request, honeypot, current_user),
             "active_tab": "config",
             "csrf_token": csrf_token,
             "readonly_state": readonly_state,
@@ -2633,7 +2633,7 @@ async def power_tab(
         "honeypots/power.html",
         {
             "honeypot": honeypot,
-            "tabs": _honeypot_tabs(honeypot, current_user),
+            "tabs": _honeypot_tabs(request, honeypot, current_user),
             "active_tab": "power",
             # One-time notice after a power action redirect — not persisted
             # anywhere, just echoed back from the query string.

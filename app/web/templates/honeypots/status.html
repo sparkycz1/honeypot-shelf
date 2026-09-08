@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "partials/_tabnav.html" import render as render_tabnav %}
 
-{% block title %}Status — {{ honeypot.name }} — HoneyHive{% endblock %}
+{% block title %}{{ t(request, "honeypots.status.title") }} — {{ honeypot.name }} — HoneyHive{% endblock %}
 
 {% block content %}
   <div class="page-header">
@@ -11,10 +11,9 @@
   {{ render_tabnav(tabs, active_tab) }}
 
   <section class="panel">
-    <h2>Honeypot status</h2>
+    <h2>{{ t(request, "honeypots.status.heading") }}</h2>
     <p class="hint">
-      A live-status summary (beyond the Overview tab's reachable/online signal) is
-      planned but not built yet.
+      {{ t(request, "honeypots.status.hint") }}
     </p>
   </section>
 {% endblock %}

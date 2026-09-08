@@ -1,17 +1,15 @@
 {% extends "base.html" %}
 
-{% block title %}Bulk import — HoneyHive{% endblock %}
+{% block title %}{{ t(request, 'honeypots.import.title') }} — HoneyHive{% endblock %}
 
 {% block content %}
-  <h1>Bulk import honeypots</h1>
+  <h1>{{ t(request, 'honeypots.import.heading') }}</h1>
 
   <p class="hint">
-    Paste CSV with a header row — <code>ip_address</code> is required,
-    <code>hostname</code> is optional and anything else is ignored. Rows
-    become pending honeypots in the same review queue self-registration
-    uses (see <a href="/honeypots">Honeypots</a>) — no credentials or host
-    keys are set here, so each one still needs the normal add-honeypot form
-    and host-key confirmation before HoneyHive connects to it.
+    {{ t(request, 'honeypots.import.hint_pre') }} <code>ip_address</code>
+    {{ t(request, 'honeypots.import.hint_mid1') }} <code>hostname</code>
+    {{ t(request, 'honeypots.import.hint_mid2') }} <a href="/honeypots">{{ t(request, 'nav.honeypots') }}</a>
+    {{ t(request, 'honeypots.import.hint_post') }}
   </p>
 
   {% if errors %}
@@ -23,17 +21,17 @@
   {% if result %}
     <div class="alert alert-ok">
       <p>
-        Added {{ result.created }} pending honeypot(s).
-        {% if result.skipped %}Skipped {{ result.skipped }} row(s) with no ip_address.{% endif %}
+        {{ t(request, 'honeypots.import.added', count=result.created) }}
+        {% if result.skipped %}{{ t(request, 'honeypots.import.skipped', count=result.skipped) }}{% endif %}
       </p>
     </div>
   {% endif %}
 
   <form method="post" action="/honeypots/import" class="form" autocomplete="off">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <label for="csv_text">CSV</label>
+    <label for="csv_text">{{ t(request, 'honeypots.import.csv_label') }}</label>
     <textarea id="csv_text" name="csv_text" rows="10" required
-              placeholder="ip_address,hostname&#10;10.0.0.11,web1&#10;10.0.0.12,web2"></textarea>
-    <button type="submit" class="button">Import</button>
+              placeholder="{{ t(request, 'honeypots.import.csv_placeholder') }}"></textarea>
+    <button type="submit" class="button">{{ t(request, 'honeypots.config_import.submit') }}</button>
   </form>
 {% endblock %}
