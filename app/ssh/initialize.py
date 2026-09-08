@@ -1,14 +1,38 @@
 """Builds the shell script that provisions a **brand new** Raspberry Pi OS
 13 (Debian trixie) device into a working OpenCanary honeypot, run once over
-SSH (see `app.tasks.jobs._run_honeypot_initialize`, the only caller) —
-the "Initialize" top-nav action (`app.web.routes.initialize`).
+SSH (see `app.web.routes.initialize_ws`, the only caller) — the
+"Initialize" top-nav action (`app.web.routes.initialize`).
 
 Adapted from the team's own Ansible playbook (packages, the venv +
 OpenCanary/scapy/pcapy-ng install, the `opencanary.service` unit, locales,
-timezone, the `vim`/`bash.bashrc` config, the base tool set) plus two
-things the playbook didn't cover that this app needed: setting the
-device's hostname/`/etc/hosts` entry from the name given in the Initialize
-form, and installing + joining NetBird (repo + package + `netbird up`).
+timezone, the `vim`/`bash.bashrc` config, the base tool set) plus what the
+playbook didn't cover that this app needed: setting the device's
+hostname/`/etc/hosts` entry from the name given in the Initialize form,
+installing + joining NetBird (repo + package + `netbird up`), generating
+OpenCanary's own config (`opencanaryd --copyconfig`), and preparing the
+two modules that need real host-OS setup beyond just flipping `enabled`
+in that config — confirmed against OpenCanary's own wiki (only these two
+need it; every other module is a self-contained listener):
+
+- **portscan** — https://github.com/thinkst/opencanary/wiki/OpenCanary-Wiki#portscan-not-working-on-debian-12
+  Debian 12+ dropped file-based kernel logging in favor of journald-only,
+  and defaults to the nftables-backed `iptables` binary, neither of which
+  the portscan module can read. Fixed by loading rsyslog's `imjournal`
+  module (bridges journald back to a plain `/var/log/kern.log`) and
+  switching the `iptables` alternative to `iptables-legacy`.
+- **smb** — https://github.com/thinkst/opencanary/wiki/Opencanary-and-Samba
+  Needs Samba itself configured with a `full_audit` VFS module that
+  writes to syslog, which rsyslog then routes to a plain audit log file
+  OpenCanary tails. Samba's own `smbd`/`nmbd` services are installed but
+  left **disabled** — this is prep, not "go live"; nothing should be
+  listening on the network until an operator deliberately enables both
+  the systemd services and the `smb` module in the generated config.
+
+Neither is force-enabled in the generated `opencanary.conf` — every
+module still ships however `--copyconfig` defaults it (disabled), same as
+every other module. The point of both is that flipping `"portscan.enabled"`/
+`"smb.enabled"` to `true` afterward is *all* that's left to do — no
+further host-side setup.
 
 Deliberately **not** an actual `ansible-playbook` invocation, for the same
 reason `app.ssh.onboarding` gives: one `set -e` shell script over the SSH
@@ -20,7 +44,12 @@ isn't in HoneyHive's database at all yet — see
 and host-key-trusted for that case.
 
 Idempotent throughout (every step guards against "already done") — safe to
-re-run Initialize against the same device after a partial failure.
+re-run Initialize against the same device after a partial failure. Each
+step is preceded by an `echo` of `STEP_MARKER_PREFIX` + a human label —
+`app.web.routes.initialize_ws` parses those lines out of the live output
+stream to drive the "what's it doing right now" banner; everything else
+on stdout/stderr is shown to the operator verbatim, live, as it's
+produced.
 """
 
 from __future__ import annotations
@@ -31,12 +60,18 @@ import shlex
 # to completion" reasoning as app.ssh.onboarding.ONBOARD_SUCCESS_MARKER.
 INITIALIZE_SUCCESS_MARKER = "HONEYHIVE_INITIALIZE_OK"
 
+# A line `f"{STEP_MARKER_PREFIX}<label>"` on its own announces the start of
+# one phase — parsed out of the live output stream, never shown as raw
+# output itself. Distinctive enough that nothing legitimate a package
+# manager/systemd/etc. prints could collide with it by accident.
+STEP_MARKER_PREFIX = "##HH-STEP## "
+
 # apt's `full-upgrade` plus compiling pcapy-ng/scapy from source can
-# genuinely take the better part of an hour on slower Pi models — give
-# this a lot more headroom than any other SSH-connecting job in this app.
-# Shared between app.tasks.jobs (the Celery task's own time_limit) and
-# app.web.routes.initialize (how long the request handler waits on it).
-INITIALIZE_RUN_TIMEOUT_EXTRA_SECONDS = 45 * 60
+# genuinely take the better part of an hour on slower Pi models — this is
+# the hard cap on one Initialize run's wall-clock duration in
+# `app.web.routes.initialize_ws` (same reasoning/shape as
+# `app.web.routes.terminal_ws.TERMINAL_SESSION_MAX_SECONDS`).
+INITIALIZE_RUN_MAX_SECONDS = 60 * 60
 
 # The account opencanaryd's systemd unit runs as (it drops to
 # --uid=nobody --gid=nogroup itself once it has bound its listening
@@ -148,6 +183,47 @@ alias mv='mv -i'
 alias cp='cp -i'
 """
 
+# vfs_object full_audit, routed to syslog facility local7 — rsyslog then
+# files that to a plain log OpenCanary's `smb` module tails. See
+# https://github.com/thinkst/opencanary/wiki/Opencanary-and-Samba.
+# `netbios name` is capped at 15 chars and shouldn't contain spaces —
+# truncated from the device name given in the Initialize form.
+_SMB_SHARE_PATH = "/samba"
+
+
+def _smb_conf(device_name: str) -> str:
+    netbios_name = device_name[:15]
+    return f"""\
+[global]
+   workgroup = WORKGROUP
+   server string = NBDocs
+   netbios name = {netbios_name}
+   dns proxy = no
+   log file = /var/log/samba/log.all
+   log level = 0
+   max log size = 100
+   panic action = /usr/share/samba/panic-action %d
+   server role = standalone
+   passdb backend = tdbsam
+   obey pam restrictions = yes
+   unix password sync = no
+   map to guest = bad user
+   usershare allow guests = yes
+   load printers = no
+   vfs object = full_audit
+   full_audit:prefix = %U|%I|%i|%m|%S|%L|%R|%a|%T|%D
+   full_audit:success = flistxattr
+   full_audit:failure = none
+   full_audit:facility = local7
+   full_audit:priority = notice
+[documents]
+   comment = Office documents
+   path = {_SMB_SHARE_PATH}
+   guest ok = yes
+   read only = yes
+   browseable = yes
+"""
+
 
 def _opencanary_service_unit(service_user: str) -> str:
     return f"""\
@@ -183,6 +259,10 @@ def _heredoc(path: str, content: str, marker: str) -> str:
     return f"cat > {path} <<'{marker}'\n{content}{marker}\n"
 
 
+def _step(label: str) -> str:
+    return f"echo {shlex.quote(STEP_MARKER_PREFIX + label)}"
+
+
 def build_initialize_command(
     *,
     device_name: str,
@@ -193,7 +273,9 @@ def build_initialize_command(
     """Returns one `set -e` shell script provisioning a fresh device end to
     end: base packages, timezone/locale, a full `apt` upgrade, the
     OpenCanary venv + systemd service, hostname/`/etc/hosts`, `vim`/bash
-    config, and (if a setup key was given) NetBird.
+    config, NetBird (joining it if a setup key was given), OpenCanary's
+    own config (`--copyconfig`), and the portscan/Samba host-side prep
+    described in the module docstring above.
     """
     name = shlex.quote(device_name.strip())
     apt_packages = " ".join(shlex.quote(p) for p in dict.fromkeys(_APT_PACKAGES))
@@ -204,6 +286,7 @@ def build_initialize_command(
     lines.append("export DEBIAN_FRONTEND=noninteractive")
 
     # --- Hostname + /etc/hosts, from the "device name" field ---
+    lines.append(_step("Setting hostname"))
     lines.append(f"hostnamectl set-hostname {name}")
     lines.append(
         f'grep -q "^127.0.1.1[[:space:]]" /etc/hosts && '
@@ -212,16 +295,19 @@ def build_initialize_command(
     )
 
     # --- Base + admin-tool packages, one apt run ---
+    lines.append(_step("Installing packages"))
     lines.append("apt-get update -y")
     lines.append(f"apt-get install -y {apt_packages}")
 
     # --- OpenCanary venv (system-site-packages, so apt's python3-scapy is
     # visible inside it — see module docstring) ---
+    lines.append(_step("Setting up the OpenCanary venv"))
     lines.append("if [ ! -d /opt/myenv ]; then virtualenv --system-site-packages /opt/myenv; fi")
     lines.append("/opt/myenv/bin/pip install --upgrade pip")
     lines.append("/opt/myenv/bin/pip install opencanary scapy pcapy-ng")
 
     # --- opencanary.service ---
+    lines.append(_step("Installing the opencanary.service unit"))
     lines.append(
         _heredoc(
             "/etc/systemd/system/opencanary.service",
@@ -233,6 +319,7 @@ def build_initialize_command(
     lines.append("systemctl enable opencanary")
 
     # --- Locale ---
+    lines.append(_step("Configuring locale"))
     lines.append(
         'grep -qxF "en_US.UTF-8 UTF-8" /etc/locale.gen || '
         f'printf "{locale_lines}\\n" >> /etc/locale.gen'
@@ -240,29 +327,31 @@ def build_initialize_command(
     lines.append("locale-gen")
 
     # --- Time ---
+    lines.append(_step("Setting timezone"))
     lines.append("timedatectl set-timezone Europe/Prague")
     lines.append("timedatectl set-ntp true")
     lines.append("systemctl restart systemd-timedated.service || true")
 
     # --- Full upgrade ---
+    lines.append(_step("Upgrading the system (apt full-upgrade)"))
     lines.append("apt-get update -y")
     lines.append("apt-get -y full-upgrade")
 
     # --- vim: default editor + config (best-effort — a minimal image
     # without vim.basic shouldn't fail the whole run over this) ---
+    lines.append(_step("Configuring vim and bash"))
     lines.append(
         "(command -v update-alternatives >/dev/null 2>&1 && "
         "[ -x /usr/bin/vim.basic ] && "
         "update-alternatives --set editor /usr/bin/vim.basic) || true"
     )
     lines.append(_heredoc("/etc/vim/vimrc", _VIMRC, "HONEYHIVE_VIMRC").rstrip())
-
-    # --- bash.bashrc ---
     lines.append(_heredoc("/etc/bash.bashrc", _BASHRC, "HONEYHIVE_BASHRC").rstrip())
 
     # --- NetBird: add the repo, install, and (if a setup key was given)
     # join the network. Installing without joining is also a valid
     # outcome — `netbird up` only runs when a key is present. ---
+    lines.append(_step("Installing NetBird"))
     lines.append(
         "curl -sSL https://pkgs.netbird.io/debian/public.key | "
         "gpg --dearmor -o /usr/share/keyrings/netbird-archive-keyring.gpg"
@@ -274,11 +363,80 @@ def build_initialize_command(
     lines.append("apt-get update -y")
     lines.append("apt-get install -y netbird")
     if netbird_setup_key:
+        lines.append(_step("Joining the NetBird network"))
         key = shlex.quote(netbird_setup_key.strip())
         up_cmd = f"netbird up --setup-key {key}"
         if netbird_management_url:
             up_cmd += f" --management-url {shlex.quote(netbird_management_url.strip())}"
         lines.append(up_cmd)
+
+    # --- OpenCanary's own config (JSON) — generated once, never
+    # overwritten on a re-run (an operator may have already hand-edited
+    # it: which modules are enabled, ports, etc.) ---
+    lines.append(_step("Generating the OpenCanary config"))
+    lines.append(
+        "[ -f /etc/opencanaryd/opencanary.conf ] || "
+        "(. /opt/myenv/bin/activate && /opt/myenv/bin/opencanaryd --copyconfig)"
+    )
+
+    # --- portscan: rsyslog imjournal + legacy iptables — see module
+    # docstring. Safe to re-run: every step here is its own idempotent
+    # guard. ---
+    lines.append(_step("Preparing the portscan module (rsyslog + legacy iptables)"))
+    lines.append(
+        'grep -q \'module(load="imjournal")\' /etc/rsyslog.conf || '
+        '{ echo \'module(load="imjournal")\' > /etc/rsyslog.conf.new; '
+        "cat /etc/rsyslog.conf >> /etc/rsyslog.conf.new; "
+        "mv /etc/rsyslog.conf.new /etc/rsyslog.conf; }"
+    )
+    lines.append(
+        "grep -rq 'kern\\.\\*.*kern\\.log' /etc/rsyslog.conf /etc/rsyslog.d/*.conf 2>/dev/null || "
+        "printf 'kern.*\\t\\t\\t\\t\\t-/var/log/kern.log\\n' >> /etc/rsyslog.conf"
+    )
+    lines.append(
+        "! update-alternatives --list iptables 2>/dev/null | grep -q iptables-legacy || "
+        "update-alternatives --set iptables /usr/sbin/iptables-legacy"
+    )
+
+    # --- smb: Samba config + full_audit -> syslog -> plain log file, but
+    # the systemd services themselves stay disabled — see module
+    # docstring. ---
+    lines.append(_step("Preparing Samba (service left disabled)"))
+    lines.append(f"mkdir -p {_SMB_SHARE_PATH}")
+    lines.append(f"chown {shlex.quote(service_user)}:{shlex.quote(service_user)} {_SMB_SHARE_PATH}")
+    lines.append(f"chmod 755 {_SMB_SHARE_PATH}")
+    lines.append(f"touch {_SMB_SHARE_PATH}/testing.txt")
+    lines.append(
+        _heredoc(
+            "/etc/samba/smb.conf", _smb_conf(device_name.strip()), "HONEYHIVE_SMB_CONF"
+        ).rstrip()
+    )
+    lines.append(
+        "grep -q 'local7.*samba-audit.log' /etc/rsyslog.conf || "
+        "echo 'local7.*        /var/log/samba-audit.log' >> /etc/rsyslog.conf"
+    )
+    lines.append("touch /var/log/samba-audit.log")
+    lines.append("chown syslog:adm /var/log/samba-audit.log")
+    lines.append("systemctl restart rsyslog || true")
+    lines.append("systemctl disable --now smbd || true")
+    lines.append("systemctl disable --now nmbd || true")
+
+    # --- Point the just-generated config at the paths prepared above, in
+    # one pass (both keys live in the same JSON file) — doesn't enable
+    # either module; that's a deliberate separate, manual step. ---
+    lines.append(_step("Pointing the config at the prepared portscan/Samba paths"))
+    lines.append(
+        "python3 - <<'HONEYHIVE_INITIALIZE_CFG'\n"
+        "import json\n"
+        'path = "/etc/opencanaryd/opencanary.conf"\n'
+        "with open(path) as f:\n"
+        "    cfg = json.load(f)\n"
+        'cfg["portscan.iptables_path"] = "/usr/sbin/iptables"\n'
+        'cfg["smb.auditfile"] = "/var/log/samba-audit.log"\n'
+        "with open(path, \"w\") as f:\n"
+        "    json.dump(cfg, f, indent=4)\n"
+        "HONEYHIVE_INITIALIZE_CFG"
+    )
 
     lines.append(f"echo {INITIALIZE_SUCCESS_MARKER}")
 

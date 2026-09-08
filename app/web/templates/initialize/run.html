@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t(request, "initialize.title") }} — HoneyHive{% endblock %}
+
+{% block content %}
+  <h1>{{ t(request, "initialize.title") }}: {{ device_name }}</h1>
+  <p class="hint">{{ ip_address }}</p>
+
+  <div id="initialize-step" class="alert alert-warn" data-initialize-step>
+    <p>{{ t(request, "initialize.connecting") }}</p>
+  </div>
+
+  <div id="initialize-result" hidden data-initialize-result>
+    <div class="alert" data-initialize-result-banner>
+      <p data-initialize-result-message></p>
+    </div>
+    <div class="panel" data-initialize-fingerprint hidden>
+      <p>{{ t(request, "initialize.fingerprint_note") }}</p>
+      <p><code data-initialize-fingerprint-value></code></p>
+    </div>
+  </div>
+
+  <h2>{{ t(request, "initialize.output") }}</h2>
+  <pre class="log-output" id="initialize-output" data-initialize-output></pre>
+
+  <p><a href="/initialize">{{ t(request, "initialize.back_to_form") }}</a></p>
+
+  <div data-ws-path="/initialize/run/{{ run_id }}/ws" data-initialize-root hidden></div>
+  <script src="/static/js/initialize.js" defer></script>
+{% endblock %}

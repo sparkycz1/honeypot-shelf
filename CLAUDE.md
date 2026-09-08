@@ -97,12 +97,15 @@ output, power actions), Company CRUD and bulk actions ("All honeypots"),
 Scheduling (cron-driven actions, company-scoped via
 `ScheduledTask.owner_company_id`), the REST API mirroring all of the above
 (`/api/v1/...`), Users/Settings (LDAP/OIDC/syslog-forwarding config, SSH
-key rotation, retention policies), Initialize (`app.ssh.initialize`,
-`/initialize` — provisions a brand new Raspberry Pi OS 13 device into a
-working OpenCanary honeypot over SSH, before it's ever added to
-HoneyHive: packages, the OpenCanary venv/service, locale/timezone,
-hostname, and NetBird — see [wiki/Honeypot-Initialize.md](wiki/Honeypot-Initialize.md)),
-and an initial Alembic migration. An 81-test suite covers auth, company
+key rotation, retention policies), Initialize (`app.ssh.initialize` +
+`app.web.routes.initialize_ws`, `/initialize` — provisions a brand new
+Raspberry Pi OS 13 device into a working OpenCanary honeypot over SSH,
+before it's ever added to HoneyHive: packages, the OpenCanary venv/
+service, locale/timezone, hostname, NetBird, generating OpenCanary's own
+config, and the portscan/Samba modules' host-side prep, all streamed live
+to the browser over a WebSocket — see
+[wiki/Honeypot-Initialize.md](wiki/Honeypot-Initialize.md)), and an
+initial Alembic migration. An 86-test suite covers auth, company
 scoping, ingest, the dashboard, honeypot/company/schedule CRUD, `pg_enum`,
 i18n, config, Initialize's script builder, and the proxy-headers/
 CSP-safety regression guards below.
