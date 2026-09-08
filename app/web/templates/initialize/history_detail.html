@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}{{ run.device_name }} — {{ t(request, "initialize.history.title") }} — HoneyHive{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>{{ run.device_name }}</h1>
+    <a class="button button-secondary" href="/initialize/history">{{ t(request, "initialize.history.back_to_history") }}</a>
+  </div>
+
+  <dl>
+    <dt>{{ t(request, "initialize.history.col_ip") }}</dt>
+    <dd>{{ run.ip_address }}:{{ run.port }} ({{ run.username }})</dd>
+    <dt>{{ t(request, "initialize.history.detail_started") }}</dt>
+    <dd>{{ run.started_at | local_time('%Y-%m-%d %H:%M:%S %Z') }}</dd>
+    <dt>{{ t(request, "initialize.history.detail_finished") }}</dt>
+    <dd>{{ run.finished_at | local_time('%Y-%m-%d %H:%M:%S %Z') }}</dd>
+    <dt>{{ t(request, "initialize.history.col_status") }}</dt>
+    <dd>
+      {% if run.success %}
+        <span class="badge badge-ok">{{ t(request, "initialize.history.status_succeeded") }}</span>
+      {% else %}
+        <span class="badge badge-error">{{ t(request, "initialize.history.status_failed") }}</span>
+      {% endif %}
+    </dd>
+    <dt>{{ t(request, "initialize.history.col_by") }}</dt>
+    <dd>{{ run.triggered_by }}</dd>
+    {% if run.fingerprint %}
+      <dt>{{ t(request, "honeypots.detail.host_key_heading") }}</dt>
+      <dd><code>{{ run.fingerprint }}</code></dd>
+    {% endif %}
+  </dl>
+
+  {% if run.error %}
+    <div class="alert alert-error"><p>{{ run.error }}</p></div>
+  {% endif %}
+
+  <h2>{{ t(request, "initialize.history.detail_output") }}</h2>
+  <pre><code>{{ run.output or t(request, "honeypots.logs.no_output") }}</code></pre>
+{% endblock %}

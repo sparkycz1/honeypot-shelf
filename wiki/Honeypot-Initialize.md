@@ -20,6 +20,11 @@ what changed and why this runs as one shell script instead of a real
 `ansible-playbook` invocation (same reasoning as the "Run initial setup"
 onboarding step below).
 
+**Run history**: `/initialize/history` keeps the last 50 runs (device,
+outcome, who ran it, and its full output) — the WebSocket output above is
+otherwise gone the moment the run page is closed, so this is what to check
+after a failed provisioning without having had to keep that tab open.
+
 **You see it happen, live**: the run page opens a WebSocket
 (`app.web.routes.initialize_ws`) the moment it loads — a banner at the top
 tracks which phase is currently running ("Installing packages", "Upgrading

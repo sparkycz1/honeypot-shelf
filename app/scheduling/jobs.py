@@ -27,6 +27,7 @@ from app.audit import log_event
 from app.db import session as db_session
 from app.db.models.audit_log import AuditOutcome
 from app.db.models.scheduled_task import ScheduledTask
+from app.db.models.scheduled_task_run import ScheduledTaskRun, ScheduledTaskRunOutcome
 from app.scheduling.actions import get_action
 from app.scheduling.builtin_actions import register_builtin_actions
 from app.scheduling.cron import compute_next_run
@@ -100,24 +101,64 @@ async def _run_scheduled_task(task_id: str) -> dict[str, Any]:
 
         action = get_action(task.action)
         if action is None:
+            summary = f'Unknown action "{task.action}" — nothing was run.'
             task.last_run_at = datetime.now(UTC)
-            task.last_run_summary = f'Unknown action "{task.action}" — nothing was run.'
+            task.last_run_summary = summary
+            session.add(
+                ScheduledTaskRun(
+                    task_id=task.id,
+                    outcome=ScheduledTaskRunOutcome.FAILURE,
+                    summary=summary,
+                    error=summary,
+                )
+            )
             await session.commit()
-            logger.warning("run_scheduled_task(%s): %s", task.id, task.last_run_summary)
+            logger.warning("run_scheduled_task(%s): %s", task.id, summary)
             await log_event(
                 session,
                 actor=_SCHEDULER_ACTOR,
                 action="scheduled_task.fired",
-                summary=f'Scheduled task "{task.name}" fired: {task.last_run_summary}',
+                summary=f'Scheduled task "{task.name}" fired: {summary}',
                 outcome=AuditOutcome.FAILURE,
                 target_type="scheduled_task",
                 target_id=task.id,
                 target_label=task.name,
             )
-            return {"ok": False, "error": task.last_run_summary}
+            return {"ok": False, "error": summary}
 
-        honeypots = await resolve_target_honeypots(session, task)
-        result = await action.run(session, honeypots, task.action_params or {})
+        # Anything past this point (resolving targets, dispatching the
+        # action's own underlying jobs) is wrapped so a failure here — a DB
+        # hiccup, a bug in a third-party action — still leaves a row behind
+        # to retry from, instead of silently vanishing into Celery's own
+        # failure handling with no trace in this app.
+        try:
+            honeypots = await resolve_target_honeypots(session, task)
+            result = await action.run(session, honeypots, task.action_params or {})
+        except Exception as exc:  # noqa: BLE001 - recorded, not swallowed
+            summary = f"Failed to run: {exc}"
+            task.last_run_at = datetime.now(UTC)
+            task.last_run_summary = summary
+            session.add(
+                ScheduledTaskRun(
+                    task_id=task.id,
+                    outcome=ScheduledTaskRunOutcome.FAILURE,
+                    summary=summary,
+                    error=str(exc),
+                )
+            )
+            await session.commit()
+            logger.exception("run_scheduled_task(%s) failed", task.id)
+            await log_event(
+                session,
+                actor=_SCHEDULER_ACTOR,
+                action="scheduled_task.fired",
+                summary=f'Scheduled task "{task.name}" fired ({task.action}): {summary}',
+                outcome=AuditOutcome.FAILURE,
+                target_type="scheduled_task",
+                target_id=task.id,
+                target_label=task.name,
+            )
+            return {"ok": False, "error": summary}
 
         summary = f"Triggered for {result.attempted} honeypot(s)."
         if result.skipped:
@@ -127,6 +168,15 @@ async def _run_scheduled_task(task_id: str) -> dict[str, Any]:
             )
         task.last_run_at = datetime.now(UTC)
         task.last_run_summary = summary
+        session.add(
+            ScheduledTaskRun(
+                task_id=task.id,
+                outcome=ScheduledTaskRunOutcome.SUCCESS,
+                summary=summary,
+                attempted=result.attempted,
+                skipped=result.skipped,
+            )
+        )
         await session.commit()
 
         await log_event(

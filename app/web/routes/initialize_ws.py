@@ -38,6 +38,7 @@ from app.core.config import get_settings
 from app.core.security import decrypt_secret
 from app.db.models.audit_log import AuditOutcome
 from app.db.models.honeypot import AuthMethod, Honeypot
+from app.db.models.initialize_run import MAX_OUTPUT_CHARS, InitializeRun
 from app.db.models.user import User
 from app.ssh.client import discover_host_key_fingerprint, open_process_session
 from app.ssh.exceptions import SSHConnectionError
@@ -140,6 +141,40 @@ async def _log_initialize_event(
         )
 
 
+async def _persist_initialize_run(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    *,
+    user: User,
+    run: PendingInitializeRun,
+    started_at: datetime,
+    error: str | None,
+    fingerprint: str | None,
+    output_lines: list[str],
+) -> None:
+    """The durable counterpart to the live WebSocket stream — see
+    `InitializeRun`'s module docstring for why this exists (nothing else
+    keeps the script's output once the run page is closed)."""
+    output = "\n".join(output_lines)
+    if len(output) > MAX_OUTPUT_CHARS:
+        output = output[-MAX_OUTPUT_CHARS:]
+    async with db_session_factory() as db:
+        db.add(
+            InitializeRun(
+                device_name=run.device_name,
+                ip_address=run.ip_address,
+                port=run.port,
+                username=run.username,
+                started_at=started_at,
+                success=error is None,
+                error=error,
+                fingerprint=fingerprint,
+                output=output,
+                triggered_by=user.username,
+            )
+        )
+        await db.commit()
+
+
 @router.websocket("/initialize/run/{run_id}/ws")
 async def initialize_websocket(websocket: WebSocket, run_id: str) -> None:
     user = await _authenticate(websocket)
@@ -161,6 +196,7 @@ async def initialize_websocket(websocket: WebSocket, run_id: str) -> None:
     conn: asyncssh.SSHClientConnection | None = None
     process: asyncssh.SSHClientProcess[str] | None = None
     started_at = datetime.now(UTC)
+    collected: list[str] = []
 
     try:
         await websocket.send_text(json.dumps({"kind": "step", "label": "Connecting"}))
@@ -208,7 +244,6 @@ async def initialize_websocket(websocket: WebSocket, run_id: str) -> None:
             error = str(exc)
             return
 
-        collected: list[str] = []
         try:
             await asyncio.wait_for(
                 _relay_output(websocket, process, collected),
@@ -245,4 +280,14 @@ async def initialize_websocket(websocket: WebSocket, run_id: str) -> None:
                 run=run,
                 error=error,
                 duration_seconds=duration_seconds,
+            )
+        with contextlib.suppress(Exception):
+            await _persist_initialize_run(
+                db_session_factory,
+                user=user,
+                run=run,
+                started_at=started_at,
+                error=error,
+                fingerprint=fingerprint,
+                output_lines=collected,
             )

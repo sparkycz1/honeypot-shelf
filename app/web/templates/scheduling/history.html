@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}{{ task.name }} — {{ t(request, "scheduling.history.title") }} — HoneyHive{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>{{ task.name }}</h1>
+    <a class="button button-secondary" href="/scheduling">{{ t(request, "scheduling.history.back") }}</a>
+  </div>
+  <p class="hint">{{ t(request, "scheduling.history.hint") }}</p>
+
+  {% if runs %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>{{ t(request, "scheduling.history.col_fired") }}</th>
+          <th>{{ t(request, "partials.updates.status") }}</th>
+          <th>{{ t(request, "scheduling.history.col_summary") }}</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for run in runs %}
+          <tr>
+            <td>{{ run.fired_at | local_time('%Y-%m-%d %H:%M:%S %Z') }}</td>
+            <td>
+              {% if run.outcome.value == 'success' %}
+                <span class="badge badge-ok">{{ t(request, "scheduling.history.status_success") }}</span>
+              {% else %}
+                <span class="badge badge-error">{{ t(request, "scheduling.history.status_failure") }}</span>
+              {% endif %}
+            </td>
+            <td>{{ run.summary }}</td>
+            <td>
+              {% if run.outcome.value == 'failure' %}
+                <form method="post" action="/scheduling/{{ task.id }}/run-now" class="inline-form">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button type="submit" class="button button-secondary">{{ t(request, "scheduling.history.retry") }}</button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="empty-state">
+      <p>{{ t(request, "scheduling.history.empty") }}</p>
+    </div>
+  {% endif %}
+{% endblock %}

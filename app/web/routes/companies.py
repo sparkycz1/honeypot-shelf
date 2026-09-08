@@ -31,6 +31,7 @@ from app.db.models.honeypot_update_run import HoneypotUpdateRun, UpdateRunStatus
 from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.company import CompanyCreate
+from app.services.company_stats import compute_company_stats
 from app.services.honeypot_actions import (
     send_power_to_honeypots,
     trigger_check_updates,
@@ -466,6 +467,7 @@ async def company_detail(
         select(User).where(User.company_id == company_id).order_by(User.username)
     )
     users = users_result.scalars().all()
+    stats = await compute_company_stats(db, company_id)
 
     csrf_token, new_cookie = get_or_create_csrf_token(request)
     response = templates.TemplateResponse(
@@ -477,6 +479,7 @@ async def company_detail(
             "active_tab": "overview",
             "honeypots": honeypots,
             "users": users,
+            "stats": stats,
             "all_tags": await _get_all_tags(db),
             "q": q,
             "tag": tag,

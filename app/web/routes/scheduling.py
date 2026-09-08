@@ -31,6 +31,7 @@ from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie, verify_csrf
 from app.db.models.audit_log import AuditOutcome
 from app.db.models.honeypot import Honeypot
 from app.db.models.scheduled_task import ScheduledTask
+from app.db.models.scheduled_task_run import ScheduledTaskRun
 from app.db.models.user import User
 from app.db.session import get_db
 from app.scheduling.actions import all_actions, get_action
@@ -418,6 +419,38 @@ async def run_scheduled_task_now(
     return RedirectResponse(
         url=f"/scheduling?ran={task.id}", status_code=status.HTTP_303_SEE_OTHER
     )
+
+
+# How many past runs the history page shows — a debugging aid for a
+# schedule that's misbehaving, not an unbounded audit trail (the audit log
+# already keeps every firing forever, see `app.scheduling.jobs`).
+_HISTORY_PAGE_SIZE = 50
+
+
+@router.get("/{task_id}/history")
+async def scheduled_task_history(
+    request: Request,
+    task_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    task = await _get_task_or_404(task_id, db, current_user)
+    result = await db.execute(
+        select(ScheduledTaskRun)
+        .where(ScheduledTaskRun.task_id == task_id)
+        .order_by(ScheduledTaskRun.fired_at.desc())
+        .limit(_HISTORY_PAGE_SIZE)
+    )
+    runs = result.scalars().all()
+    csrf_token, new_cookie = get_or_create_csrf_token(request)
+    response = templates.TemplateResponse(
+        request,
+        "scheduling/history.html",
+        {"task": task, "runs": runs, "csrf_token": csrf_token},
+    )
+    if new_cookie:
+        set_csrf_cookie(response, new_cookie)
+    return response
 
 
 @router.post("/{task_id}/delete", dependencies=[_write, Depends(verify_csrf)])

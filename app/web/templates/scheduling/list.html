@@ -74,6 +74,7 @@
                   {{ t(request, "scheduling.list.disable") if task.is_enabled else t(request, "scheduling.list.enable") }}
                 </button>
               </form>
+              <a class="button button-secondary" href="/scheduling/{{ task.id }}/history">{{ t(request, "scheduling.list.history") }}</a>
               <a class="button button-secondary" href="/scheduling/{{ task.id }}/edit">{{ t(request, "scheduling.list.edit") }}</a>
               <form method="post" action="/scheduling/{{ task.id }}/delete" class="inline-form"
                     data-confirm="{{ t(request, 'scheduling.list.delete_confirm', name=task.name) }}">

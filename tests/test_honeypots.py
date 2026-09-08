@@ -98,3 +98,50 @@ async def test_package_search_with_a_query_does_not_crash(client, db_session_fac
 
     response = await client.get("/honeypots/package-search", params={"q": "openssl"})
     assert response.status_code == 200
+
+
+async def test_ingest_token_rotate_and_revoke(client, db_session_factory):
+    """Generating a token shows the raw value exactly once and stores only
+    its hash; revoking clears it. See `app.auth.ingest_tokens`."""
+    company = await create_company(db_session_factory)
+    async with db_session_factory() as db:
+        honeypot = Honeypot(company_id=company.id, name="acme-honey1")
+        db.add(honeypot)
+        await db.commit()
+        await db.refresh(honeypot)
+        honeypot_id = honeypot.id
+
+    edit_page = await client.get(f"/honeypots/{honeypot_id}/edit")
+    assert 'name="csrf_token"' in edit_page.text
+
+    rotate = await client.post(
+        f"/honeypots/{honeypot_id}/ingest-token/rotate",
+        data={"csrf_token": _csrf_from(edit_page)},
+    )
+    assert rotate.status_code == 200
+    assert "hhit_" in rotate.text
+
+    async with db_session_factory() as db:
+        honeypot = await db.get(Honeypot, honeypot_id)
+        assert honeypot.ingest_token_hash is not None
+        first_hash = honeypot.ingest_token_hash
+
+    # Rotating again overwrites the previous hash.
+    rotate_again = await client.post(
+        f"/honeypots/{honeypot_id}/ingest-token/rotate",
+        data={"csrf_token": _csrf_from(edit_page)},
+    )
+    assert rotate_again.status_code == 200
+    async with db_session_factory() as db:
+        honeypot = await db.get(Honeypot, honeypot_id)
+        assert honeypot.ingest_token_hash != first_hash
+
+    revoke = await client.post(
+        f"/honeypots/{honeypot_id}/ingest-token/revoke",
+        data={"csrf_token": _csrf_from(edit_page)},
+        follow_redirects=False,
+    )
+    assert revoke.status_code == 303
+    async with db_session_factory() as db:
+        honeypot = await db.get(Honeypot, honeypot_id)
+        assert honeypot.ingest_token_hash is None

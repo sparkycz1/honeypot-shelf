@@ -76,15 +76,28 @@ def _resolve_scope(
 
 
 @router.get("")
-async def list_users(request: Request, db: AsyncSession = Depends(get_db)) -> Response:
-    result = await db.execute(
-        select(User).options(selectinload(User.company)).order_by(User.username)
-    )
+async def list_users(
+    request: Request, db: AsyncSession = Depends(get_db), company_id: uuid.UUID | None = None
+) -> Response:
+    """`?company_id=` narrows the list to one company — used by that
+    company's own page ("Users in this company" links here to see
+    everyone, not just the ones shown inline there) as well as directly.
+    Superadmin-only end to end (router-level), so no scoping check beyond
+    the filter itself is needed."""
+    query = select(User).options(selectinload(User.company)).order_by(User.username)
+    if company_id is not None:
+        query = query.where(User.company_id == company_id)
+    result = await db.execute(query)
     users = result.scalars().all()
+    filtered_company = await db.get(Company, company_id) if company_id is not None else None
     return templates.TemplateResponse(
         request,
         "users/list.html",
-        {"users": users, "csrf_token": request.state.csrf_token},
+        {
+            "users": users,
+            "csrf_token": request.state.csrf_token,
+            "filtered_company": filtered_company,
+        },
     )
 
 
