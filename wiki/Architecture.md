@@ -215,9 +215,9 @@ same constraint `app.services.live_updates` already has for a related
 reason, and the same fix (move it to Redis) would apply if that ever
 changes.
 
-## 🔒 Honeypot Status: read-only root filesystem
+## 🔒 Honeypot Config: read-only root filesystem
 
-The Honeypot Status tab's one action (`app.ssh.readonly`) toggles a
+The Honeypot Config tab's one action (`app.ssh.readonly`) toggles a
 managed honeypot's root filesystem between writable and read-only, to
 protect its SD card from write wear over a long unattended run. Uses
 Raspberry Pi OS's own built-in overlay filesystem support

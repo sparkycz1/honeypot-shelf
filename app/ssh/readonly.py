@@ -1,5 +1,5 @@
 """Toggling a honeypot's root filesystem between read-only (overlay) and
-writable — the Honeypot Status tab's one action.
+writable — the Honeypot Config tab's one action.
 
 **Why**: an SD card wears out from repeated writes; a honeypot that's
 finished being provisioned has no real need to write to its own root
@@ -21,7 +21,7 @@ after the device restarts; the current boot keeps whatever it already
 booted with.
 
 **Must be disabled before running system updates** (the Updates tab) —
-`apt` can't write to a read-only root. The Status tab always shows
+`apt` can't write to a read-only root. The Config tab always shows
 whichever of "enable"/"disable" makes sense for the currently *booted*
 state (not the pending-until-reboot one), so it stays a one-click action
 either direction.

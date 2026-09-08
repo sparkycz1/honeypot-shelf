@@ -381,7 +381,7 @@ def build_initialize_command(
 
     # --- /mnt/tmpfs: a small ramdisk OpenCanary's own log writes to
     # instead of the SD card (see app.ssh.readonly's module docstring —
-    # the Honeypot Status tab's read-only-root toggle assumes this exists
+    # the Honeypot Config tab's read-only-root toggle assumes this exists
     # so there's still somewhere for OpenCanary to write once root itself
     # is read-only). Idempotent: adding the fstab line twice would mount
     # it twice, so this checks first. ---

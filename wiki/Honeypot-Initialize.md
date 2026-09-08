@@ -79,7 +79,7 @@ Connecting as `root` needs no sudo. Otherwise:
 Before generating the config, Initialize sets up a 512&nbsp;MB tmpfs at
 `/mnt/tmpfs` (an `/etc/fstab` entry + mounting it immediately — idempotent,
 safe on a re-run) and best-effort repoints OpenCanary's file logger at
-`/mnt/tmpfs/opencanary.log`. This is what the [Honeypot Status
+`/mnt/tmpfs/opencanary.log`. This is what the [Honeypot Config
 tab](Architecture.md)'s read-only-root toggle assumes exists — once `/` is
 read-only, OpenCanary still needs somewhere to write its own log, and a
 ramdisk both works and, as a bonus, is one less thing writing to the SD
