@@ -179,6 +179,20 @@ disabled before; incomplete annotations, untyped calls, and `Any`
 returns — all normal in test fixtures — were still erroring). None of
 this blocks using the app.
 
+**NetBird connectivity for HoneyHive itself** (Settings → VPN,
+`app.services.netbird`) — distinct from the honeypot-side NetBird setup
+key already on the Initialize form — lets `web`/`worker` reach a honeypot
+that's only addressable over NetBird (e.g. behind a NAT with no forwarded
+SSH port), via an optional privileged `vpn` sidecar container
+(`docker-compose.vpn.yml`) that `web`/`worker` share the network
+namespace of (`network_mode: "service:vpn"`) rather than gaining any
+elevated privilege themselves. See
+[wiki/Architecture.md](wiki/Architecture.md)'s "VPN connectivity: NetBird
+or WireGuard" section for the full design — including WireGuard as a
+second, mutually-exclusive provider option, fully designed there but not
+built yet (needs a small custom control-socket server, since plain
+`wireguard-tools` has no daemon+CLI split the way NetBird does).
+
 Settled product decisions (see [wiki/Home.md](wiki/Home.md) for the full
 list): only a superadmin creates companies/honeypots/users — a company's
 own `READ_WRITE` user manages honeypots *within* their own company (via

@@ -18,6 +18,8 @@
     {% include "settings/_security.html" %}
   {% elif active_tab == 'integrations' %}
     {% include "settings/_integrations.html" %}
+  {% elif active_tab == 'netbird' %}
+    {% include "settings/_netbird.html" %}
   {% else %}
     {% include "settings/_general.html" %}
   {% endif %}

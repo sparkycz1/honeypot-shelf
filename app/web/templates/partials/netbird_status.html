@@ -1,0 +1,14 @@
+<span
+  id="netbird-status"
+  hx-get="/settings/netbird/status-panel"
+  hx-trigger="every 5s, live-netbird from:body"
+  hx-swap="outerHTML settle:600ms"
+>
+  {% if netbird_status.connected %}
+    <span class="badge badge-ok">{{ t(request, "settings.netbird.status_connected") }}</span>
+  {% elif netbird_status.error %}
+    <span class="badge badge-warn">{{ t(request, "settings.netbird.status_unavailable") }}</span>
+  {% else %}
+    <span class="badge badge-error">{{ t(request, "settings.netbird.status_disconnected") }}</span>
+  {% endif %}
+</span>

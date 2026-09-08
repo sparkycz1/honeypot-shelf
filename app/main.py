@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -15,12 +17,15 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.auth.middleware import require_auth
+from app.core.app_settings import get_or_create_app_settings
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.core.proxy_headers import ProxyHeadersMiddleware
+from app.core.security import decrypt_secret
 from app.core.version import APP_VERSION
 from app.db.session import AsyncSessionLocal
 from app.scheduling.builtin_actions import register_builtin_actions
+from app.services import netbird
 from app.web.routes import (
     api_docs,
     api_v1,
@@ -104,6 +109,31 @@ def _custom_openapi(app: FastAPI) -> dict[str, Any]:
     return schema
 
 
+logger = logging.getLogger(__name__)
+
+
+async def _reconnect_netbird_if_configured() -> None:
+    """Best-effort, fire-and-forget: if NetBird was connected before (see
+    Settings -> NetBird), reconnect it after a restart/redeploy — otherwise
+    a honeypot only reachable over NetBird stays unreachable until someone
+    notices and clicks Connect again. Never raises — the app must still
+    start normally with no NetBird sidecar at all (the common case, since
+    this is an optional overlay), and a failed reconnect just leaves the
+    status badge showing disconnected/unavailable, same as any other
+    integration that isn't currently working."""
+    try:
+        async with AsyncSessionLocal() as db:
+            app_settings = await get_or_create_app_settings(db)
+            if not app_settings.netbird_enabled or app_settings.netbird_setup_key_encrypted is None:
+                return
+            setup_key = decrypt_secret(app_settings.netbird_setup_key_encrypted)
+            management_url = app_settings.netbird_management_url
+        await netbird.connect(setup_key=setup_key, management_url=management_url)
+        logger.info("Reconnected to NetBird on startup.")
+    except Exception:  # noqa: BLE001 - startup must never crash over this
+        logger.warning("Could not reconnect to NetBird on startup.", exc_info=True)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # One long-lived Redis connection pool for the login rate limiter
@@ -115,9 +145,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # from. Kept on app.state rather than imported directly so tests can
     # point it at their own SQLite engine.
     app.state.db_session_factory = AsyncSessionLocal
+    # Fire-and-forget, not awaited — a slow/unavailable netbird daemon must
+    # never delay the app itself from becoming ready.
+    reconnect_task = asyncio.ensure_future(_reconnect_netbird_if_configured())
     try:
         yield
     finally:
+        reconnect_task.cancel()
         await app.state.redis.aclose()
 
 

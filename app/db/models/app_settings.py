@@ -145,14 +145,21 @@ class AppSettings(Base):
     # login.html.
     oidc_provider_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
-    # NetBird's management URL is no longer a global setting — it's entered
-    # fresh on each Initialize run instead (`app.web.routes.initialize`'s
-    # `PendingInitializeRun.netbird_management_url`), the same one-time-use
-    # pattern already used for the SSH password and the NetBird setup key.
-    # A previous revision stored it here; see the Alembic migration that
-    # drops this column for why (nothing else in this app needs it once a
-    # honeypot is initialized — `netbird up` doesn't persist it anywhere
-    # HoneyHive reads back).
+    # --- NetBird for HoneyHive itself (app.services.netbird, Settings ->
+    # NetBird) — a different thing from the NetBird setup key entered on an
+    # Initialize run (that joins the *honeypot* to your network; this joins
+    # *HoneyHive's own SSH-management-plane containers*, so honeypots that
+    # only have a NetBird address — e.g. sitting behind a NAT with no
+    # forwarded port — are still reachable). Unlike the Initialize one,
+    # this genuinely needs to persist: it has to survive a container
+    # restart and reconnect on its own (see `app.main`'s lifespan), so
+    # storing it here (setup key encrypted, same as the LDAP/OIDC secrets
+    # above) is the right call this time, not a repeat of the mistake the
+    # dropped `netbird_management_url` column was cleaned up for — that one
+    # stored a value nothing but Initialize's one-time form ever needed. ---
+    netbird_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    netbird_management_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    netbird_setup_key_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
 
     # --- Syslog forwarding of audit log entries (app.audit_syslog), e.g. to
     # a SIEM such as Wazuh. Best-effort/fire-and-forget: the DB row is always

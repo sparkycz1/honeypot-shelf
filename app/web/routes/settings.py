@@ -20,7 +20,7 @@ from app.auth.dependencies import require_superadmin
 from app.core.app_settings import get_or_create_app_settings
 from app.core.config import get_settings
 from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie, verify_csrf
-from app.core.security import encrypt_secret
+from app.core.security import decrypt_secret, encrypt_secret
 from app.db.models.app_settings import (
     DEFAULT_LDAP_USER_SEARCH_FILTER,
     DEFAULT_OIDC_SCOPES,
@@ -31,6 +31,7 @@ from app.db.models.app_settings import (
 from app.db.models.audit_log import AuditOutcome
 from app.db.models.honeypot import AuthMethod, Honeypot
 from app.db.session import get_db
+from app.services import netbird
 from app.ssh.identity import (
     activate_pending_identity,
     discard_pending_identity,
@@ -47,7 +48,7 @@ router = APIRouter(prefix="/settings", dependencies=[Depends(require_superadmin)
 # there's only ever one GET route here, not one per tab, since every POST
 # handler below redirects back to /settings regardless of which tab it
 # belongs to).
-_TAB_KEYS = ("general", "security", "integrations")
+_TAB_KEYS = ("general", "security", "integrations", "netbird")
 _VALID_TABS = set(_TAB_KEYS)
 _DEFAULT_TAB = "general"
 
@@ -87,6 +88,12 @@ async def _render_settings(
         "active_tab": tab,
         **extra,
     }
+    # Only fetched for the tab that actually shows it — this is a
+    # subprocess round trip (app.services.netbird), not worth paying on
+    # every other tab's page load/redirect.
+    if tab == "netbird" and "netbird_status" not in context:
+        context["netbird_status"] = await netbird.status()
+        context["netbird_log"] = netbird.tail_log()
     response = templates.TemplateResponse(request, "settings/index.html", context)
     if new_cookie:
         set_csrf_cookie(response, new_cookie)
@@ -545,3 +552,134 @@ async def update_syslog_settings(
         ),
     )
     return RedirectResponse(url="/settings?tab=integrations", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/netbird", dependencies=[Depends(verify_csrf)])
+async def update_netbird_settings(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    netbird_management_url: str = Form(""),
+    # Blank = keep the existing setup key unchanged — same convention as
+    # every other stored secret in this app (LDAP bind password, a
+    # honeypot's own password).
+    netbird_setup_key: str = Form(""),
+) -> Response:
+    """Saves the setup key/management URL (if given) and connects — one
+    action, not "save" then a separate "connect" click, since a setup key
+    is single-use on NetBird's side anyway (see the wiki): there's rarely
+    a reason to save one without immediately using it."""
+    app_settings = await get_or_create_app_settings(db)
+    errors: list[str] = []
+
+    management_url = netbird_management_url.strip()
+    if management_url and not (
+        management_url.startswith("http://") or management_url.startswith("https://")
+    ):
+        errors.append('Management URL must start with "http://" or "https://".')
+
+    setup_key = netbird_setup_key.strip()
+    if not setup_key and app_settings.netbird_setup_key_encrypted is None:
+        errors.append("A setup key is required to connect.")
+
+    if errors:
+        return await _render_settings(request, db, errors, tab="netbird")
+
+    app_settings.netbird_management_url = management_url or None
+    if setup_key:
+        app_settings.netbird_setup_key_encrypted = encrypt_secret(setup_key)
+    else:
+        # Guaranteed non-None here — the `errors.append(...)` above would
+        # otherwise have already returned when both are unset.
+        assert app_settings.netbird_setup_key_encrypted is not None
+        setup_key = decrypt_secret(app_settings.netbird_setup_key_encrypted)
+
+    try:
+        await netbird.connect(setup_key=setup_key, management_url=management_url or None)
+    except (netbird.NetbirdUnavailableError, netbird.NetbirdCommandError) as exc:
+        await log_event(
+            db,
+            request=request,
+            action="settings.netbird.connect",
+            summary=f"Failed to connect to NetBird: {exc}",
+            outcome=AuditOutcome.FAILURE,
+        )
+        await db.commit()
+        return await _render_settings(request, db, [str(exc)], tab="netbird")
+
+    app_settings.netbird_enabled = True
+    await db.commit()
+    await log_event(
+        db, request=request, action="settings.netbird.connect", summary="Connected to NetBird"
+    )
+    return RedirectResponse(url="/settings?tab=netbird", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/netbird/disconnect", dependencies=[Depends(verify_csrf)])
+async def disconnect_netbird(request: Request, db: AsyncSession = Depends(get_db)) -> Response:
+    app_settings = await get_or_create_app_settings(db)
+    try:
+        await netbird.disconnect()
+    except (netbird.NetbirdUnavailableError, netbird.NetbirdCommandError) as exc:
+        await log_event(
+            db,
+            request=request,
+            action="settings.netbird.disconnect",
+            summary=f"Failed to disconnect from NetBird: {exc}",
+            outcome=AuditOutcome.FAILURE,
+        )
+        await db.commit()
+        return await _render_settings(request, db, [str(exc)], tab="netbird")
+
+    app_settings.netbird_enabled = False
+    await db.commit()
+    await log_event(
+        db,
+        request=request,
+        action="settings.netbird.disconnect",
+        summary="Disconnected from NetBird",
+    )
+    return RedirectResponse(url="/settings?tab=netbird", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/netbird/restart", dependencies=[Depends(verify_csrf)])
+async def restart_netbird(request: Request, db: AsyncSession = Depends(get_db)) -> Response:
+    app_settings = await get_or_create_app_settings(db)
+    if app_settings.netbird_setup_key_encrypted is None:
+        return await _render_settings(
+            request, db, ["Connect NetBird at least once before restarting it."], tab="netbird"
+        )
+    setup_key = decrypt_secret(app_settings.netbird_setup_key_encrypted)
+
+    try:
+        await netbird.restart(
+            setup_key=setup_key, management_url=app_settings.netbird_management_url
+        )
+    except (netbird.NetbirdUnavailableError, netbird.NetbirdCommandError) as exc:
+        await log_event(
+            db,
+            request=request,
+            action="settings.netbird.restart",
+            summary=f"Failed to restart NetBird: {exc}",
+            outcome=AuditOutcome.FAILURE,
+        )
+        await db.commit()
+        return await _render_settings(request, db, [str(exc)], tab="netbird")
+
+    await log_event(
+        db, request=request, action="settings.netbird.restart", summary="Restarted NetBird"
+    )
+    return RedirectResponse(url="/settings?tab=netbird", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.get("/netbird/status-panel")
+async def netbird_status_panel(request: Request) -> Response:
+    return templates.TemplateResponse(
+        request, "partials/netbird_status.html", {"netbird_status": await netbird.status()}
+    )
+
+
+@router.get("/netbird/log")
+async def netbird_log_panel(request: Request) -> Response:
+    return templates.TemplateResponse(
+        request, "partials/netbird_log.html", {"netbird_log": netbird.tail_log()}
+    )
