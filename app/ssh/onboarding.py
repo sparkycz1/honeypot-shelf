@@ -7,7 +7,9 @@ Raspbian honeypot for HoneyHive, run directly over SSH (see
    `authorized_keys` (idempotent — `grep -qxF` first, same convention as
    `app.tasks.jobs._push_pending_ssh_key`).
 3. Grant it passwordless sudo, scoped to exactly what HoneyHive needs
-   (`apt-get`, `shutdown`, and `flatpak`/`snap` if either is present) —
+   (`apt-get`, `shutdown`, `dmidecode`, `systemctl` — the last one for the
+   Honeypot Config tab's module editor, restarting `opencanary` and
+   toggling `smbd`/`nmbd` — and `flatpak`/`snap` if either is present) —
    the exact sudoers line documented in wiki/Honeypot-Onboarding.md.
 4. Best-effort install `ncurses-term`, so the web Terminal tab gets colors
    and box-drawing without a separate manual step. Its failure (no
@@ -63,7 +65,7 @@ def build_onboarding_command(public_key: str) -> str:
         f'chown {user}:{user} "$home/.ssh/authorized_keys"; '
         f"cat > /etc/sudoers.d/{user} <<'HONEYHIVE_SUDOERS_APT'\n"
         f"{user} ALL=(root) NOPASSWD: /usr/bin/apt-get, /usr/sbin/shutdown, "
-        "/usr/sbin/dmidecode\n"
+        "/usr/sbin/dmidecode, /usr/bin/systemctl\n"
         "HONEYHIVE_SUDOERS_APT\n"
         f"chmod 440 /etc/sudoers.d/{user}; "
         f"visudo -cf /etc/sudoers.d/{user}; "

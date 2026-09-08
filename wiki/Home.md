@@ -32,13 +32,16 @@ RBAC; event ingestion and the Dashboard; full Honeypot management
 (journal, a clickable file browser, and a shortcut to OpenCanary's own
 log), facts/packages/services refresh, system updates with live output,
 power actions, and a Honeypot Config tab toggling the read-only root
-filesystem for SD card longevity); [Initialize](Honeypot-Initialize.md) — provisioning a brand new
+filesystem for SD card longevity plus a full category-by-category editor
+for every OpenCanary module (FTP/HTTP(S)/SSH/Telnet/databases/RDP/VNC/
+SIP/SNMP/NTP/TFTP/Git/LLMNR/a generic TCP banner/portscan/Samba));
+[Initialize](Honeypot-Initialize.md) — provisioning a brand new
 Raspberry Pi into a working honeypot (packages, OpenCanary, NetBird) over
 SSH before it's ever added to HoneyHive; Company management and
 fleet-wide/"All honeypots" bulk actions; Scheduling; the REST API
 mirroring all of the above; Users and Settings (LDAP/OIDC/syslog
 forwarding, SSH key rotation, retention policies); full **English and
-Czech i18n** across every page, not just the site chrome. A 101-test
+Czech i18n** across every page, not just the site chrome. A 120-test
 suite covers the RBAC/scoping-sensitive paths; `ruff check .` and `mypy
 app alembic tests` are both fully clean. See [CLAUDE.md](../CLAUDE.md)'s
 "Current state" section for what's left (mainly: no CI workflow file).
@@ -72,9 +75,5 @@ app alembic tests` are both fully clean. See [CLAUDE.md](../CLAUDE.md)'s
 - **Per-honeypot ingest tokens.** The model (`Honeypot.ingest_token_hash`)
   and the shared `INGEST_TOKEN` fallback both exist, but nothing in the UI
   generates/rotates a per-honeypot token yet.
-- **What exactly does "host configuration" cover beyond the SSH terminal
-  already ported?** Network/IP settings specifically, OpenCanary's own
-  YAML config with a service restart, or is the terminal itself (already
-  built) considered sufficient for that?
 - **A map/geo view, CSV export of events, per-event-type dashboards** —
   none of these exist yet; worth asking which (if any) matter for v1.

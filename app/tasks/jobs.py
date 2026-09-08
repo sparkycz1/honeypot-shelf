@@ -58,7 +58,7 @@ from app.services.live_updates import (
     KIND_UPDATES,
     publish_honeypot_event,
 )
-from app.ssh.client import test_connection
+from app.ssh.client import open_connection, test_connection
 from app.ssh.credentials import resolve_honeypot_credential
 from app.ssh.exceptions import SSHConnectionError
 from app.ssh.exec import run_command
@@ -67,6 +67,15 @@ from app.ssh.identity import get_or_create_identity
 from app.ssh.logs import LogAccessError, list_directory, view_file, view_journal
 from app.ssh.monitoring import gather_monitoring_sample
 from app.ssh.onboarding import ONBOARD_SUCCESS_MARKER, ONBOARD_USERNAME, build_onboarding_command
+from app.ssh.opencanary_config import (
+    build_read_command as opencanary_build_read_command,
+)
+from app.ssh.opencanary_config import (
+    build_write_command as opencanary_build_write_command,
+)
+from app.ssh.opencanary_config import (
+    parse_config as opencanary_parse_config,
+)
 from app.ssh.packages import gather_packages
 from app.ssh.power import PowerAction, send_power_command
 from app.ssh.reachability import ReachabilityResult, check_reachable
@@ -371,6 +380,113 @@ async def _set_honeypot_readonly(honeypot_id: str, *, enable: bool) -> dict[str,
 )
 def set_honeypot_readonly(honeypot_id: str, *, enable: bool) -> dict[str, Any]:
     return asyncio.run(_set_honeypot_readonly(honeypot_id, enable=enable))
+
+
+async def _read_honeypot_opencanary_config(honeypot_id: str) -> dict[str, Any]:
+    """The Honeypot Config tab's module editor — a fresh `cat` of
+    `opencanary.conf` on every load, see `app.ssh.opencanary_config`'s
+    module docstring for why this is never cached in HoneyHive's own DB."""
+    settings = get_settings()
+
+    async with db_session.AsyncSessionLocal() as session:
+        honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
+        if honeypot is None:
+            return {"ok": False, "error": "Honeypot not found."}
+        if not honeypot.host_key_fingerprint:
+            return {"ok": False, "error": "No pinned host key fingerprint yet."}
+
+        secret = await resolve_honeypot_credential(honeypot, session)
+
+        try:
+            async with await open_connection(
+                honeypot, secret, settings.ssh_connect_timeout
+            ) as conn:
+                result = await conn.run(
+                    opencanary_build_read_command(),
+                    check=False,
+                    timeout=settings.ssh_connect_timeout,
+                )
+        except (SSHConnectionError, OSError) as exc:
+            logger.warning(
+                "read_honeypot_opencanary_config failed for %s: %s", honeypot.name, exc
+            )
+            return {"ok": False, "error": str(exc)}
+
+        stdout = result.stdout or ""
+        raw = stdout if isinstance(stdout, str) else stdout.decode()
+        if result.exit_status != 0 or not raw.strip():
+            return {
+                "ok": False,
+                "error": "No opencanary.conf found — run Initialize, or generate one "
+                "manually with `opencanaryd --copyconfig`.",
+            }
+        try:
+            config = opencanary_parse_config(raw)
+        except ValueError as exc:
+            return {"ok": False, "error": f"opencanary.conf isn't valid JSON: {exc}"}
+
+        return {"ok": True, "config": config}
+
+
+@celery_app.task(
+    name="app.tasks.jobs.read_honeypot_opencanary_config",
+    time_limit=get_settings().ssh_connect_timeout + _SSH_COMMAND_EXTRA_SECONDS,
+)
+def read_honeypot_opencanary_config(honeypot_id: str) -> dict[str, Any]:
+    return asyncio.run(_read_honeypot_opencanary_config(honeypot_id))
+
+
+# Restarting opencanary + toggling smbd/nmbd is a handful of local systemctl
+# calls, not an apt run — same reasoning _SSH_COMMAND_EXTRA_SECONDS
+# documents for the other one-shot commands in this module.
+async def _write_honeypot_opencanary_config(
+    honeypot_id: str, config: dict[str, Any]
+) -> dict[str, Any]:
+    settings = get_settings()
+
+    async with db_session.AsyncSessionLocal() as session:
+        honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
+        if honeypot is None:
+            return {"ok": False, "error": "Honeypot not found."}
+        if not honeypot.host_key_fingerprint:
+            return {"ok": False, "error": "No pinned host key fingerprint yet."}
+
+        secret = await resolve_honeypot_credential(honeypot, session)
+        command = opencanary_build_write_command(config)
+
+        try:
+            async with await open_connection(
+                honeypot, secret, settings.ssh_connect_timeout
+            ) as conn:
+                result = await conn.run(
+                    command,
+                    check=False,
+                    timeout=settings.ssh_connect_timeout + _SSH_COMMAND_EXTRA_SECONDS,
+                )
+        except (SSHConnectionError, OSError) as exc:
+            logger.warning(
+                "write_honeypot_opencanary_config failed for %s: %s", honeypot.name, exc
+            )
+            return {"ok": False, "error": str(exc)}
+
+        if result.exit_status != 0:
+            stdout = result.stdout or ""
+            text = stdout if isinstance(stdout, str) else stdout.decode()
+            return {
+                "ok": False,
+                "error": f"Applying the config exited {result.exit_status}: "
+                f"{text.strip() or '(no output)'}",
+            }
+
+        return {"ok": True}
+
+
+@celery_app.task(
+    name="app.tasks.jobs.write_honeypot_opencanary_config",
+    time_limit=get_settings().ssh_connect_timeout + 2 * _SSH_COMMAND_EXTRA_SECONDS,
+)
+def write_honeypot_opencanary_config(honeypot_id: str, config: dict[str, Any]) -> dict[str, Any]:
+    return asyncio.run(_write_honeypot_opencanary_config(honeypot_id, config))
 
 
 async def _push_pending_ssh_key(honeypot_id: str) -> dict[str, Any]:

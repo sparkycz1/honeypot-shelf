@@ -215,24 +215,50 @@ same constraint `app.services.live_updates` already has for a related
 reason, and the same fix (move it to Redis) would apply if that ever
 changes.
 
-## 🔒 Honeypot Config: read-only root filesystem
+## 🔒 Honeypot Config: read-only root filesystem + the OpenCanary module editor
 
-The Honeypot Config tab's one action (`app.ssh.readonly`) toggles a
-managed honeypot's root filesystem between writable and read-only, to
-protect its SD card from write wear over a long unattended run. Uses
-Raspberry Pi OS's own built-in overlay filesystem support
-(`raspi-config nonint do_overlayfs 0|1`) rather than hand-written
-`/etc/fstab` edits — the officially supported, vendor-tested mechanism for
-exactly this, and trivially reversible the same way. Status is read live
-(`findmnt -n -o FSTYPE /` — `overlay` means currently booted read-only),
-never persisted; like the Logs tab, there's no DB column for this.
-**Takes effect on next reboot**, not immediately, and must be disabled
-before running system updates (`apt` can't write to a read-only root) —
-see that tab's own hint text. [Initialize](Honeypot-Initialize.md) sets up
-the `/mnt/tmpfs` ramdisk this depends on (OpenCanary's own log still needs
+The Honeypot Config tab has two independent live-SSH sections, neither
+persisted in HoneyHive's own DB (same "the honeypot's own state is the
+only copy of the truth" philosophy the Logs tab documents):
+
+**Read-only root filesystem** (`app.ssh.readonly`) toggles a managed
+honeypot's root filesystem between writable and read-only, to protect its
+SD card from write wear over a long unattended run. Uses Raspberry Pi
+OS's own built-in overlay filesystem support (`raspi-config nonint
+do_overlayfs 0|1`) rather than hand-written `/etc/fstab` edits — the
+officially supported, vendor-tested mechanism for exactly this, and
+trivially reversible the same way. Status is read live (`findmnt -n -o
+FSTYPE /` — `overlay` means currently booted read-only). **Takes effect
+on next reboot**, not immediately, and must be disabled before running
+system updates (`apt` can't write to a read-only root) — see that tab's
+own hint text. [Initialize](Honeypot-Initialize.md) sets up the
+`/mnt/tmpfs` ramdisk this depends on (OpenCanary's own log still needs
 somewhere to write) but never enables the toggle itself — that stays a
 separate, deliberate, per-honeypot action once a device is fully
 provisioned.
+
+**The OpenCanary module editor** (`app.ssh.opencanary_config`) is a
+category-by-category form over every module in OpenCanary's own default
+config (FTP, HTTP(S), SSH, Telnet, MySQL/MSSQL/MongoDB/Redis, RDP, VNC,
+SIP, SNMP, NTP, TFTP, Git, LLMNR, a generic TCP banner listener, portscan,
+and Samba — `OPENCANARY_MODULES` in that module, one dataclass-described
+entry per category, driving both the form and the merge-on-save logic).
+Loading the tab is a live `cat /etc/opencanaryd/opencanary.conf` over
+SSH; each category's current enabled/disabled state is shown as a badge
+right on its (collapsible) `<summary>`, so it's visible without expanding
+anything. Saving reads the config fresh again, merges the submitted form
+into it (`apply_form_to_config` — every key the schema doesn't manage,
+notably the `logger` block and `telnet.honeycreds`, passes through
+untouched), writes it back, restarts `opencanary`, and — the one place a
+module's toggle needs more than opencanaryd itself — enables+starts or
+disables+stops Samba's `smbd`/`nmbd` to match `smb.enabled`. No module is
+ever force-enabled by Initialize or this editor's own defaults; flipping
+a module on is always a deliberate, explicit save. **Needs the managed
+honeypot's sudoers grant to include `systemctl`** (added to
+`app.ssh.onboarding.build_onboarding_command`'s sudoers line, checked by
+`app.ssh.readiness`'s `systemctl_sudo_ok` probe) — a honeypot onboarded
+before this feature existed needs the existing "Fix it"/readiness-banner
+flow run once to pick up the new grant.
 
 ## 🍯 Honeypot data model
 

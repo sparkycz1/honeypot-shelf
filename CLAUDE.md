@@ -74,7 +74,7 @@ There is no supported way to run the app itself outside Docker:
 
 **Before committing**, run the same gate debcontrol's history consistently
 uses: `ruff check .`, `mypy app alembic tests`, `pytest`, `alembic heads`
-(single head) — all clean. (At the time of the last verified pass: 101/101
+(single head) — all clean. (At the time of the last verified pass: 120/120
 `pytest`, `ruff check .` and `mypy app alembic tests` both fully clean —
 see "Current state" below for what that cleanup pass found and fixed.)
 
@@ -95,9 +95,15 @@ CRUD (create/edit/delete, host-key discovery/trust, facts/packages/
 services refresh, the SSH terminal, the Logs tab — journal, a clickable
 `ls`-based file browser, and a one-click shortcut to OpenCanary's own
 log — system updates with live output, power actions, and a Honeypot
-Config tab toggling the read-only root filesystem Raspberry Pi OS's own
-overlay support provides, protecting the SD card from write wear — see
-`app.ssh.readonly`), Company CRUD and bulk actions ("All honeypots"),
+Config tab: the read-only root filesystem toggle (Raspberry Pi OS's own
+overlay support, protecting the SD card from write wear — see
+`app.ssh.readonly`) plus a full category-by-category editor for every
+OpenCanary module (`app.ssh.opencanary_config` — FTP/HTTP(S)/SSH/Telnet/
+MySQL/MSSQL/MongoDB/Redis/RDP/VNC/SIP/SNMP/NTP/TFTP/Git/LLMNR/a generic
+TCP banner listener/portscan/Samba, one dataclass-described module per
+category driving both the form and the save-time merge, neither section
+ever persisted in this app's own DB), Company CRUD and bulk actions
+("All honeypots"),
 Scheduling (cron-driven actions, company-scoped via
 `ScheduledTask.owner_company_id`), the REST API mirroring all of the above
 (`/api/v1/...`), Users/Settings (LDAP/OIDC/syslog-forwarding config, SSH
@@ -109,7 +115,7 @@ service, locale/timezone, hostname, NetBird, generating OpenCanary's own
 config, and the portscan/Samba modules' host-side prep, all streamed live
 to the browser over a WebSocket — see
 [wiki/Honeypot-Initialize.md](wiki/Honeypot-Initialize.md)), and an
-initial Alembic migration. A 101-test suite covers auth, company
+initial Alembic migration. A 120-test suite covers auth, company
 scoping, ingest, the dashboard, honeypot/company/schedule CRUD, `pg_enum`,
 i18n, config, Initialize's script builder, and the proxy-headers/
 CSP-safety regression guards below.

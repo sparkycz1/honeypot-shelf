@@ -114,15 +114,20 @@ nothing further to prepare):
 
 Both modules' relevant config keys (`portscan.iptables_path`,
 `smb.auditfile`) are already pointed at the right paths — enabling either
-module afterward (`opencanary.conf` + `systemctl enable --now smbd nmbd`
-for Samba) is all that's left to do.
+module afterward is all that's left to do, and doesn't need the Terminal
+tab or a manual `opencanary.conf` edit: once the device is added as a
+`Honeypot`, its own Config tab has a full module editor (every module,
+not just these two — see [Architecture](Architecture.md)) that ticks
+`"<module>.enabled"`, restarts `opencanary`, and (for Samba) starts
+`smbd`/`nmbd` for you.
 
 ## What it doesn't do
 
 - **Doesn't create a `Honeypot` row.** Standalone tool — add the device
   separately afterward.
 - **Doesn't enable any OpenCanary module** — see "Modules prepared, not
-  enabled" above.
+  enabled" above and the Honeypot Config tab's module editor
+  ([Architecture](Architecture.md)) for actually turning one on.
 - **Doesn't wire up event forwarding** — see
   [Honeypot Onboarding](Honeypot-Onboarding.md) for `POST
   /api/ingest/{honeypot_id}/events`, which needs the `Honeypot` row this
