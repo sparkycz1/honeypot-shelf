@@ -132,12 +132,27 @@ claims from earlier in this file cover what was *tested* at the time, not
 a guarantee nothing was missed — re-check a claim like this against the
 actual files on disk before trusting it, the same way this bug was found.
 
-**Known gaps, not yet done**: i18n coverage is still just the site
-chrome plus the auth/footer/toolbar/Initialize strings touched so far
-(most of the ported pages' strings are still plain English, same "not yet
-translated" state debcontrol itself is in for many pages); no CI workflow
-file exists (deliberately out of scope — this repo relies on the local
-gate below instead). `ruff check .` and `mypy app alembic tests` are both
+**i18n is now complete, English and Czech, across the whole app** — every
+template's user-facing text goes through `t(request, "...")`, including
+tab navigation labels that were previously hardcoded in Python
+(`_honeypot_tabs`/`_company_tabs`/`settings._tabs`, now translated
+functions rather than static lists). 710+ new keys were added in one pass
+(app/i18n/locales/{en,cs}.json, now ~790 keys total). Two real bugs
+surfaced along the way, both fixed: (1) `partials/_packages_summary.html`
+and `_services_summary.html`'s `render(...)` macros called `t(request,
+...)` inside an `{% include %}` without `request` ever being passed into
+the macro — Jinja macros don't inherit the calling template's context by
+default, so this crashed with `UndefinedError: 'request' is undefined`
+the moment either macro was actually rendered (caught by
+`tests/test_readonly.py`, not by the translating pass's own Jinja
+syntax-only parse check); now `request` is an explicit first parameter,
+threaded through every call site. (2) The same "macro needs `request`
+passed explicitly" issue existed in `macros/charts.html`'s three chart
+macros — fixed with an optional `request=none` parameter and an
+English-literal fallback for the one caller (`honeypots/monitoring.html`)
+that doesn't pass it. **Known gaps, not yet done**: no CI workflow file
+exists (deliberately out of scope — this repo relies on the local gate
+below instead). `ruff check .` and `mypy app alembic tests` are both
 now fully clean (as of the Initialize change): the ~95 line-length
 warnings left over from the mechanical port were wrapped by hand, and the
 first-ever `mypy --strict` run surfaced 16 pre-existing errors — mostly
@@ -212,10 +227,20 @@ config, not just HoneyHive-side metadata.
   `lowercase.dot.separated` (e.g. `honeypot.create`,
   `user.access_level.update`, `company.honeypot.add`).
 - **UI strings go through `t()`**, backed by `app/i18n/` (English + Czech
-  today) — same mechanism as debcontrol, copied as-is. Coverage today is
-  just the site chrome; extend it the same way debcontrol's wiki
-  documents (add the key to **every** `app/i18n/locales/*.json` file, not
-  just one).
+  today) — same mechanism as debcontrol, copied as-is. Coverage is now
+  complete across every page, including tab-navigation labels built in
+  Python (`_honeypot_tabs`/`_company_tabs`/`settings._tabs` all take
+  `request` and call `t()` per label, rather than returning a static
+  list) — extend it the same way debcontrol's wiki documents (add the key
+  to **every** `app/i18n/locales/*.json` file, not just one). **A macro
+  that calls `t(request, ...)` — directly, or indirectly via `{% include
+  %}` inside its own body — needs `request` as an explicit parameter**:
+  Jinja macros don't inherit the calling template's context by default,
+  so omitting it fails with `UndefinedError: 'request' is undefined` the
+  moment the macro actually renders (not a syntax error — a plain `{%
+  parse %}` check won't catch it; caught two real instances of exactly
+  this — `partials/_packages_summary.html`/`_services_summary.html` and
+  `macros/charts.html` — while completing i18n).
 
 ## Checklist for every change
 

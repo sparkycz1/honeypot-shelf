@@ -3,19 +3,17 @@
    (this section's own periodic poll, see detail.html) can render the same
    content without the poll response re-nesting the wrapping #packages-summary
    div inside itself. #}
-<h2>Installed packages</h2>
+<h2>{{ t(request, "partials.packages.summary.heading") }}</h2>
 {% if not honeypot.packages_updated_at %}
   <p class="hint">
-    Not gathered yet — this happens automatically once the host key
-    fingerprint is confirmed above, and refreshes periodically after that
-    (and right after any update run on this honeypot).
+    {{ t(request, "partials.packages.not_gathered_yet") }}
   </p>
 {% else %}
   <p class="hint">
-    {{ package_counts.total }} package{{ 's' if package_counts.total != 1 else '' }} installed
+    {{ t(request, "partials.packages.summary.count", n=package_counts.total) }}
     ({{ package_counts.apt }} apt, {{ package_counts.flatpak }} flatpak,
-    {{ package_counts.snap }} snap){% if held_count %}, {{ held_count }} held back{% endif %}
-    — last refreshed {{ honeypot.packages_updated_at | local_time('%Y-%m-%d %H:%M %Z') }}.
+    {{ package_counts.snap }} snap){% if held_count %}, {{ t(request, "partials.packages.summary.held_back", n=held_count) }}{% endif %}
+    — {{ t(request, "partials.packages.summary.last_refreshed") }} {{ honeypot.packages_updated_at | local_time('%Y-%m-%d %H:%M %Z') }}.
   </p>
 {% endif %}
 <button
@@ -26,5 +24,5 @@
   hx-target="#packages-panel"
   hx-swap="innerHTML"
 >
-  Show installed packages
+  {{ t(request, "partials.packages.summary.show_button") }}
 </button>

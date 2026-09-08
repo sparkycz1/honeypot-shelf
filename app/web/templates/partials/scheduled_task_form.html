@@ -7,38 +7,36 @@
 <form method="post" action="{{ form_action }}" class="form" autocomplete="off">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
-  <label for="name">Name</label>
+  <label for="name">{{ t(request, "scheduling.form.name") }}</label>
   <input type="text" id="name" name="name" required maxlength="255"
-         value="{{ form.get('name', '') }}" placeholder="e.g. Nightly updates — dev">
+         value="{{ form.get('name', '') }}" placeholder="{{ t(request, 'scheduling.form.name_placeholder') }}">
 
-  <label for="target">Applies to</label>
+  <label for="target">{{ t(request, "scheduling.form.applies_to") }}</label>
   <select id="target" name="target">
     {% if allow_all_honeypots %}
       <option value="all" {% if form.get('target', 'all') == 'all' %}selected{% endif %}>
-        All honeypots
+        {{ t(request, "scheduling.form.all_honeypots") }}
       </option>
     {% endif %}
     {% for company in companies %}
       <option value="company:{{ company.id }}" {% if form.get('target') == 'company:' ~ company.id %}selected{% endif %}>
-        Company: {{ company.name }}
+        {{ t(request, "scheduling.form.company_option", name=company.name) }}
       </option>
     {% endfor %}
     {% for honeypot in honeypots %}
       <option value="honeypot:{{ honeypot.id }}" {% if form.get('target') == 'honeypot:' ~ honeypot.id %}selected{% endif %}>
-        Honeypot: {{ honeypot.name }}
+        {{ t(request, "scheduling.form.honeypot_option", name=honeypot.name) }}
       </option>
     {% endfor %}
   </select>
   <p class="hint">
-    Honeypots without a pinned host key fingerprint are silently skipped when
-    the schedule fires, same as the manual buttons.
+    {{ t(request, "scheduling.form.skip_hint") }}
     {% if not allow_all_honeypots %}
-      Your account is restricted to specific honeypot companies, so "All honeypots"
-      isn't available as a target.
+      {{ t(request, "scheduling.form.restricted_hint") }}
     {% endif %}
   </p>
 
-  <label for="action">Action</label>
+  <label for="action">{{ t(request, "scheduling.form.action") }}</label>
   <select id="action" name="action">
     {% for action in actions %}
       <option value="{{ action.key }}" {% if form.get('action', actions[0].key if actions else '') == action.key %}selected{% endif %}>
@@ -55,7 +53,7 @@
   {% for action in actions %}
     {% for param in action.params %}
       <label for="param_{{ param.key }}">
-        {{ param.label }} <span class="hint">(only used for "{{ action.label }}")</span>
+        {{ param.label }} <span class="hint">{{ t(request, "scheduling.form.only_used_for", action=action.label) }}</span>
       </label>
       {% if param.param_type == 'text' %}
         <input type="text" id="param_{{ param.key }}" name="param_{{ param.key }}"
@@ -73,26 +71,26 @@
     {% endfor %}
   {% endfor %}
 
-  <label for="cron_expression">Cron expression (UTC)</label>
+  <label for="cron_expression">{{ t(request, "scheduling.form.cron_expression") }}</label>
   <input type="text" id="cron_expression" name="cron_expression" required maxlength="100"
          list="cron-presets" value="{{ form.get('cron_expression', '') }}"
          placeholder="0 3 * * *">
   <datalist id="cron-presets">
-    <option value="0 3 * * *" label="Every day at 03:00">
-    <option value="0 3 * * 0" label="Every Sunday at 03:00">
-    <option value="0 */6 * * *" label="Every 6 hours">
-    <option value="0 0 1 * *" label="First of the month at 00:00">
+    <option value="0 3 * * *" label="{{ t(request, 'scheduling.form.preset_daily') }}">
+    <option value="0 3 * * 0" label="{{ t(request, 'scheduling.form.preset_weekly') }}">
+    <option value="0 */6 * * *" label="{{ t(request, 'scheduling.form.preset_every_6h') }}">
+    <option value="0 0 1 * *" label="{{ t(request, 'scheduling.form.preset_monthly') }}">
   </datalist>
   <p class="hint">
-    Standard 5-field cron: minute hour day-of-month month day-of-week, always
-    interpreted in UTC. E.g. <code>0 3 * * *</code> = every day at 03:00 UTC.
+    {{ t(request, "scheduling.form.cron_hint") }}
+    <code>0 3 * * *</code> {{ t(request, "scheduling.form.cron_hint_example") }}
   </p>
 
   <label>
     <input type="checkbox" name="is_enabled" {% if form.get('is_enabled') %}checked{% endif %}>
-    Enabled
+    {{ t(request, "scheduling.form.enabled") }}
   </label>
 
-  <button type="submit" class="button">Save</button>
-  <a class="button button-secondary" href="/scheduling">Cancel</a>
+  <button type="submit" class="button">{{ t(request, "common.save") }}</button>
+  <a class="button button-secondary" href="/scheduling">{{ t(request, "common.cancel") }}</a>
 </form>

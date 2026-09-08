@@ -10,7 +10,7 @@
      re-renders partials/_packages_summary_inner.html directly, not this
      macro — reusing this div (with its id and poll attributes) would nest
      it inside itself on every tick. #}
-{% macro render(honeypot, package_counts, held_count, oob=False, poll=False) %}
+{% macro render(request, honeypot, package_counts, held_count, oob=False, poll=False) %}
 <div
   id="packages-summary"
   {% if oob %}hx-swap-oob="true"{% endif %}

@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 
-{% block title %}Add user — HoneyHive{% endblock %}
+{% block title %}{{ t(request, "users.new.title") }} — HoneyHive{% endblock %}
 
 {% block content %}
-  <h1>Add user</h1>
+  <h1>{{ t(request, "users.new.title") }}</h1>
 
   {% if errors %}
     <div class="alert alert-error">
@@ -14,68 +14,63 @@
   <form method="post" action="/users" class="form" autocomplete="off">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
-    <label for="username">Username</label>
+    <label for="username">{{ t(request, "users.field.username") }}</label>
     <input type="text" id="username" name="username" required maxlength="64"
            pattern="[a-z0-9][a-z0-9_.\-]{2,63}" value="{{ form.username or '' }}">
-    <p class="hint">Lowercase letters, digits, '.', '_', '-'. This is also the LDAP username and the OIDC identity, if used.</p>
+    <p class="hint">{{ t(request, "users.new.username_hint") }}</p>
 
-    <label for="display_name">Display name</label>
+    <label for="display_name">{{ t(request, "users.field.display_name") }}</label>
     <input type="text" id="display_name" name="display_name" maxlength="255" value="{{ form.display_name or '' }}">
 
-    <label for="auth_provider">Login method</label>
+    <label for="auth_provider">{{ t(request, "users.field.auth_provider") }}</label>
     <select id="auth_provider" name="auth_provider" required>
       {% for provider in auth_providers %}
         <option value="{{ provider.value }}" {{ 'selected' if form.auth_provider == provider else '' }}>{{ provider.value }}</option>
       {% endfor %}
     </select>
     <p class="hint">
-      "local": a password set below. "ldap"/"oidc": leave the password
-      field empty — the username is matched against the directory/provider
-      instead (see Settings).
+      {{ t(request, "users.new.auth_provider_hint") }}
     </p>
 
-    <label for="password">Password (local accounts only)</label>
+    <label for="password">{{ t(request, "users.new.password_label") }}</label>
     <input type="password" id="password" name="password" autocomplete="new-password" minlength="12">
-    <p class="hint">At least 12 characters. Required for "local" accounts, left blank otherwise. The user must change it on first login.</p>
+    <p class="hint">{{ t(request, "users.new.password_hint") }}</p>
 
     <label>
       <input type="checkbox" name="api_access_enabled" {{ 'checked' if form.api_access_enabled else '' }}>
-      API access — allows this user to create and use their own API tokens
+      {{ t(request, "users.field.api_access") }}
     </label>
 
     <fieldset>
-      <legend>Access</legend>
+      <legend>{{ t(request, "account.profile.access") }}</legend>
       <label>
         <input type="checkbox" id="is_superadmin" name="is_superadmin"
                data-toggle-hidden="company-scope-fields">
-        Superadmin — sees and manages every company
+        {{ t(request, "users.field.superadmin") }}
       </label>
 
       <div id="company-scope-fields">
-        <label for="company_id">Company</label>
+        <label for="company_id">{{ t(request, "users.field.company") }}</label>
         <select id="company_id" name="company_id">
-          <option value="" disabled selected>Choose a company…</option>
+          <option value="" disabled selected>{{ t(request, "users.field.choose_company") }}</option>
           {% for company in companies %}
             <option value="{{ company.id }}">{{ company.name }}</option>
           {% endfor %}
         </select>
 
-        <label for="access_level">Access level</label>
+        <label for="access_level">{{ t(request, "users.field.access_level") }}</label>
         <select id="access_level" name="access_level">
           {% for level in access_levels %}
-            <option value="{{ level.value }}">{{ "Read + write" if level.value == "read_write" else "Read only" }}</option>
+            <option value="{{ level.value }}">{{ t(request, "users.field.access_level_read_write") if level.value == "read_write" else t(request, "users.field.access_level_read_only") }}</option>
           {% endfor %}
         </select>
       </div>
       <p class="hint">
-        A non-superadmin user always belongs to exactly one company, with
-        either read-only or read + write access to its honeypots — nothing
-        in between, and nothing shared across companies. The audit log and
-        Settings are never available to a non-superadmin.
+        {{ t(request, "users.new.scope_hint") }}
       </p>
     </fieldset>
 
-    <button type="submit" class="button">Create user</button>
-    <a class="button button-secondary" href="/users">Cancel</a>
+    <button type="submit" class="button">{{ t(request, "users.new.create_button") }}</button>
+    <a class="button button-secondary" href="/users">{{ t(request, "common.cancel") }}</a>
   </form>
 {% endblock %}

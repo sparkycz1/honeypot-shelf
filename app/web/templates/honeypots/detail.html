@@ -10,7 +10,7 @@
     <h1>{{ render_os_badge(honeypot.os_id, size=28) }} {{ honeypot.name }}</h1>
     {% if request.state.user.is_superadmin %}
       <a href="/audit?target_type=honeypot&target_id={{ honeypot.id }}" class="hint">
-        View audit history for this honeypot
+        {{ t(request, 'honeypots.detail.view_audit_history') }}
       </a>
     {% endif %}
   </div>
@@ -20,22 +20,22 @@
   {% if honeypot.readiness_missing %}
     <div class="alert alert-warn">
       <p>
-        This honeypot is missing:
+        {{ t(request, 'honeypots.detail.readiness_missing') }}
         {% for item in honeypot.readiness_missing %}{{ item }}{% if not loop.last %}; {% endif %}{% endfor %}.
-        <a href="/honeypots/{{ honeypot.id }}/edit">Fix it on the Settings tab</a>.
+        <a href="/honeypots/{{ honeypot.id }}/edit">{{ t(request, 'honeypots.detail.fix_on_settings_tab') }}</a>.
       </p>
     </div>
   {% endif %}
 
   <dl class="detail-list">
-    <dt>IP address</dt><dd>{{ honeypot.ip_address }}</dd>
-    <dt>Port</dt><dd>{{ honeypot.port }}</dd>
-    <dt>User</dt><dd>{{ honeypot.username }}</dd>
-    <dt>Auth method</dt>
-    <dd>{{ 'SSH key' if honeypot.auth_method.value == 'ssh_key' else 'Password' }}</dd>
-    <dt>Operating system</dt>
+    <dt>{{ t(request, 'honeypots.detail.ip_address') }}</dt><dd>{{ honeypot.ip_address }}</dd>
+    <dt>{{ t(request, 'honeypots.detail.port') }}</dt><dd>{{ honeypot.port }}</dd>
+    <dt>{{ t(request, 'honeypots.detail.user') }}</dt><dd>{{ honeypot.username }}</dd>
+    <dt>{{ t(request, 'honeypots.detail.auth_method') }}</dt>
+    <dd>{{ t(request, 'honeypots.detail.auth_method_ssh_key') if honeypot.auth_method.value == 'ssh_key' else t(request, 'honeypots.detail.auth_method_password') }}</dd>
+    <dt>{{ t(request, 'honeypots.detail.operating_system') }}</dt>
     <dd>{{ honeypot.os_version or '—' }}</dd>
-    <dt>Company</dt>
+    <dt>{{ t(request, 'honeypots.detail.company') }}</dt>
     <dd>
       {% if honeypot.company %}
         <a href="/companies/{{ honeypot.company.id }}">{{ honeypot.company.name }}</a>
@@ -43,9 +43,9 @@
         —
       {% endif %}
     </dd>
-    <dt>Status</dt>
+    <dt>{{ t(request, 'honeypots.detail.status') }}</dt>
     <dd>{% include "partials/honeypot_status.html" %}</dd>
-    <dt>Tags</dt>
+    <dt>{{ t(request, 'honeypots.detail.tags') }}</dt>
     <dd>
       {% if honeypot.tags %}
         {% for tag in honeypot.tags %}
@@ -55,30 +55,26 @@
         —
       {% endif %}
     </dd>
-    <dt>Notes</dt><dd>{{ honeypot.description or '—' }}</dd>
+    <dt>{{ t(request, 'honeypots.detail.notes') }}</dt><dd>{{ honeypot.description or '—' }}</dd>
   </dl>
 
   {% if honeypot.runbook %}
     <section class="panel runbook">
-      <h2>Runbook</h2>
+      <h2>{{ t(request, 'honeypots.detail.runbook_heading') }}</h2>
       {{ honeypot.runbook | markdown }}
     </section>
   {% endif %}
 
   <section class="panel" id="host-key-panel">
-    <h2>SSH host key fingerprint</h2>
+    <h2>{{ t(request, 'honeypots.detail.host_key_heading') }}</h2>
     {% if honeypot.host_key_fingerprint %}
-      <p>Pinned fingerprint: <code>{{ honeypot.host_key_fingerprint }}</code></p>
+      <p>{{ t(request, 'honeypots.detail.pinned_fingerprint') }} <code>{{ honeypot.host_key_fingerprint }}</code></p>
       <p class="hint">
-        The connection will be refused if the server ever presents a different key.
+        {{ t(request, 'honeypots.detail.host_key_pinned_hint') }}
       </p>
     {% else %}
       <p class="hint">
-        This honeypot doesn't have a confirmed host key fingerprint yet — until it
-        does, no connection can be safely established (no automatic "trust on
-        first use"), and facts can't be gathered. Discovery runs automatically
-        below; you still have to confirm the fingerprint yourself once it's
-        shown, after checking it through a channel outside this app.
+        {{ t(request, 'honeypots.detail.host_key_missing_hint') }}
       </p>
       <button
         class="button"
@@ -88,7 +84,7 @@
         hx-swap="innerHTML"
         hx-trigger="click, load"
       >
-        Discover key fingerprint
+        {{ t(request, 'honeypots.detail.discover_key_fingerprint') }}
       </button>
     {% endif %}
   </section>
@@ -104,7 +100,7 @@
   </section>
 
   <section class="panel">
-    {{ render_packages_summary(honeypot, package_counts, held_count, poll=True) }}
+    {{ render_packages_summary(request, honeypot, package_counts, held_count, poll=True) }}
   </section>
 
   {# Full package listing is fetched only when opened (hundreds of rows on a
@@ -115,25 +111,25 @@
   <div id="packages-modal" popover class="modal">
     <div class="modal-dialog">
       <div class="modal-header">
-        <h2 class="modal-title">Installed packages — {{ honeypot.name }}</h2>
+        <h2 class="modal-title">{{ t(request, 'honeypots.detail.installed_packages') }} — {{ honeypot.name }}</h2>
         <button
           type="button"
           class="modal-close"
           popovertarget="packages-modal"
           popovertargetaction="hide"
-          aria-label="Close"
+          aria-label="{{ t(request, 'common.close') }}"
         >
           &times;
         </button>
       </div>
       <div id="packages-panel">
-        <p class="hint">Loading…</p>
+        <p class="hint">{{ t(request, 'honeypots.detail.loading') }}</p>
       </div>
     </div>
   </div>
 
   <section class="panel">
-    <h2>Test connection</h2>
+    <h2>{{ t(request, 'honeypots.detail.test_connection_heading') }}</h2>
     <button
       class="button"
       hx-post="/honeypots/{{ honeypot.id }}/test-connection"
@@ -142,10 +138,10 @@
       hx-swap="innerHTML"
       {% if not honeypot.host_key_fingerprint %}disabled{% endif %}
     >
-      Test connection
+      {{ t(request, 'honeypots.detail.test_connection_button') }}
     </button>
     {% if not honeypot.host_key_fingerprint %}
-      <p class="hint">Confirm the server's key fingerprint above first.</p>
+      <p class="hint">{{ t(request, 'honeypots.detail.confirm_fingerprint_above_first') }}</p>
     {% endif %}
     <div id="test-result"></div>
   </section>

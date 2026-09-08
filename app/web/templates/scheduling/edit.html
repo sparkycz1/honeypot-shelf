@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}Edit {{ task.name }} — HoneyHive{% endblock %}
+{% block title %}{{ t(request, "scheduling.edit.title", name=task.name) }} — HoneyHive{% endblock %}
 
 {% block content %}
-  <h1>Edit {{ task.name }}</h1>
+  <h1>{{ t(request, "scheduling.edit.heading", name=task.name) }}</h1>
   {% if task.last_run_summary %}
     <p class="hint">
-      Last run: {{ task.last_run_at | local_time('%Y-%m-%d %H:%M %Z') }}
+      {{ t(request, "scheduling.list.last_run") }}: {{ task.last_run_at | local_time('%Y-%m-%d %H:%M %Z') }}
       — {{ task.last_run_summary }}
     </p>
   {% endif %}

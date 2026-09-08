@@ -7,24 +7,24 @@
   {% endif %}
 >
   <p>
-    Status:
+    {{ t(request, "partials.updates.status") }}:
     {% if run.status.value == 'pending' %}
-      <span class="badge badge-warn">pending</span>
+      <span class="badge badge-warn">{{ t(request, "partials.updates.status_pending") }}</span>
     {% elif run.status.value == 'running' %}
-      <span class="badge badge-warn">running</span>
+      <span class="badge badge-warn">{{ t(request, "partials.updates.status_running") }}</span>
     {% elif run.status.value == 'succeeded' %}
-      <span class="badge badge-ok">succeeded</span>
+      <span class="badge badge-ok">{{ t(request, "partials.updates.status_succeeded") }}</span>
     {% else %}
-      <span class="badge badge-error">failed</span>
+      <span class="badge badge-error">{{ t(request, "partials.updates.status_failed") }}</span>
     {% endif %}
-    — strategy: <code>{{ 'dist-upgrade' if run.strategy.value == 'dist_upgrade' else 'full-upgrade' }}</code>
+    — {{ t(request, "partials.updates.strategy") }}: <code>{{ 'dist-upgrade' if run.strategy.value == 'dist_upgrade' else 'full-upgrade' }}</code>
   </p>
 
   {% if run.started_at %}
-    <p class="hint">Started: {{ run.started_at | local_time('%Y-%m-%d %H:%M:%S %Z') }}</p>
+    <p class="hint">{{ t(request, "partials.updates.started") }}: {{ run.started_at | local_time('%Y-%m-%d %H:%M:%S %Z') }}</p>
   {% endif %}
   {% if run.finished_at %}
-    <p class="hint">Finished: {{ run.finished_at | local_time('%Y-%m-%d %H:%M:%S %Z') }}</p>
+    <p class="hint">{{ t(request, "partials.updates.finished") }}: {{ run.finished_at | local_time('%Y-%m-%d %H:%M:%S %Z') }}</p>
   {% endif %}
 
   {% if run.error %}
@@ -34,7 +34,7 @@
   {% if run.output %}
     <pre>{{ run.output }}</pre>
   {% elif run.status.value in ('pending', 'running') %}
-    <p class="hint">Waiting for output — this refreshes automatically.</p>
+    <p class="hint">{{ t(request, "partials.updates.waiting_for_output") }}</p>
   {% endif %}
 
 </div>

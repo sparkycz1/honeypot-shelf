@@ -2,12 +2,12 @@
 {% if honeypot.updates_checked_at is none %}
   <span class="hint">—</span>
 {% elif honeypot.upgradable_count is none %}
-  <span class="hint">unknown</span>
+  <span class="hint">{{ t(request, "partials.update_status.unknown") }}</span>
 {% elif honeypot.upgradable_count == 0 and other_count == 0 %}
-  <span class="badge badge-ok">up to date</span>
+  <span class="badge badge-ok">{{ t(request, "partials.update_status.up_to_date") }}</span>
 {% else %}
   <span class="badge badge-warn"
-    >{{ honeypot.upgradable_count }}{% if honeypot.security_upgradable_count %} ({{ honeypot.security_upgradable_count }} sec){% endif %}</span>
-  {% if other_count %}<span class="badge badge-warn">+{{ other_count }} flatpak/snap</span>{% endif %}
+    >{{ honeypot.upgradable_count }}{% if honeypot.security_upgradable_count %} ({{ honeypot.security_upgradable_count }} {{ t(request, "partials.update_status.sec_abbr") }}){% endif %}</span>
+  {% if other_count %}<span class="badge badge-warn">+{{ other_count }} {{ t(request, "partials.update_status.flatpak_snap") }}</span>{% endif %}
 {% endif %}
-{% if honeypot.reboot_required %}<span class="badge badge-error">reboot</span>{% endif %}
+{% if honeypot.reboot_required %}<span class="badge badge-error">{{ t(request, "partials.update_status.reboot") }}</span>{% endif %}

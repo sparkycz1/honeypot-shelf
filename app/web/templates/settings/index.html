@@ -4,7 +4,7 @@
 {% block title %}Settings — HoneyHive{% endblock %}
 
 {% block content %}
-  <h1>Settings</h1>
+  <h1>{{ t(request, "settings.index.heading") }}</h1>
 
   {{ render_tabnav(tabs, active_tab) }}
 

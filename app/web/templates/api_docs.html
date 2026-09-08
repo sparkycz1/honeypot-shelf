@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}API docs — HoneyHive{% endblock %}
+{% block title %}{{ t(request, "api_docs.title") }} — HoneyHive{% endblock %}
 
 {% block extra_head %}
   <link rel="stylesheet" href="/static/css/swagger-ui.css">
@@ -8,17 +8,16 @@
 
 {% block content %}
   <div class="page-header">
-    <h1>API docs</h1>
+    <h1>{{ t(request, "api_docs.title") }}</h1>
   </div>
   <p class="hint">
-    Interactive docs for the full read/write REST API
-    (<code>/api/v1/...</code>) — generated straight from the running app's
-    own route definitions, so it can't drift out of sync with them. Click
-    <strong>Authorize</strong> and paste one of your own API tokens
-    (<a href="/account">Account</a> — your account needs API access enabled
-    by an admin first) to try requests directly from this page. See the
-    wiki page <a href="https://github.com/sparkycz1/honeyhive/wiki/Architecture#the-rest-api-read-and-write-mirroring-the-web-ui">Architecture</a>
-    for the API's design rules and what's deliberately left out of it.
+    {{ t(request, "api_docs.intro1") }}
+    <code>/api/v1/...</code>{{ t(request, "api_docs.intro2") }}
+    <strong>{{ t(request, "api_docs.authorize") }}</strong>{{ t(request, "api_docs.intro3") }}
+    (<a href="/account">{{ t(request, "account.title") }}</a>{{ t(request, "api_docs.intro4") }}
+    {{ t(request, "api_docs.intro5") }}
+    <a href="https://github.com/sparkycz1/honeyhive/wiki/Architecture#the-rest-api-read-and-write-mirroring-the-web-ui">{{ t(request, "api_docs.architecture_link") }}</a>
+    {{ t(request, "api_docs.intro6") }}
   </p>
   <div id="swagger-ui" data-openapi-url="/openapi.json"></div>
 {% endblock %}

@@ -1,23 +1,23 @@
 {% extends "base.html" %}
 
-{% block title %}Users — HoneyHive{% endblock %}
+{% block title %}{{ t(request, "nav.users") }} — HoneyHive{% endblock %}
 
 {% block content %}
   <div class="page-header">
-    <h1>Users</h1>
-    <a class="button" href="/users/new">Add user</a>
+    <h1>{{ t(request, "nav.users") }}</h1>
+    <a class="button" href="/users/new">{{ t(request, "users.list.add_button") }}</a>
   </div>
 
   <table class="data-table">
     <thead>
       <tr>
-        <th>Username</th>
-        <th>Access</th>
-        <th>Login method</th>
-        <th>2FA</th>
-        <th>API access</th>
-        <th>Status</th>
-        <th>Last login</th>
+        <th>{{ t(request, "users.field.username") }}</th>
+        <th>{{ t(request, "account.profile.access") }}</th>
+        <th>{{ t(request, "users.field.auth_provider") }}</th>
+        <th>{{ t(request, "users.list.two_fa") }}</th>
+        <th>{{ t(request, "users.field.api_access") }}</th>
+        <th>{{ t(request, "users.list.status") }}</th>
+        <th>{{ t(request, "users.list.last_login") }}</th>
         <th></th>
       </tr>
     </thead>
@@ -26,21 +26,21 @@
         <tr>
           <td>{{ u.display_name or u.username }}</td>
           <td>
-            {% if u.is_superadmin %}<span class="badge">superadmin</span>
-            {% else %}{{ u.company.name }} — {{ "Read + write" if u.access_level.value == "read_write" else "Read only" }}{% endif %}
+            {% if u.is_superadmin %}<span class="badge">{{ t(request, "users.list.superadmin_badge") }}</span>
+            {% else %}{{ u.company.name }} — {{ t(request, "users.field.access_level_read_write") if u.access_level.value == "read_write" else t(request, "users.field.access_level_read_only") }}{% endif %}
           </td>
           <td>{{ u.auth_provider.value }}</td>
-          <td>{{ 'on' if u.totp_enabled else '—' }}</td>
-          <td>{{ 'on' if u.api_access_enabled else '—' }}</td>
+          <td>{{ t(request, "users.list.on") if u.totp_enabled else '—' }}</td>
+          <td>{{ t(request, "users.list.on") if u.api_access_enabled else '—' }}</td>
           <td>
             {% if u.is_active %}
-              <span class="badge badge-ok">active</span>
+              <span class="badge badge-ok">{{ t(request, "users.list.active_badge") }}</span>
             {% else %}
-              <span class="badge badge-error">disabled</span>
+              <span class="badge badge-error">{{ t(request, "users.list.disabled_badge") }}</span>
             {% endif %}
           </td>
-          <td>{{ u.last_login_at | local_time('%Y-%m-%d %H:%M %Z') if u.last_login_at else 'never' }}</td>
-          <td><a href="/users/{{ u.id }}/edit">Edit</a></td>
+          <td>{{ u.last_login_at | local_time('%Y-%m-%d %H:%M %Z') if u.last_login_at else t(request, "users.list.never") }}</td>
+          <td><a href="/users/{{ u.id }}/edit">{{ t(request, "users.list.edit_link") }}</a></td>
         </tr>
       {% endfor %}
     </tbody>

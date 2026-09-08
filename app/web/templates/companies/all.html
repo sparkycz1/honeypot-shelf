@@ -1,21 +1,19 @@
 {% extends "base.html" %}
 
-{% block title %}All honeypots — HoneyHive{% endblock %}
+{% block title %}{{ t(request, "companies.all.title") }} — HoneyHive{% endblock %}
 
 {% block content %}
   <div class="page-header">
-    <h1>All honeypots</h1>
+    <h1>{{ t(request, "companies.all.heading") }}</h1>
   </div>
 
   <p class="hint">
-    Built-in company — every honeypot is always here automatically, regardless
-    of which other company (if any) it's also assigned to. There's nothing to
-    add, remove, or delete.
+    {{ t(request, "companies.all.hint") }}
   </p>
 
   {% if power_skipped %}
     <div class="alert alert-warn">
-      <p>{{ power_skipped }} honeypot(s) were skipped — no confirmed host key fingerprint yet.</p>
+      <p>{{ t(request, "companies.power.skipped", count=power_skipped) }}</p>
     </div>
   {% endif %}
 
@@ -24,21 +22,21 @@
   {% if not honeypots %}
     <div class="empty-state">
       {% if q %}
-        <p>No honeypots match "{{ q }}".</p>
+        <p>{{ t(request, "companies.all.no_match", query=q) }}</p>
       {% else %}
-        <p>No managed honeypots yet.</p>
-        <a class="button" href="/honeypots/new">Add your first honeypot</a>
+        <p>{{ t(request, "companies.all.empty") }}</p>
+        <a class="button" href="/honeypots/new">{{ t(request, "companies.all.add_first") }}</a>
       {% endif %}
     </div>
   {% else %}
     <table class="data-table">
       <thead>
         <tr>
-          <th>Name</th>
-          <th>IP address</th>
-          <th>Company</th>
-          <th>Status</th>
-          <th>Updates</th>
+          <th>{{ t(request, "companies.all.col_name") }}</th>
+          <th>{{ t(request, "companies.all.col_ip") }}</th>
+          <th>{{ t(request, "companies.all.col_company") }}</th>
+          <th>{{ t(request, "companies.all.col_status") }}</th>
+          <th>{{ t(request, "companies.all.col_updates") }}</th>
         </tr>
       </thead>
       <tbody>
@@ -80,12 +78,12 @@
       <div class="page-header-actions">
         {% if page > 1 %}
           <a class="button button-secondary" href="/companies/all?q={{ q | urlencode }}&page={{ page - 1 }}">
-            Previous
+            {{ t(request, "companies.all.previous") }}
           </a>
         {% endif %}
         {% if has_more %}
           <a class="button button-secondary" href="/companies/all?q={{ q | urlencode }}&page={{ page + 1 }}">
-            Next
+            {{ t(request, "companies.all.next") }}
           </a>
         {% endif %}
       </div>
@@ -93,39 +91,34 @@
   {% endif %}
 
   <section class="panel">
-    <h2>Update all honeypots</h2>
+    <h2>{{ t(request, "companies.all.update_all_heading") }}</h2>
     <p class="hint">
-      Runs update → upgrade → autoremove/autoclean on every honeypot that has
-      a confirmed host key fingerprint — others are skipped. Ignores the
-      search box above; this always targets literally every honeypot.
+      {{ t(request, "companies.all.update_all_hint") }}
     </p>
     <form method="post" action="/companies/all/updates" class="form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       {% include "partials/upgrade_strategy_fields.html" %}
-      <button type="submit" class="button">Run update on all honeypots</button>
+      <button type="submit" class="button">{{ t(request, "companies.all.update_all_submit") }}</button>
     </form>
 
-    <h3>Check for updates</h3>
+    <h3>{{ t(request, "companies.all.check_updates_heading") }}</h3>
     <p class="hint">
-      Dry run — refreshes each honeypot's package list and records how many
-      updates are available, without installing anything.
+      {{ t(request, "companies.all.check_updates_hint") }}
     </p>
     <form method="post" action="/companies/all/check-updates" class="inline-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button type="submit" class="button button-secondary">Check for updates on all honeypots</button>
+      <button type="submit" class="button button-secondary">{{ t(request, "companies.all.check_updates_submit") }}</button>
     </form>
   </section>
 
   <section class="panel">
-    <h2>Power</h2>
+    <h2>{{ t(request, "companies.power.heading") }}</h2>
     <p class="hint">
-      Sends the command to every honeypot with a confirmed host key
-      fingerprint — others are skipped. Requires typing a confirmation
-      phrase.
+      {{ t(request, "companies.all.power_hint") }}
     </p>
     <div class="page-header-actions">
-      <a class="button button-secondary" href="/companies/all/power/reboot">Reboot all honeypots</a>
-      <a class="button button-danger" href="/companies/all/power/shutdown">Shut down all honeypots</a>
+      <a class="button button-secondary" href="/companies/all/power/reboot">{{ t(request, "companies.all.reboot") }}</a>
+      <a class="button button-danger" href="/companies/all/power/shutdown">{{ t(request, "companies.all.shutdown") }}</a>
     </div>
   </section>
 {% endblock %}

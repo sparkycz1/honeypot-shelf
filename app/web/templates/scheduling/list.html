@@ -1,28 +1,28 @@
 {% extends "base.html" %}
 
-{% block title %}Scheduling — HoneyHive{% endblock %}
+{% block title %}{{ t(request, "scheduling.list.title") }} — HoneyHive{% endblock %}
 
 {% block content %}
   <div class="page-header">
-    <h1>Scheduling</h1>
-    <a class="button" href="/scheduling/new">New scheduled task</a>
+    <h1>{{ t(request, "scheduling.list.title") }}</h1>
+    <a class="button" href="/scheduling/new">{{ t(request, "scheduling.list.new_task") }}</a>
   </div>
 
   {% if ran %}
-    <div class="alert alert-ok"><p>Run enqueued — check the honeypot/company/batch page shortly.</p></div>
+    <div class="alert alert-ok"><p>{{ t(request, "scheduling.list.run_enqueued") }}</p></div>
   {% endif %}
 
   {% if tasks %}
     <table class="data-table">
       <thead>
         <tr>
-          <th>Name</th>
-          <th>Applies to</th>
-          <th>Action</th>
-          <th>Cron (UTC)</th>
-          <th>Next run</th>
-          <th>Last run</th>
-          <th>Status</th>
+          <th>{{ t(request, "scheduling.list.column_name") }}</th>
+          <th>{{ t(request, "scheduling.form.applies_to") }}</th>
+          <th>{{ t(request, "scheduling.form.action") }}</th>
+          <th>{{ t(request, "scheduling.list.column_cron") }}</th>
+          <th>{{ t(request, "scheduling.list.column_next_run") }}</th>
+          <th>{{ t(request, "scheduling.list.last_run") }}</th>
+          <th>{{ t(request, "partials.updates.status") }}</th>
           <th></th>
         </tr>
       </thead>
@@ -32,11 +32,11 @@
             <td><a href="/scheduling/{{ task.id }}/edit">{{ task.name }}</a></td>
             <td>
               {% if task.target_type.value == 'all_honeypots' %}
-                All honeypots
+                {{ t(request, "scheduling.form.all_honeypots") }}
               {% elif task.target_type.value == 'honeypot' %}
-                Honeypot: {{ task.target_honeypot.name if task.target_honeypot else '(deleted)' }}
+                {{ t(request, "scheduling.form.honeypot_option", name=task.target_honeypot.name if task.target_honeypot else t(request, "scheduling.list.deleted")) }}
               {% else %}
-                Company: {{ task.target_group.name if task.target_group else '(deleted)' }}
+                {{ t(request, "scheduling.form.company_option", name=task.target_group.name if task.target_group else t(request, "scheduling.list.deleted")) }}
               {% endif %}
             </td>
             <td>{{ action_labels.get(task.action, task.action) }}</td>
@@ -53,32 +53,32 @@
                 {{ task.last_run_at | local_time('%Y-%m-%d %H:%M %Z') }}
                 <br><span class="hint">{{ task.last_run_summary }}</span>
               {% else %}
-                never
+                {{ t(request, "scheduling.list.never") }}
               {% endif %}
             </td>
             <td>
               {% if task.is_enabled %}
-                <span class="badge badge-ok">enabled</span>
+                <span class="badge badge-ok">{{ t(request, "scheduling.list.status_enabled") }}</span>
               {% else %}
-                <span class="badge badge-warn">disabled</span>
+                <span class="badge badge-warn">{{ t(request, "scheduling.list.status_disabled") }}</span>
               {% endif %}
             </td>
             <td>
               <form method="post" action="/scheduling/{{ task.id }}/run-now" class="inline-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <button type="submit" class="button button-secondary">Run now</button>
+                <button type="submit" class="button button-secondary">{{ t(request, "scheduling.list.run_now") }}</button>
               </form>
               <form method="post" action="/scheduling/{{ task.id }}/toggle" class="inline-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="button button-secondary">
-                  {{ 'Disable' if task.is_enabled else 'Enable' }}
+                  {{ t(request, "scheduling.list.disable") if task.is_enabled else t(request, "scheduling.list.enable") }}
                 </button>
               </form>
-              <a class="button button-secondary" href="/scheduling/{{ task.id }}/edit">Edit</a>
+              <a class="button button-secondary" href="/scheduling/{{ task.id }}/edit">{{ t(request, "scheduling.list.edit") }}</a>
               <form method="post" action="/scheduling/{{ task.id }}/delete" class="inline-form"
-                    data-confirm="Delete the scheduled task &quot;{{ task.name }}&quot;?">
+                    data-confirm="{{ t(request, 'scheduling.list.delete_confirm', name=task.name) }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <button type="submit" class="button button-danger">Delete</button>
+                <button type="submit" class="button button-danger">{{ t(request, "scheduling.list.delete") }}</button>
               </form>
             </td>
           </tr>
@@ -87,7 +87,7 @@
     </table>
   {% else %}
     <div class="empty-state">
-      <p>No scheduled tasks yet.</p>
+      <p>{{ t(request, "scheduling.list.empty") }}</p>
     </div>
   {% endif %}
 {% endblock %}
