@@ -160,6 +160,32 @@ def test_build_initialize_command_joins_netbird_when_setup_key_given():
     assert expected in script
 
 
+def test_build_initialize_command_sets_up_tmpfs_ramdisk():
+    from app.ssh.initialize import TMPFS_PATH, TMPFS_SIZE_MB
+
+    script = build_initialize_command(
+        device_name="acme-honey1",
+        service_user="pi",
+        netbird_setup_key=None,
+        netbird_management_url=None,
+    )
+    assert f"mkdir -p {TMPFS_PATH}" in script
+    assert f"size={TMPFS_SIZE_MB}M" in script
+    assert f"mountpoint -q {TMPFS_PATH} || mount {TMPFS_PATH}" in script
+
+
+def test_build_initialize_command_repoints_opencanary_log_to_tmpfs():
+    from app.ssh.logs import HONEYPOT_LOG_PATH
+
+    script = build_initialize_command(
+        device_name="acme-honey1",
+        service_user="pi",
+        netbird_setup_key=None,
+        netbird_management_url=None,
+    )
+    assert f'"filename"] = "{HONEYPOT_LOG_PATH}"' in script
+
+
 def test_build_initialize_command_generates_config_only_if_missing():
     script = build_initialize_command(
         device_name="acme-honey1",

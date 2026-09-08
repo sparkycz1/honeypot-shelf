@@ -64,7 +64,7 @@ from app.ssh.exceptions import SSHConnectionError
 from app.ssh.exec import run_command
 from app.ssh.facts import gather_facts
 from app.ssh.identity import get_or_create_identity
-from app.ssh.logs import LogAccessError, view_file, view_journal
+from app.ssh.logs import LogAccessError, list_directory, view_file, view_journal
 from app.ssh.monitoring import gather_monitoring_sample
 from app.ssh.onboarding import ONBOARD_SUCCESS_MARKER, ONBOARD_USERNAME, build_onboarding_command
 from app.ssh.packages import gather_packages
@@ -72,6 +72,7 @@ from app.ssh.power import PowerAction, send_power_command
 from app.ssh.reachability import ReachabilityResult, check_reachable
 from app.ssh.readiness import DIRECT_FIX_COMMAND, missing_requirements
 from app.ssh.readiness import check_honeypot_readiness as run_readiness_probes
+from app.ssh.readonly import ReadonlyToggleError, check_readonly_status, set_readonly
 from app.ssh.services import gather_services
 from app.ssh.updates import check_updates, preview_update, run_system_update
 from app.tasks.celery_app import celery_app
@@ -275,6 +276,101 @@ def view_honeypot_log_file(
     honeypot_id: str, *, path: str, lines: int, search: str
 ) -> dict[str, Any]:
     return asyncio.run(_view_honeypot_log_file(honeypot_id, path=path, lines=lines, search=search))
+
+
+async def _list_honeypot_log_directory(honeypot_id: str, *, path: str) -> dict[str, Any]:
+    """The Logs tab's "browse" picker — one `ls` round trip, same
+    permission tier and `LOG_FILE_ALLOWED_PATHS` restriction as viewing a
+    file itself (see `app.ssh.logs.list_directory`)."""
+    settings = get_settings()
+
+    async with db_session.AsyncSessionLocal() as session:
+        honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
+        if honeypot is None:
+            return {"ok": False, "error": "Honeypot not found."}
+        if not honeypot.host_key_fingerprint:
+            return {"ok": False, "error": "No pinned host key fingerprint yet."}
+
+        secret = await resolve_honeypot_credential(honeypot, session)
+
+        try:
+            entries = await list_directory(
+                honeypot, secret, settings.ssh_connect_timeout, path=path
+            )
+        except LogAccessError as exc:
+            return {"ok": False, "error": str(exc)}
+        except SSHConnectionError as exc:
+            logger.warning("list_honeypot_log_directory failed for %s: %s", honeypot.name, exc)
+            return {"ok": False, "error": str(exc)}
+
+        return {"ok": True, "entries": entries}
+
+
+@celery_app.task(
+    name="app.tasks.jobs.list_honeypot_log_directory",
+    time_limit=get_settings().ssh_connect_timeout + _SSH_COMMAND_EXTRA_SECONDS,
+)
+def list_honeypot_log_directory(honeypot_id: str, *, path: str) -> dict[str, Any]:
+    return asyncio.run(_list_honeypot_log_directory(honeypot_id, path=path))
+
+
+async def _check_honeypot_readonly_status(honeypot_id: str) -> dict[str, Any]:
+    """The Honeypot Status tab's own load — see `app.ssh.readonly` for what
+    "enabled"/"disabled" mean and why this reflects the currently *booted*
+    state, not a pending-until-reboot toggle."""
+    settings = get_settings()
+
+    async with db_session.AsyncSessionLocal() as session:
+        honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
+        if honeypot is None:
+            return {"ok": False, "error": "Honeypot not found."}
+        if not honeypot.host_key_fingerprint:
+            return {"ok": False, "error": "No pinned host key fingerprint yet."}
+
+        secret = await resolve_honeypot_credential(honeypot, session)
+
+        try:
+            state = await check_readonly_status(honeypot, secret, settings.ssh_connect_timeout)
+        except SSHConnectionError as exc:
+            logger.warning("check_honeypot_readonly_status failed for %s: %s", honeypot.name, exc)
+            return {"ok": False, "error": str(exc)}
+
+        return {"ok": True, "state": state}
+
+
+@celery_app.task(
+    name="app.tasks.jobs.check_honeypot_readonly_status",
+    time_limit=get_settings().ssh_connect_timeout + _SSH_COMMAND_EXTRA_SECONDS,
+)
+def check_honeypot_readonly_status(honeypot_id: str) -> dict[str, Any]:
+    return asyncio.run(_check_honeypot_readonly_status(honeypot_id))
+
+
+async def _set_honeypot_readonly(honeypot_id: str, *, enable: bool) -> dict[str, Any]:
+    async with db_session.AsyncSessionLocal() as session:
+        honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
+        if honeypot is None:
+            return {"ok": False, "error": "Honeypot not found."}
+        if not honeypot.host_key_fingerprint:
+            return {"ok": False, "error": "No pinned host key fingerprint yet."}
+
+        secret = await resolve_honeypot_credential(honeypot, session)
+
+        try:
+            await set_readonly(honeypot, secret, enable=enable)
+        except (SSHConnectionError, ReadonlyToggleError) as exc:
+            logger.warning("set_honeypot_readonly failed for %s: %s", honeypot.name, exc)
+            return {"ok": False, "error": str(exc)}
+
+        return {"ok": True}
+
+
+@celery_app.task(
+    name="app.tasks.jobs.set_honeypot_readonly",
+    time_limit=get_settings().ssh_connect_timeout + _SSH_COMMAND_EXTRA_SECONDS,
+)
+def set_honeypot_readonly(honeypot_id: str, *, enable: bool) -> dict[str, Any]:
+    return asyncio.run(_set_honeypot_readonly(honeypot_id, enable=enable))
 
 
 async def _push_pending_ssh_key(honeypot_id: str) -> dict[str, Any]:

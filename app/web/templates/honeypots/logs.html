@@ -16,36 +16,62 @@
     </div>
   {% endif %}
 
-  <form method="get" action="/honeypots/{{ honeypot.id }}/logs" class="search-form">
-    <input type="search" name="search" value="{{ search }}" placeholder="Search...">
-    <input type="number" name="lines" value="{{ lines }}" min="1" max="5000" title="Lines" style="width: 6em">
-    {% if not path %}
-      <input type="text" name="since" value="{{ since }}" placeholder="Since (e.g. -1h, yesterday)">
-      <input type="text" name="until" value="{{ until }}" placeholder="Until">
-    {% endif %}
-    <input type="hidden" name="path" value="{{ path }}">
-    <button type="submit" class="button">
-      {{ 'View file' if path else 'View journal' }}
-    </button>
-    {% if path %}
-      <a class="button button-secondary" href="/honeypots/{{ honeypot.id }}/logs">Back to journal</a>
-    {% endif %}
-  </form>
+  <nav class="log-mode-nav">
+    <a class="button{{ ' button-secondary' if path or browse else '' }}"
+       href="/honeypots/{{ honeypot.id }}/logs">Journal</a>
+    <a class="button{{ ' button-secondary' if not browse else '' }}"
+       href="/honeypots/{{ honeypot.id }}/logs?browse={{ browse_root | urlencode }}">Browse files</a>
+    <a class="button{{ ' button-secondary' if path != honeypot_log_path else '' }}"
+       href="/honeypots/{{ honeypot.id }}/logs?path={{ honeypot_log_path | urlencode }}">Honeypot logs</a>
+  </nav>
 
-  <details class="form-advanced">
-    <summary>View a specific file instead</summary>
-    <p class="hint">
-      Restricted to: {% for prefix in allowed_paths %}<code>{{ prefix }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
-      (configurable via <code>LOG_FILE_ALLOWED_PATHS</code>).
-    </p>
+  {% if browse_entries is not none %}
+    <section class="panel">
+      <h2><code>{{ browse }}</code></h2>
+      <p class="hint">
+        Click a directory to browse into it, a file to view it. Restricted to:
+        {% for prefix in allowed_paths %}<code>{{ prefix }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
+        (configurable via <code>LOG_FILE_ALLOWED_PATHS</code>).
+      </p>
+      {% if browse.rstrip('/') not in allowed_paths %}
+        <p>
+          <a class="button button-secondary"
+             href="/honeypots/{{ honeypot.id }}/logs?browse={{ (browse.rsplit('/', 1)[0] or '/') | urlencode }}">.. (up)</a>
+        </p>
+      {% endif %}
+      {% if browse_entries %}
+        <ul class="log-browse-list">
+          {% for name, is_dir in browse_entries %}
+            {% set full_path = browse.rstrip('/') + '/' + name %}
+            <li>
+              {% if is_dir %}
+                <a href="/honeypots/{{ honeypot.id }}/logs?browse={{ full_path | urlencode }}">📁 {{ name }}/</a>
+              {% else %}
+                <a href="/honeypots/{{ honeypot.id }}/logs?path={{ full_path | urlencode }}">📄 {{ name }}</a>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="hint">(empty)</p>
+      {% endif %}
+    </section>
+  {% elif not browse %}
     <form method="get" action="/honeypots/{{ honeypot.id }}/logs" class="search-form">
-      <input type="text" name="path" placeholder="/var/log/nginx/access.log" value="{{ path }}" style="min-width: 24em">
-      <input type="hidden" name="lines" value="{{ lines }}">
-      <button type="submit" class="button">Open</button>
+      <input type="search" name="search" value="{{ search }}" placeholder="Search...">
+      <input type="number" name="lines" value="{{ lines }}" min="1" max="5000" title="Lines" style="width: 6em">
+      {% if not path %}
+        <input type="text" name="since" value="{{ since }}" placeholder="Since (e.g. -1h, yesterday)">
+        <input type="text" name="until" value="{{ until }}" placeholder="Until">
+      {% endif %}
+      <input type="hidden" name="path" value="{{ path }}">
+      <button type="submit" class="button">
+        {{ 'View file' if path else 'View journal' }}
+      </button>
     </form>
-  </details>
 
-  {% if output is not none %}
-    <pre class="log-output">{{ output if output else '(no output)' }}</pre>
+    {% if output is not none %}
+      <pre class="log-output">{{ output if output else '(no output)' }}</pre>
+    {% endif %}
   {% endif %}
 {% endblock %}

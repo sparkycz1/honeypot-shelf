@@ -30,6 +30,13 @@ from app.ssh.client import open_connection
 DEFAULT_LINE_LIMIT = 200
 MAX_LINE_LIMIT = 5000
 
+# Where OpenCanary's own file logger writes once a honeypot has been
+# through Initialize (see `app.ssh.initialize`'s `/mnt/tmpfs` tmpfs setup)
+# — the Logs tab's one-click "Honeypot logs" shortcut. Must be inside
+# `LOG_FILE_ALLOWED_PATHS` (the default includes `/mnt/tmpfs`) for the
+# shortcut to actually work.
+HONEYPOT_LOG_PATH = "/mnt/tmpfs/opencanary.log"
+
 
 class LogAccessError(Exception):
     """A requested file path isn't inside an allowed prefix — never sent to
@@ -71,6 +78,29 @@ def build_journal_command(*, lines: int, search: str, since: str, until: str) ->
     if until.strip():
         parts += ["--until", shlex.quote(until.strip())]
     return " ".join(parts)
+
+
+def build_list_directory_command(path: str) -> str:
+    """`ls -1p` — one name per line, a trailing `/` on directories (and
+    nothing else appended to files), which is all the Logs tab's "browse"
+    picker needs to tell the two apart and build the next link. Restricted
+    to `LOG_FILE_ALLOWED_PATHS` the same way `view_file` is — see
+    `list_directory` below."""
+    return f"ls -1p -- {shlex.quote(path)} 2>/dev/null"
+
+
+def parse_directory_listing(raw: str) -> list[tuple[str, bool]]:
+    """`(name, is_dir)` pairs from `build_list_directory_command`'s output,
+    hidden (dotfile) entries dropped — a log directory's own hidden files
+    are never useful to browse to."""
+    entries: list[tuple[str, bool]] = []
+    for line in raw.splitlines():
+        name = line.strip()
+        if not name or name.startswith("."):
+            continue
+        is_dir = name.endswith("/")
+        entries.append((name[:-1] if is_dir else name, is_dir))
+    return entries
 
 
 def build_file_command(*, path: str, lines: int, search: str) -> str:
@@ -127,3 +157,26 @@ async def view_file(
         result = await conn.run(command, check=False, timeout=timeout_seconds)
     stdout = result.stdout or ""
     return stdout if isinstance(stdout, str) else stdout.decode()
+
+
+async def list_directory(
+    honeypot: Honeypot,
+    secret: str | None,
+    timeout_seconds: int,
+    *,
+    path: str,
+) -> list[tuple[str, bool]]:
+    """Connect to a honeypot and return `(name, is_dir)` for each entry
+    directly inside `path` — the Logs tab's "browse" picker, so an operator
+    never has to already know a file's exact name/path to view it. Same
+    `LOG_FILE_ALLOWED_PATHS` restriction and `LogAccessError` as
+    `view_file`."""
+    settings = get_settings()
+    if not is_path_allowed(path, settings.log_file_allowed_path_list):
+        raise LogAccessError(f'"{path}" is outside the allowed log paths.')
+
+    command = build_list_directory_command(path)
+    async with await open_connection(honeypot, secret, timeout_seconds) as conn:
+        result = await conn.run(command, check=False, timeout=timeout_seconds)
+    stdout = result.stdout or ""
+    return parse_directory_listing(stdout if isinstance(stdout, str) else stdout.decode())

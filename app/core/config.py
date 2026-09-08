@@ -98,7 +98,7 @@ class Settings(BaseSettings):
     # security boundary against an account that already has write access
     # (who could read the same file directly in the terminal anyway).
     log_file_allowed_paths: str = Field(
-        default="/var/log,/var/lib/docker/containers", alias="LOG_FILE_ALLOWED_PATHS"
+        default="/var/log,/var/lib/docker/containers,/mnt/tmpfs", alias="LOG_FILE_ALLOWED_PATHS"
     )
 
     # Bearer token a not-yet-registered honeypot presents when announcing

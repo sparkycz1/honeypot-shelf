@@ -127,9 +127,12 @@ def _honeypot_tabs(honeypot: Honeypot, user: User) -> list[tuple[str, str, str]]
     ]
     if user.can_write():
         tabs.append(("terminal", "Terminal", f"{base}/terminal"))
-        # Logs shares Terminal's write gate rather than being available to
-        # a read-only account — see the "Logs" route's own docstring for why.
+        # Logs/Status/Config all share Terminal's write gate rather than
+        # being available to a read-only account — see the "Logs" route's
+        # own docstring for why.
         tabs.append(("logs", "Logs", f"{base}/logs"))
+        tabs.append(("status", "Honeypot status", f"{base}/status"))
+        tabs.append(("config", "Honeypot config", f"{base}/config"))
     tabs.append(("power", "Power", f"{base}/power"))
     tabs.append(("settings", "Settings", f"{base}/edit"))
     return tabs
@@ -2350,27 +2353,62 @@ async def honeypot_logs(
     honeypot_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     path: str = "",
+    browse: str = "",
     lines: int = ssh_logs.DEFAULT_LINE_LIMIT,
     search: str = "",
     since: str = "",
     until: str = "",
     current_user: User = Depends(get_current_user),
 ) -> Response:
-    """The Logs tab — journal by default, or one allowed file when `path`
-    is given. A live SSH round trip on every load/filter change, same
+    """The Logs tab — three modes, switched with the row of links at the
+    top: the journal (default, no `path`/`browse`), one allowed file
+    (`path`, typically reached by clicking an entry from a `browse`
+    listing — see "Honeypot logs" below for the one hardcoded shortcut),
+    or a directory listing (`browse`) that turns "type the exact log path
+    by hand" into "click `ls`'s own output" — the Logs tab's "browse
+    picker". A live SSH round trip on every load/filter change, same
     "gated behind write access, not just being logged in" reasoning
     `app.ssh.logs`'s module docstring lays out; see that module for the
     command-building and path-restriction logic itself. Audited (which
-    honeypot, journal-vs-file, search term) the same way "Refresh packages
-    now"/"Test connection" are — not the returned log content itself,
-    which is never stored anywhere in this app."""
+    honeypot, journal/file/browse, search term) the same way "Refresh
+    packages now"/"Test connection" are — not the returned log content
+    itself, which is never stored anywhere in this app."""
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
     settings = get_settings()
 
     output: str | None = None
+    browse_entries: list[tuple[str, bool]] | None = None
     error: str | None = None
     if not honeypot.host_key_fingerprint:
         error = "Confirm the server's key fingerprint on the Overview tab first."
+    elif browse.strip():
+        try:
+            async_result = tasks.list_honeypot_log_directory.delay(
+                str(honeypot.id), path=browse.strip()
+            )
+            result = await asyncio.to_thread(
+                async_result.get, timeout=settings.ssh_connect_timeout + 15
+            )
+            if isinstance(result, dict):
+                if result.get("ok"):
+                    browse_entries = result.get("entries") or []
+                else:
+                    error = str(result.get("error") or "Unknown error.")
+        except CeleryTimeoutError:
+            error = "The command did not finish in time."
+        except Exception as exc:  # noqa: BLE001 - reported, not swallowed
+            error = str(exc)
+
+        await log_event(
+            db,
+            request=request,
+            action="honeypot.logs.browse",
+            summary=f'Browsed "{browse.strip()}" on "{honeypot.name}"',
+            outcome=AuditOutcome.SUCCESS if error is None else AuditOutcome.FAILURE,
+            target_type="honeypot",
+            target_id=honeypot.id,
+            target_label=honeypot.name,
+        )
     else:
         clamped_lines = max(1, min(lines, ssh_logs.MAX_LINE_LIMIT))
         try:
@@ -2425,6 +2463,12 @@ async def honeypot_logs(
             "active_tab": "logs",
             "csrf_token": csrf_token,
             "output": output,
+            "browse": browse,
+            "browse_entries": browse_entries,
+            "browse_root": settings.log_file_allowed_path_list[0]
+            if settings.log_file_allowed_path_list
+            else "/var/log",
+            "honeypot_log_path": ssh_logs.HONEYPOT_LOG_PATH,
             "error": error,
             "path": path,
             "lines": lines,
@@ -2433,6 +2477,140 @@ async def honeypot_logs(
             "until": until,
             "default_lines": ssh_logs.DEFAULT_LINE_LIMIT,
             "allowed_paths": settings.log_file_allowed_path_list,
+        },
+    )
+    if new_cookie:
+        set_csrf_cookie(response, new_cookie)
+    return response
+
+
+@router.get("/{honeypot_id}/status", dependencies=[_terminal])
+async def honeypot_status_tab(
+    request: Request,
+    honeypot_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Honeypot status — for now, just the read-only root filesystem
+    toggle (see `app.ssh.readonly`'s module docstring for why this exists
+    and how it works). A live SSH round trip on every load, same as the
+    Logs tab; nothing here is persisted."""
+    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    settings = get_settings()
+
+    readonly_state: str | None = None
+    error: str | None = None
+    if not honeypot.host_key_fingerprint:
+        error = "Confirm the server's key fingerprint on the Overview tab first."
+    else:
+        try:
+            async_result = tasks.check_honeypot_readonly_status.delay(str(honeypot.id))
+            result = await asyncio.to_thread(
+                async_result.get, timeout=settings.ssh_connect_timeout + 15
+            )
+            if isinstance(result, dict):
+                if result.get("ok"):
+                    readonly_state = str(result.get("state"))
+                else:
+                    error = str(result.get("error") or "Unknown error.")
+        except CeleryTimeoutError:
+            error = "The status check did not finish in time."
+        except Exception as exc:  # noqa: BLE001 - reported, not swallowed
+            error = str(exc)
+
+    csrf_token, new_cookie = get_or_create_csrf_token(request)
+    response = templates.TemplateResponse(
+        request,
+        "honeypots/status.html",
+        {
+            "honeypot": honeypot,
+            "tabs": _honeypot_tabs(honeypot, current_user),
+            "active_tab": "status",
+            "csrf_token": csrf_token,
+            "readonly_state": readonly_state,
+            "error": error,
+        },
+    )
+    if new_cookie:
+        set_csrf_cookie(response, new_cookie)
+    return response
+
+
+@router.post(
+    "/{honeypot_id}/status/readonly", dependencies=[_terminal, Depends(verify_csrf)]
+)
+async def set_honeypot_readonly_endpoint(
+    request: Request,
+    honeypot_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    enable: str = Form(...),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Toggles the read-only root filesystem — see `app.ssh.readonly`.
+    `enable` is the literal string "true"/"false" from the two buttons on
+    the Status tab, not a checkbox (there's nothing to check — each button
+    is its own explicit, unambiguous action)."""
+    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    settings = get_settings()
+    enable_bool = enable == "true"
+
+    error: str | None = None
+    if not honeypot.host_key_fingerprint:
+        error = "Confirm the server's key fingerprint on the Overview tab first."
+    else:
+        try:
+            async_result = tasks.set_honeypot_readonly.delay(str(honeypot.id), enable=enable_bool)
+            result = await asyncio.to_thread(
+                async_result.get, timeout=settings.ssh_connect_timeout + 30
+            )
+            if isinstance(result, dict) and not result.get("ok"):
+                error = str(result.get("error") or "Unknown error.")
+        except CeleryTimeoutError:
+            error = "The command did not finish in time."
+        except Exception as exc:  # noqa: BLE001 - reported, not swallowed
+            error = str(exc)
+
+    await log_event(
+        db,
+        request=request,
+        action="honeypot.readonly.enable" if enable_bool else "honeypot.readonly.disable",
+        summary=(
+            f'{"Enabled" if enable_bool else "Disabled"} read-only root on "{honeypot.name}"'
+        ),
+        outcome=AuditOutcome.SUCCESS if error is None else AuditOutcome.FAILURE,
+        target_type="honeypot",
+        target_id=honeypot.id,
+        target_label=honeypot.name,
+        details={"error": error} if error else None,
+    )
+
+    redirect_url = f"/honeypots/{honeypot.id}/status"
+    if request.headers.get("HX-Request") == "true":
+        return Response(status_code=status.HTTP_200_OK, headers={"HX-Redirect": redirect_url})
+    return RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.get("/{honeypot_id}/config", dependencies=[_terminal])
+async def honeypot_config_tab(
+    request: Request,
+    honeypot_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Honeypot config — placeholder for editing `opencanary.conf`'s own
+    module settings directly from here. Empty for now; the SSH terminal
+    and the Logs tab already cover "look at/change something on the
+    honeypot" in the meantime."""
+    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    csrf_token, new_cookie = get_or_create_csrf_token(request)
+    response = templates.TemplateResponse(
+        request,
+        "honeypots/config.html",
+        {
+            "honeypot": honeypot,
+            "tabs": _honeypot_tabs(honeypot, current_user),
+            "active_tab": "config",
+            "csrf_token": csrf_token,
         },
     )
     if new_cookie:

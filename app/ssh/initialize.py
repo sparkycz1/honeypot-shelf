@@ -56,6 +56,8 @@ from __future__ import annotations
 
 import shlex
 
+from app.ssh.logs import HONEYPOT_LOG_PATH
+
 # Printed as the script's last line on success — same "did it actually run
 # to completion" reasoning as app.ssh.onboarding.ONBOARD_SUCCESS_MARKER.
 INITIALIZE_SUCCESS_MARKER = "HONEYHIVE_INITIALIZE_OK"
@@ -72,6 +74,13 @@ STEP_MARKER_PREFIX = "##HH-STEP## "
 # `app.web.routes.initialize_ws` (same reasoning/shape as
 # `app.web.routes.terminal_ws.TERMINAL_SESSION_MAX_SECONDS`).
 INITIALIZE_RUN_MAX_SECONDS = 60 * 60
+
+# See app.ssh.readonly's module docstring for why this exists — a small
+# ramdisk OpenCanary's log can still write to once root itself is
+# read-only. Shared with app.ssh.logs.HONEYPOT_LOG_PATH (the actual log
+# file lives at "<TMPFS_PATH>/opencanary.log").
+TMPFS_PATH = "/mnt/tmpfs"
+TMPFS_SIZE_MB = 512
 
 # The account opencanaryd's systemd unit runs as (it drops to
 # --uid=nobody --gid=nogroup itself once it has bound its listening
@@ -370,6 +379,20 @@ def build_initialize_command(
             up_cmd += f" --management-url {shlex.quote(netbird_management_url.strip())}"
         lines.append(up_cmd)
 
+    # --- /mnt/tmpfs: a small ramdisk OpenCanary's own log writes to
+    # instead of the SD card (see app.ssh.readonly's module docstring —
+    # the Honeypot Status tab's read-only-root toggle assumes this exists
+    # so there's still somewhere for OpenCanary to write once root itself
+    # is read-only). Idempotent: adding the fstab line twice would mount
+    # it twice, so this checks first. ---
+    lines.append(_step(f"Setting up the {TMPFS_SIZE_MB}MB tmpfs at {TMPFS_PATH}"))
+    lines.append(f"mkdir -p {TMPFS_PATH}")
+    lines.append(
+        f"grep -q '{TMPFS_PATH} ' /etc/fstab || "
+        f"echo 'tmpfs {TMPFS_PATH} tmpfs defaults,noatime,size={TMPFS_SIZE_MB}M 0 0' >> /etc/fstab"
+    )
+    lines.append(f"mountpoint -q {TMPFS_PATH} || mount {TMPFS_PATH}")
+
     # --- OpenCanary's own config (JSON) — generated once, never
     # overwritten on a re-run (an operator may have already hand-edited
     # it: which modules are enabled, ports, etc.) ---
@@ -422,9 +445,12 @@ def build_initialize_command(
     lines.append("systemctl disable --now nmbd || true")
 
     # --- Point the just-generated config at the paths prepared above, in
-    # one pass (both keys live in the same JSON file) — doesn't enable
-    # either module; that's a deliberate separate, manual step. ---
-    lines.append(_step("Pointing the config at the prepared portscan/Samba paths"))
+    # one pass (all keys live in the same JSON file) — doesn't enable any
+    # module; that's a deliberate separate, manual step. The file logger's
+    # own path is best-effort (wrapped so a future OpenCanary version with
+    # a differently-shaped default config doesn't fail the whole run over
+    # this one, purely cosmetic, adjustment). ---
+    lines.append(_step("Pointing the config at the prepared portscan/Samba/log paths"))
     lines.append(
         "python3 - <<'HONEYHIVE_INITIALIZE_CFG'\n"
         "import json\n"
@@ -433,6 +459,10 @@ def build_initialize_command(
         "    cfg = json.load(f)\n"
         'cfg["portscan.iptables_path"] = "/usr/sbin/iptables"\n'
         'cfg["smb.auditfile"] = "/var/log/samba-audit.log"\n'
+        "try:\n"
+        f'    cfg["logger"]["kwargs"]["handlers"]["file"]["filename"] = "{HONEYPOT_LOG_PATH}"\n'
+        "except (KeyError, TypeError):\n"
+        "    pass\n"
         "with open(path, \"w\") as f:\n"
         "    json.dump(cfg, f, indent=4)\n"
         "HONEYHIVE_INITIALIZE_CFG"

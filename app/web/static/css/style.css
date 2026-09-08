@@ -476,6 +476,29 @@ img.brand-mark-lg { object-fit: contain; }
 
 .stack-gap { display: block; margin-top: var(--space-4); }
 
+/* --- Logs tab: mode switcher + browse picker --- */
+
+.log-mode-nav {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.log-browse-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.log-browse-list a {
+  display: inline-block;
+  padding: 0.25rem 0;
+}
+
 /* --- Search --- */
 
 .search-form {
