@@ -705,7 +705,8 @@ async def export_honeypot_config_endpoint(
         action="honeypot.config_export",
         summary=(
             f"Exported configuration for {len(export.honeypots)} honeypot(s) and "
-            f"{len(export.companies)} compan{'y' if len(export.companies) == 1 else 'ies'} as {format}"
+            f"{len(export.companies)} compan{'y' if len(export.companies) == 1 else 'ies'} "
+            f"as {format}"
         ),
         details={
             "honeypot_count": len(export.honeypots),
@@ -721,7 +722,7 @@ async def export_honeypot_config_endpoint(
         writer.writeheader()
         for honeypot in export.honeypots:
             row = honeypot.model_dump()
-            row["auth_method"] = honeypot.auth_method.value
+            row["auth_method"] = honeypot.auth_method.value if honeypot.auth_method else ""
             row["tags"] = ", ".join(honeypot.tags)
             # Doesn't flatten sensibly into one CSV cell — JSON export is
             # the full-fidelity round-trip for a runbook, same reasoning
@@ -832,9 +833,7 @@ async def package_search(
         # Scoped by joining the honeypot each row belongs to — a restricted
         # user searching fleet-wide must not learn which packages sit on a
         # honeypot they can't otherwise see.
-        visible_ids = (await honeypots_visible_to(db, current_user)).with_only_columns(
-            Honeypot.id
-        )
+        visible_ids = honeypots_visible_to(current_user).with_only_columns(Honeypot.id)
         query = (
             select(HoneypotPackage)
             .options(selectinload(HoneypotPackage.honeypot))
@@ -1206,7 +1205,9 @@ async def honeypot_status_panel(
     current_user: User = Depends(get_current_user),
 ) -> Response:
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    return templates.TemplateResponse(request, "partials/honeypot_status.html", {"honeypot": honeypot})
+    return templates.TemplateResponse(
+        request, "partials/honeypot_status.html", {"honeypot": honeypot}
+    )
 
 
 @router.get("/{honeypot_id}/facts-panel")
@@ -1762,12 +1763,15 @@ async def discover_host_key(
     csrf_token, new_cookie = get_or_create_csrf_token(request)
 
     context: dict[str, object] = {"honeypot": honeypot, "csrf_token": csrf_token}
-    try:
-        context["fingerprint"] = await discover_host_key_fingerprint(
-            honeypot.ip_address, honeypot.port, settings.ssh_connect_timeout
-        )
-    except SSHConnectionError as exc:
-        context["error"] = str(exc)
+    if not honeypot.ip_address:
+        context["error"] = "This honeypot has no IP address configured."
+    else:
+        try:
+            context["fingerprint"] = await discover_host_key_fingerprint(
+                honeypot.ip_address, honeypot.port, settings.ssh_connect_timeout
+            )
+        except SSHConnectionError as exc:
+            context["error"] = str(exc)
 
     await log_event(
         db,

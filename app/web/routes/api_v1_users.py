@@ -102,13 +102,19 @@ async def create_user_api(
             detail=f'A user named "{payload.username}" already exists.',
         ) from None
     user = await _get_user_or_404(user.id, db)
+    if user.is_superadmin:
+        scope_label = "superadmin"
+    else:
+        company_name = user.company.name if user.company else "?"
+        access_level = user.access_level.value if user.access_level else "?"
+        scope_label = f"{company_name}/{access_level}"
     await log_event(
         db,
         request=request,
         action="user.create",
         summary=(
-            f'Created user "{user.username}" ({user.auth_provider.value}, '
-            f'{"superadmin" if user.is_superadmin else f"{user.company.name}/{user.access_level.value}"})'
+            f'Created user "{user.username}" '
+            f"({user.auth_provider.value}, {scope_label})"
         ),
         target_type="user",
         target_id=user.id,

@@ -68,7 +68,10 @@ async def _create_admin(username: str, password: str) -> None:
         db.add(user)
         await db.commit()
 
-    print(f'Created "{username}" as a superadmin. They\'ll be asked to change this password on first login.')
+    print(
+        f'Created "{username}" as a superadmin. '
+        "They'll be asked to change this password on first login."
+    )
 
 
 def main() -> None:

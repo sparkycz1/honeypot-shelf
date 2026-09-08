@@ -202,7 +202,9 @@ def parse_facts_output(raw: str) -> HoneypotFacts:
     )
 
 
-async def gather_facts(honeypot: Honeypot, secret: str | None, timeout_seconds: int) -> HoneypotFacts:
+async def gather_facts(
+    honeypot: Honeypot, secret: str | None, timeout_seconds: int
+) -> HoneypotFacts:
     """Connect to a honeypot and gather its facts. Requires a pinned host key."""
     async with await open_connection(honeypot, secret, timeout_seconds) as conn:
         result = await conn.run(FACTS_COMMAND, check=False, timeout=timeout_seconds)

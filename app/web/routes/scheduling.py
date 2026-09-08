@@ -119,7 +119,9 @@ async def list_scheduled_tasks(
 ) -> Response:
     result = await db.execute(
         select(ScheduledTask)
-        .options(selectinload(ScheduledTask.target_honeypot), selectinload(ScheduledTask.owner_company))
+        .options(
+            selectinload(ScheduledTask.target_honeypot), selectinload(ScheduledTask.owner_company)
+        )
         .order_by(ScheduledTask.name)
     )
     tasks = [task for task in result.scalars().all() if task_within_scope(current_user, task)]
@@ -195,10 +197,14 @@ async def create_scheduled_task(
     except ValueError as exc:
         errors.append(str(exc))
 
-    if payload is not None and not has_company_access(
-        current_user, payload.owner_company_id, write=True
-    ):
-        errors.append("Pick a company your account has access to.")
+    if payload is not None:
+        # Guaranteed non-None here by ScheduledTaskCreate's own
+        # model_validator (raises "Pick a company..." otherwise) — the
+        # field itself stays Optional in the schema only because it's
+        # resolved by this route, not submitted directly.
+        assert payload.owner_company_id is not None
+        if not has_company_access(current_user, payload.owner_company_id, write=True):
+            errors.append("Pick a company your account has access to.")
 
     if errors or payload is None:
         task_name = raw_form.get("name", "")
@@ -306,10 +312,14 @@ async def update_scheduled_task(
     except ValueError as exc:
         errors.append(str(exc))
 
-    if payload is not None and not has_company_access(
-        current_user, payload.owner_company_id, write=True
-    ):
-        errors.append("Pick a company your account has access to.")
+    if payload is not None:
+        # Guaranteed non-None here by ScheduledTaskCreate's own
+        # model_validator (raises "Pick a company..." otherwise) — the
+        # field itself stays Optional in the schema only because it's
+        # resolved by this route, not submitted directly.
+        assert payload.owner_company_id is not None
+        if not has_company_access(current_user, payload.owner_company_id, write=True):
+            errors.append("Pick a company your account has access to.")
 
     if errors or payload is None:
         await log_event(
@@ -336,6 +346,7 @@ async def update_scheduled_task(
             set_csrf_cookie(response, new_cookie)
         return response
 
+    assert payload.owner_company_id is not None  # see the model_validator note above
     task.name = payload.name
     task.action = payload.action
     task.action_params = payload.action_params

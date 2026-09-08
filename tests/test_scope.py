@@ -106,7 +106,9 @@ async def test_read_only_user_cannot_reach_honeypot_write_routes(
     client, db_session_factory, login_as
 ):
     company = await create_company(db_session_factory)
-    await login_as(client, is_superadmin=False, company_id=company.id, access_level=AccessLevel.READ)
+    await login_as(
+        client, is_superadmin=False, company_id=company.id, access_level=AccessLevel.READ
+    )
     response = await client.get("/honeypots/new")
     # get is unguarded (read access is enough to see the form render);
     # the actual POST is what require_write gates.

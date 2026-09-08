@@ -136,7 +136,8 @@ class ImportResult:
     def summary(self) -> str:
         parts = [
             f"{len(self.created_honeypots)} honeypot(s)",
-            f"{len(self.created_companies)} compan{'y' if len(self.created_companies) == 1 else 'ies'}",
+            f"{len(self.created_companies)} "
+            f"compan{'y' if len(self.created_companies) == 1 else 'ies'}",
         ]
         summary = f"Imported {', '.join(parts)}"
         if self.skipped_honeypots:
@@ -167,7 +168,9 @@ async def import_honeypot_config(db: AsyncSession, payload: HoneypotConfigExport
     # Create every company named anywhere in the payload first (either in
     # the `companies` list itself, or only referenced from a honeypot's
     # `company` field) so every honeypot below has somewhere to attach to.
-    wanted_company_names = {c.name for c in payload.companies} | {m.company for m in payload.honeypots}
+    wanted_company_names = {c.name for c in payload.companies} | {
+        m.company for m in payload.honeypots
+    }
     company_notes = {c.name: c.notes for c in payload.companies}
     for name in sorted(wanted_company_names):
         if name in companies_by_name:

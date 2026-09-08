@@ -47,4 +47,6 @@ def is_online(last_seen_at: datetime | None, *, cutoff: datetime | None = None) 
 def status_of(honeypot: Honeypot, *, cutoff: datetime | None = None) -> HoneypotStatus:
     if honeypot.last_seen_at is None:
         return HoneypotStatus.NEVER_SEEN
-    return HoneypotStatus.ONLINE if is_online(honeypot.last_seen_at, cutoff=cutoff) else HoneypotStatus.OFFLINE
+    if is_online(honeypot.last_seen_at, cutoff=cutoff):
+        return HoneypotStatus.ONLINE
+    return HoneypotStatus.OFFLINE

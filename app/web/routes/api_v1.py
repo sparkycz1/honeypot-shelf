@@ -145,7 +145,7 @@ def _honeypot_to_dict(honeypot: Honeypot) -> dict[str, object]:
         "ip_address": honeypot.ip_address,
         "port": honeypot.port,
         "username": honeypot.username,
-        "auth_method": honeypot.auth_method.value,
+        "auth_method": honeypot.auth_method.value if honeypot.auth_method else None,
         "company": honeypot.company.name if honeypot.company else None,
         "company_id": str(honeypot.company_id) if honeypot.company_id else None,
         "description": honeypot.description,
@@ -666,12 +666,15 @@ async def discover_host_key_api(
 
     fingerprint: str | None = None
     error: str | None = None
-    try:
-        fingerprint = await discover_host_key_fingerprint(
-            honeypot.ip_address, honeypot.port, settings.ssh_connect_timeout
-        )
-    except SSHConnectionError as exc:
-        error = str(exc)
+    if not honeypot.ip_address:
+        error = "This honeypot has no IP address configured."
+    else:
+        try:
+            fingerprint = await discover_host_key_fingerprint(
+                honeypot.ip_address, honeypot.port, settings.ssh_connect_timeout
+            )
+        except SSHConnectionError as exc:
+            error = str(exc)
 
     await log_event(
         db,
