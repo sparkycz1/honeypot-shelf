@@ -9,6 +9,7 @@ import io
 import re
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 # NOT the builtin `TimeoutError` — `celery.exceptions.TimeoutError` does not
 # subclass it, so catching the builtin around `AsyncResult.get(timeout=...)`
@@ -30,7 +31,7 @@ from app.auth.scope import (
     visible_honeypots_by_ids,
 )
 from app.core.app_settings import get_or_create_app_settings
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie, verify_csrf
 from app.core.security import encrypt_secret
 from app.db.models.audit_log import AuditOutcome
@@ -70,6 +71,12 @@ from app.services.saved_views import (
 from app.ssh import logs as ssh_logs
 from app.ssh.client import discover_host_key_fingerprint
 from app.ssh.exceptions import SSHConnectionError
+from app.ssh.opencanary_config import (
+    OPENCANARY_MODULES,
+    apply_form_to_config,
+    field_value,
+    module_enabled,
+)
 from app.ssh.packages import PackageSource
 from app.ssh.power import PowerAction
 from app.ssh.updates import PendingPackage
@@ -2511,6 +2518,49 @@ async def honeypot_status_tab(
     return response
 
 
+async def _load_readonly_state(
+    honeypot: Honeypot, settings: Settings
+) -> tuple[str | None, str | None]:
+    """`(state, error)` — see `app.ssh.readonly`."""
+    try:
+        async_result = tasks.check_honeypot_readonly_status.delay(str(honeypot.id))
+        result = await asyncio.to_thread(
+            async_result.get, timeout=settings.ssh_connect_timeout + 15
+        )
+        if isinstance(result, dict):
+            if result.get("ok"):
+                return str(result.get("state")), None
+            return None, str(result.get("error") or "Unknown error.")
+    except CeleryTimeoutError:
+        return None, "The status check did not finish in time."
+    except Exception as exc:  # noqa: BLE001 - reported, not swallowed
+        return None, str(exc)
+    return None, "Unknown error."
+
+
+async def _load_opencanary_config(
+    honeypot: Honeypot, settings: Settings
+) -> tuple[dict[str, Any] | None, str | None]:
+    """`(config, error)` — a fresh SSH read of `opencanary.conf`, see
+    `app.ssh.opencanary_config`'s module docstring for why this is never
+    cached."""
+    try:
+        async_result = tasks.read_honeypot_opencanary_config.delay(str(honeypot.id))
+        result = await asyncio.to_thread(
+            async_result.get, timeout=settings.ssh_connect_timeout + 15
+        )
+        if isinstance(result, dict):
+            if result.get("ok"):
+                config = result.get("config")
+                return (config if isinstance(config, dict) else {}), None
+            return None, str(result.get("error") or "Unknown error.")
+    except CeleryTimeoutError:
+        return None, "Reading the config did not finish in time."
+    except Exception as exc:  # noqa: BLE001 - reported, not swallowed
+        return None, str(exc)
+    return None, "Unknown error."
+
+
 @router.get("/{honeypot_id}/config", dependencies=[_terminal])
 async def honeypot_config_tab(
     request: Request,
@@ -2518,32 +2568,22 @@ async def honeypot_config_tab(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Response:
-    """Honeypot config — for now, just the read-only root filesystem
-    toggle (see `app.ssh.readonly`'s module docstring for why this exists
-    and how it works). A live SSH round trip on every load, same as the
-    Logs tab; nothing here is persisted."""
+    """Honeypot config — the read-only root filesystem toggle (see
+    `app.ssh.readonly`) and the OpenCanary module editor (see
+    `app.ssh.opencanary_config`). Two independent live SSH round trips on
+    every load, same as the Logs tab; nothing here is persisted."""
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
     settings = get_settings()
 
     readonly_state: str | None = None
+    opencanary_config: dict[str, Any] | None = None
     error: str | None = None
     if not honeypot.host_key_fingerprint:
         error = "Confirm the server's key fingerprint on the Overview tab first."
     else:
-        try:
-            async_result = tasks.check_honeypot_readonly_status.delay(str(honeypot.id))
-            result = await asyncio.to_thread(
-                async_result.get, timeout=settings.ssh_connect_timeout + 15
-            )
-            if isinstance(result, dict):
-                if result.get("ok"):
-                    readonly_state = str(result.get("state"))
-                else:
-                    error = str(result.get("error") or "Unknown error.")
-        except CeleryTimeoutError:
-            error = "The status check did not finish in time."
-        except Exception as exc:  # noqa: BLE001 - reported, not swallowed
-            error = str(exc)
+        readonly_state, readonly_error = await _load_readonly_state(honeypot, settings)
+        opencanary_config, config_error = await _load_opencanary_config(honeypot, settings)
+        error = readonly_error or config_error
 
     csrf_token, new_cookie = get_or_create_csrf_token(request)
     response = templates.TemplateResponse(
@@ -2555,7 +2595,103 @@ async def honeypot_config_tab(
             "active_tab": "config",
             "csrf_token": csrf_token,
             "readonly_state": readonly_state,
+            "opencanary_config": opencanary_config,
+            "opencanary_modules": OPENCANARY_MODULES,
+            "field_value": field_value,
+            "module_enabled": module_enabled,
             "error": error,
+            "saved": False,
+        },
+    )
+    if new_cookie:
+        set_csrf_cookie(response, new_cookie)
+    return response
+
+
+@router.post(
+    "/{honeypot_id}/config/modules", dependencies=[_terminal, Depends(verify_csrf)]
+)
+async def save_honeypot_opencanary_config_endpoint(
+    request: Request,
+    honeypot_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Saves the OpenCanary module editor form — reads the current config
+    fresh, merges the submitted values in (see
+    `app.ssh.opencanary_config.apply_form_to_config` for exactly what
+    "merges" means — every key this editor doesn't manage passes through
+    untouched), writes it back, and restarts whatever needs restarting.
+    Never a partial save: reading and writing both happen in this one
+    request, no separate "stage changes then apply" step."""
+    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    settings = get_settings()
+
+    error: str | None = None
+    saved = False
+    readonly_state: str | None = None
+    opencanary_config: dict[str, Any] | None = None
+    if not honeypot.host_key_fingerprint:
+        error = "Confirm the server's key fingerprint on the Overview tab first."
+    else:
+        current_config, read_error = await _load_opencanary_config(honeypot, settings)
+        if read_error or current_config is None:
+            error = read_error or "Could not read the current config."
+        else:
+            form = await request.form()
+            form_values = {k: str(v) for k, v in form.multi_items() if isinstance(v, str)}
+            updated_config = apply_form_to_config(current_config, form_values)
+            try:
+                async_result = tasks.write_honeypot_opencanary_config.delay(
+                    str(honeypot.id), updated_config
+                )
+                result = await asyncio.to_thread(
+                    async_result.get, timeout=settings.ssh_connect_timeout + 60
+                )
+                if isinstance(result, dict):
+                    if result.get("ok"):
+                        saved = True
+                        opencanary_config = updated_config
+                    else:
+                        error = str(result.get("error") or "Unknown error.")
+            except CeleryTimeoutError:
+                error = "Applying the config did not finish in time."
+            except Exception as exc:  # noqa: BLE001 - reported, not swallowed
+                error = str(exc)
+
+        readonly_state, readonly_error = await _load_readonly_state(honeypot, settings)
+        error = error or readonly_error
+        if opencanary_config is None:
+            opencanary_config, _ = await _load_opencanary_config(honeypot, settings)
+
+    await log_event(
+        db,
+        request=request,
+        action="honeypot.opencanary_config.save",
+        summary=f'Saved OpenCanary config on "{honeypot.name}"',
+        outcome=AuditOutcome.SUCCESS if error is None else AuditOutcome.FAILURE,
+        target_type="honeypot",
+        target_id=honeypot.id,
+        target_label=honeypot.name,
+        details={"error": error} if error else None,
+    )
+
+    csrf_token, new_cookie = get_or_create_csrf_token(request)
+    response = templates.TemplateResponse(
+        request,
+        "honeypots/config.html",
+        {
+            "honeypot": honeypot,
+            "tabs": _honeypot_tabs(request, honeypot, current_user),
+            "active_tab": "config",
+            "csrf_token": csrf_token,
+            "readonly_state": readonly_state,
+            "opencanary_config": opencanary_config,
+            "opencanary_modules": OPENCANARY_MODULES,
+            "field_value": field_value,
+            "module_enabled": module_enabled,
+            "error": error,
+            "saved": saved,
         },
     )
     if new_cookie:

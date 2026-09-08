@@ -62,4 +62,65 @@
       <p class="hint">{{ t(request, 'honeypots.confirm_fingerprint_first') }}</p>
     {% endif %}
   </section>
+
+  {% if opencanary_config is not none %}
+    <section class="panel">
+      <h2>{{ t(request, 'honeypots.config.opencanary_heading') }}</h2>
+      <p class="hint">{{ t(request, 'honeypots.config.opencanary_hint') }}</p>
+
+      {% if saved %}
+        <div class="alert alert-ok"><p>{{ t(request, 'honeypots.config.saved') }}</p></div>
+      {% endif %}
+
+      <form method="post" action="/honeypots/{{ honeypot.id }}/config/modules" class="form"
+            autocomplete="off" style="max-width: none">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+        {% for module in opencanary_modules %}
+          {% set enabled = module_enabled(opencanary_config, module) %}
+          <details class="opencanary-module" {% if enabled %}open{% endif %}>
+            <summary>
+              <span class="opencanary-module-name">{{ t(request, module.name_key) }}</span>
+              {% if module.enabled_key %}
+                {% if enabled %}
+                  <span class="badge badge-ok">{{ t(request, 'honeypots.config.enabled_badge') }}</span>
+                {% else %}
+                  <span class="badge badge-warn">{{ t(request, 'honeypots.config.disabled_badge') }}</span>
+                {% endif %}
+              {% endif %}
+            </summary>
+            <div class="opencanary-module-body">
+              {% if module.hint_key %}<p class="hint">{{ t(request, module.hint_key) }}</p>{% endif %}
+              {% if module.enabled_key %}
+                <label>
+                  <input type="checkbox" name="{{ module.enabled_key }}" {% if enabled %}checked{% endif %}>
+                  {{ t(request, 'honeypots.config.field.enabled') }}
+                </label>
+              {% endif %}
+              {% for f in module.fields %}
+                {% set value = field_value(opencanary_config, f) %}
+                {% if f.type == 'bool' %}
+                  <label>
+                    <input type="checkbox" name="{{ f.key }}" {% if value %}checked{% endif %}>
+                    {{ t(request, f.label_key) }}
+                  </label>
+                {% else %}
+                  <label for="field-{{ f.key }}">{{ t(request, f.label_key) }}</label>
+                  <input
+                    type="{{ 'number' if f.type == 'int' else 'text' }}"
+                    id="field-{{ f.key }}"
+                    name="{{ f.key }}"
+                    value="{{ value if value is not none else '' }}"
+                  >
+                {% endif %}
+                {% if f.hint_key %}<p class="hint">{{ t(request, f.hint_key) }}</p>{% endif %}
+              {% endfor %}
+            </div>
+          </details>
+        {% endfor %}
+
+        <button type="submit" class="button">{{ t(request, 'honeypots.config.save_modules') }}</button>
+      </form>
+    </section>
+  {% endif %}
 {% endblock %}

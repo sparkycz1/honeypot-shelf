@@ -32,6 +32,7 @@ _SECTION_MARKERS = (
     "APT_SUDO",
     "SHUTDOWN_SUDO",
     "DMIDECODE_SUDO",
+    "SYSTEMCTL_SUDO",
     "FLATPAK_SNAP_PRESENT",
     "FLATPAK_SNAP_SUDO",
 )
@@ -49,6 +50,9 @@ READINESS_COMMAND = (
     "echo ===DMIDECODE_SUDO===; "
     '[ "$is_root" = 1 ] && echo ok || '
     "(sudo -n dmidecode -t 17 >/dev/null 2>&1 && echo ok || echo missing); "
+    "echo ===SYSTEMCTL_SUDO===; "
+    '[ "$is_root" = 1 ] && echo ok || '
+    "(sudo -n systemctl --version >/dev/null 2>&1 && echo ok || echo missing); "
     "echo ===FLATPAK_SNAP_PRESENT===; "
     "(command -v flatpak >/dev/null 2>&1 || command -v snap >/dev/null 2>&1) "
     "&& echo yes || echo no; "
@@ -69,6 +73,7 @@ class ReadinessResult(TypedDict):
     apt_sudo_ok: bool
     shutdown_sudo_ok: bool
     dmidecode_sudo_ok: bool
+    systemctl_sudo_ok: bool
     flatpak_or_snap_present: bool
     flatpak_snap_sudo_ok: bool
 
@@ -91,6 +96,7 @@ def parse_readiness_output(raw: str) -> ReadinessResult:
         apt_sudo_ok=sections.get("APT_SUDO") == "ok",
         shutdown_sudo_ok=sections.get("SHUTDOWN_SUDO") == "ok",
         dmidecode_sudo_ok=sections.get("DMIDECODE_SUDO") == "ok",
+        systemctl_sudo_ok=sections.get("SYSTEMCTL_SUDO") == "ok",
         flatpak_or_snap_present=sections.get("FLATPAK_SNAP_PRESENT") == "yes",
         flatpak_snap_sudo_ok=sections.get("FLATPAK_SNAP_SUDO") == "ok",
     )
@@ -102,6 +108,10 @@ _REQUIREMENT_LABELS: tuple[tuple[str, str], ...] = (
     ("apt_sudo_ok", "passwordless sudo for apt-get (needed for checking/running updates)"),
     ("shutdown_sudo_ok", "passwordless sudo for shutdown (needed for reboot/power actions)"),
     ("dmidecode_sudo_ok", "passwordless sudo for dmidecode (needed for the RAM speed fact)"),
+    (
+        "systemctl_sudo_ok",
+        "passwordless sudo for systemctl (needed for the Honeypot Config tab's module editor)",
+    ),
     ("ncurses_term_installed", "ncurses-term (needed for full-color terminal output)"),
 )
 
