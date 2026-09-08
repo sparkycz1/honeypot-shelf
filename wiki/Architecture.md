@@ -179,6 +179,24 @@ it on once `TRUSTED_PROXY_IPS` is narrowed to your real proxy's own
 address (not the default `*`) — see `app.core.proxy_headers`'s own
 docstring.
 
+## 🌱 Initialize: provisioning a brand new device
+
+[Initialize](Honeypot-Initialize.md) (top nav) is the one write path in
+this app that connects over SSH to a device **that has no `Honeypot` row
+at all** — every other SSH-connecting feature (`app.ssh.*`, all gated
+through a real `Honeypot`) requires one first. It's a standalone,
+one-shot provisioning script (`app.ssh.initialize`, dispatched by
+`app.tasks.jobs.run_honeypot_initialize`) adapted from the team's own
+Ansible playbook, run before a device is ever added to HoneyHive.
+Because there's no prior `Honeypot.host_key_fingerprint` to check
+against, host-key trust here is deliberately trust-on-first-use — the one
+explicit exception to the strict pinned-verification policy
+`app.ssh.client` otherwise enforces everywhere. A throwaway, never-
+persisted `Honeypot` instance carries the connection details through to
+the same `open_connection`/`run_command` helpers every other honeypot
+feature uses, so that policy still applies uniformly once the
+(TOFU-trusted) fingerprint is set on it.
+
 ## 🍯 Honeypot data model
 
 - **`Company`** — a tenant. One row per customer.

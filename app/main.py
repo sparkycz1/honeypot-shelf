@@ -38,6 +38,7 @@ from app.web.routes import (
     honeypots,
     inform,
     ingest,
+    initialize,
     live_ws,
     scheduling,
     terminal_ws,
@@ -193,6 +194,7 @@ def create_app() -> FastAPI:
     app.include_router(dashboard.router)
     app.include_router(honeypots.router)
     app.include_router(companies.router)
+    app.include_router(initialize.router)
     app.include_router(scheduling.router)
     app.include_router(audit.router)
     app.include_router(inform.router)

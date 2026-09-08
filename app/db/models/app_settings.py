@@ -145,6 +145,13 @@ class AppSettings(Base):
     # login.html.
     oidc_provider_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
+    # --- NetBird (app.ssh.initialize) ---
+    # Self-hosted management server URL, e.g. "https://netbird.example.com:443".
+    # Blank (the default) means "NetBird Cloud" — `netbird up` omits
+    # `--management-url` entirely rather than passing an empty string, so a
+    # freshly-initialized honeypot joins the public management service.
+    netbird_management_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
     # --- Syslog forwarding of audit log entries (app.audit_syslog), e.g. to
     # a SIEM such as Wazuh. Best-effort/fire-and-forget: the DB row is always
     # the source of truth, this is only ever a live mirror of it. ---

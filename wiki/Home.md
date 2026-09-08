@@ -30,13 +30,15 @@ the actual app, not just unit tests): the full auth stack; company-scoped
 RBAC; event ingestion and the Dashboard; full Honeypot management
 (create/edit/delete, host-key discovery/trust, the SSH terminal, Logs,
 facts/packages/services refresh, system updates with live output, power
-actions); Company management and fleet-wide/"All honeypots" bulk actions;
-Scheduling; the REST API mirroring all of the above; Users and Settings
-(LDAP/OIDC/syslog forwarding, SSH key rotation, retention policies). A
-45-test suite covers the RBAC/scoping-sensitive paths. See
-[CLAUDE.md](../CLAUDE.md)'s "Current state" section for exact gaps
-(mainly: i18n coverage is still just the site chrome, and a lint/mypy
-cleanup pass hasn't happened yet).
+actions); [Initialize](Honeypot-Initialize.md) — provisioning a brand new
+Raspberry Pi into a working honeypot (packages, OpenCanary, NetBird) over
+SSH before it's ever added to HoneyHive; Company management and
+fleet-wide/"All honeypots" bulk actions; Scheduling; the REST API
+mirroring all of the above; Users and Settings (LDAP/OIDC/syslog
+forwarding, SSH key rotation, retention policies). An 80-test suite
+covers the RBAC/scoping-sensitive paths. See [CLAUDE.md](../CLAUDE.md)'s
+"Current state" section for exact gaps (mainly: i18n coverage is still
+just the site chrome, and a lint/mypy cleanup pass hasn't happened yet).
 
 ### Product decisions (settled)
 
