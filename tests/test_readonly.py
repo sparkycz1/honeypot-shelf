@@ -1,4 +1,4 @@
-"""The Honeypot Status tab's read-only root filesystem toggle. See
+"""The Honeypot Config tab's read-only root filesystem toggle. See
 app.ssh.readonly and app.web.routes.honeypots's status/config routes.
 """
 
@@ -52,7 +52,19 @@ async def _create_pinned_honeypot(db_session_factory, company_id) -> Honeypot:
     return honeypot
 
 
-async def test_status_tab_shows_up_for_a_write_user(client, db_session_factory, celery_calls):
+async def test_status_tab_is_an_empty_placeholder(client, db_session_factory):
+    company = await create_company(db_session_factory)
+    honeypot = await _create_pinned_honeypot(db_session_factory, company.id)
+
+    response = await client.get(f"/honeypots/{honeypot.id}/status")
+    assert response.status_code == 200
+    assert "Honeypot status" in response.text
+    assert "Read-only root filesystem" not in response.text
+
+
+async def test_config_tab_shows_readonly_toggle_for_a_write_user(
+    client, db_session_factory, celery_calls
+):
     company = await create_company(db_session_factory)
     honeypot = await _create_pinned_honeypot(db_session_factory, company.id)
     celery_calls.result_for["app.tasks.jobs.check_honeypot_readonly_status"] = {
@@ -60,13 +72,13 @@ async def test_status_tab_shows_up_for_a_write_user(client, db_session_factory, 
         "state": "disabled",
     }
 
-    response = await client.get(f"/honeypots/{honeypot.id}/status")
+    response = await client.get(f"/honeypots/{honeypot.id}/config")
     assert response.status_code == 200
     assert "Read-only root filesystem" in response.text
     assert "writable" in response.text
 
 
-async def test_status_tab_is_hidden_and_forbidden_for_read_only_user(
+async def test_status_and_config_tabs_are_hidden_and_forbidden_for_read_only_user(
     client, login_as, db_session_factory
 ):
     company = await create_company(db_session_factory)
@@ -75,18 +87,10 @@ async def test_status_tab_is_hidden_and_forbidden_for_read_only_user(
 
     overview = await client.get(f"/honeypots/{honeypot.id}")
     assert 'href="/honeypots/' + str(honeypot.id) + '/status"' not in overview.text
+    assert 'href="/honeypots/' + str(honeypot.id) + '/config"' not in overview.text
 
-    response = await client.get(f"/honeypots/{honeypot.id}/status")
-    assert response.status_code == 403
-
-
-async def test_config_tab_renders_for_a_write_user(client, db_session_factory):
-    company = await create_company(db_session_factory)
-    honeypot = await _create_pinned_honeypot(db_session_factory, company.id)
-
-    response = await client.get(f"/honeypots/{honeypot.id}/config")
-    assert response.status_code == 200
-    assert "Honeypot config" in response.text
+    assert (await client.get(f"/honeypots/{honeypot.id}/status")).status_code == 403
+    assert (await client.get(f"/honeypots/{honeypot.id}/config")).status_code == 403
 
 
 async def test_enable_readonly_dispatches_task_and_redirects(
@@ -95,18 +99,18 @@ async def test_enable_readonly_dispatches_task_and_redirects(
     company = await create_company(db_session_factory)
     honeypot = await _create_pinned_honeypot(db_session_factory, company.id)
 
-    form = await client.get(f"/honeypots/{honeypot.id}/status")
+    form = await client.get(f"/honeypots/{honeypot.id}/config")
     match = re.search(r'name="csrf_token" value="([^"]+)"', form.text)
     assert match
     csrf_token = match.group(1)
 
     response = await client.post(
-        f"/honeypots/{honeypot.id}/status/readonly",
+        f"/honeypots/{honeypot.id}/config/readonly",
         data={"enable": "true", "csrf_token": csrf_token},
         follow_redirects=False,
     )
     assert response.status_code == 303
-    assert response.headers["location"] == f"/honeypots/{honeypot.id}/status"
+    assert response.headers["location"] == f"/honeypots/{honeypot.id}/config"
     names = celery_calls.names
     assert "app.tasks.jobs.set_honeypot_readonly" in names
     call = next(c for c in celery_calls if c[0] == "app.tasks.jobs.set_honeypot_readonly")

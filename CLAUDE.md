@@ -95,7 +95,7 @@ CRUD (create/edit/delete, host-key discovery/trust, facts/packages/
 services refresh, the SSH terminal, the Logs tab — journal, a clickable
 `ls`-based file browser, and a one-click shortcut to OpenCanary's own
 log — system updates with live output, power actions, and a Honeypot
-Status tab toggling the read-only root filesystem Raspberry Pi OS's own
+Config tab toggling the read-only root filesystem Raspberry Pi OS's own
 overlay support provides, protecting the SD card from write wear — see
 `app.ssh.readonly`), Company CRUD and bulk actions ("All honeypots"),
 Scheduling (cron-driven actions, company-scoped via

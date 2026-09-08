@@ -31,7 +31,7 @@ RBAC; event ingestion and the Dashboard; full Honeypot management
 (create/edit/delete, host-key discovery/trust, the SSH terminal, Logs
 (journal, a clickable file browser, and a shortcut to OpenCanary's own
 log), facts/packages/services refresh, system updates with live output,
-power actions, and a Honeypot Status tab toggling the read-only root
+power actions, and a Honeypot Config tab toggling the read-only root
 filesystem for SD card longevity); [Initialize](Honeypot-Initialize.md) — provisioning a brand new
 Raspberry Pi into a working honeypot (packages, OpenCanary, NetBird) over
 SSH before it's ever added to HoneyHive; Company management and

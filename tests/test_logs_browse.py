@@ -71,3 +71,5 @@ async def test_browse_lists_directory_entries_as_links(client, db_session_factor
         c for c in celery_calls if c[0] == "app.tasks.jobs.list_honeypot_log_directory"
     )
     assert call[2] == {"path": "/var/log"}
+    # The manual "type a path" fallback stays available inside browse mode.
+    assert 'name="path"' in response.text

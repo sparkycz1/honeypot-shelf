@@ -2491,7 +2491,34 @@ async def honeypot_status_tab(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Response:
-    """Honeypot status — for now, just the read-only root filesystem
+    """Honeypot status — placeholder for a future live-status summary.
+    Empty for now; the Overview tab already covers "is it reachable/
+    online" in the meantime."""
+    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    csrf_token, new_cookie = get_or_create_csrf_token(request)
+    response = templates.TemplateResponse(
+        request,
+        "honeypots/status.html",
+        {
+            "honeypot": honeypot,
+            "tabs": _honeypot_tabs(honeypot, current_user),
+            "active_tab": "status",
+            "csrf_token": csrf_token,
+        },
+    )
+    if new_cookie:
+        set_csrf_cookie(response, new_cookie)
+    return response
+
+
+@router.get("/{honeypot_id}/config", dependencies=[_terminal])
+async def honeypot_config_tab(
+    request: Request,
+    honeypot_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Honeypot config — for now, just the read-only root filesystem
     toggle (see `app.ssh.readonly`'s module docstring for why this exists
     and how it works). A live SSH round trip on every load, same as the
     Logs tab; nothing here is persisted."""
@@ -2521,11 +2548,11 @@ async def honeypot_status_tab(
     csrf_token, new_cookie = get_or_create_csrf_token(request)
     response = templates.TemplateResponse(
         request,
-        "honeypots/status.html",
+        "honeypots/config.html",
         {
             "honeypot": honeypot,
             "tabs": _honeypot_tabs(honeypot, current_user),
-            "active_tab": "status",
+            "active_tab": "config",
             "csrf_token": csrf_token,
             "readonly_state": readonly_state,
             "error": error,
@@ -2537,7 +2564,7 @@ async def honeypot_status_tab(
 
 
 @router.post(
-    "/{honeypot_id}/status/readonly", dependencies=[_terminal, Depends(verify_csrf)]
+    "/{honeypot_id}/config/readonly", dependencies=[_terminal, Depends(verify_csrf)]
 )
 async def set_honeypot_readonly_endpoint(
     request: Request,
@@ -2548,7 +2575,7 @@ async def set_honeypot_readonly_endpoint(
 ) -> Response:
     """Toggles the read-only root filesystem — see `app.ssh.readonly`.
     `enable` is the literal string "true"/"false" from the two buttons on
-    the Status tab, not a checkbox (there's nothing to check — each button
+    the Config tab, not a checkbox (there's nothing to check — each button
     is its own explicit, unambiguous action)."""
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
     settings = get_settings()
@@ -2584,38 +2611,10 @@ async def set_honeypot_readonly_endpoint(
         details={"error": error} if error else None,
     )
 
-    redirect_url = f"/honeypots/{honeypot.id}/status"
+    redirect_url = f"/honeypots/{honeypot.id}/config"
     if request.headers.get("HX-Request") == "true":
         return Response(status_code=status.HTTP_200_OK, headers={"HX-Redirect": redirect_url})
     return RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
-
-
-@router.get("/{honeypot_id}/config", dependencies=[_terminal])
-async def honeypot_config_tab(
-    request: Request,
-    honeypot_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> Response:
-    """Honeypot config — placeholder for editing `opencanary.conf`'s own
-    module settings directly from here. Empty for now; the SSH terminal
-    and the Logs tab already cover "look at/change something on the
-    honeypot" in the meantime."""
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    csrf_token, new_cookie = get_or_create_csrf_token(request)
-    response = templates.TemplateResponse(
-        request,
-        "honeypots/config.html",
-        {
-            "honeypot": honeypot,
-            "tabs": _honeypot_tabs(honeypot, current_user),
-            "active_tab": "config",
-            "csrf_token": csrf_token,
-        },
-    )
-    if new_cookie:
-        set_csrf_cookie(response, new_cookie)
-    return response
 
 
 @router.get("/{honeypot_id}/power")
