@@ -95,8 +95,13 @@ class PendingInitializeRun:
     device_name: str
     auth_method: str
     password: str | None
+    # The honeypot's own VPN, "none"/"netbird"/"wireguard" — independent of
+    # HoneyHive's own choice in Settings -> VPN. See
+    # app.ssh.initialize.build_initialize_command.
+    vpn_provider: str
     netbird_setup_key: str | None
     netbird_management_url: str | None
+    wireguard_config: str | None
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
@@ -141,13 +146,16 @@ async def initialize_submit(
     port: int = Form(22),
     auth_method: str = Form(AuthMethod.SSH_KEY.value),
     password: str = Form(""),
+    vpn_provider: str = Form("none"),
     netbird_setup_key: str = Form(""),
     netbird_management_url: str = Form(""),
+    wireguard_config: str = Form(""),
 ) -> Response:
     ip_address = ip_address.strip()
     device_name = device_name.strip()
     username = username.strip()
     netbird_management_url = netbird_management_url.strip()
+    wireguard_config = wireguard_config.strip()
 
     errors: list[str] = []
     if not ip_address:
@@ -165,11 +173,15 @@ async def initialize_submit(
         errors.append("Unknown authentication method.")
     if auth_method == AuthMethod.PASSWORD.value and not password:
         errors.append("A password is required for password authentication.")
+    if vpn_provider not in ("none", "netbird", "wireguard"):
+        errors.append("Unknown VPN provider.")
     if netbird_management_url and not (
         netbird_management_url.startswith("http://")
         or netbird_management_url.startswith("https://")
     ):
         errors.append('NetBird management URL must start with "http://" or "https://".')
+    if vpn_provider == "wireguard" and not wireguard_config:
+        errors.append("A WireGuard config is required when WireGuard is selected.")
 
     if errors:
         return await _render_form(
@@ -180,6 +192,7 @@ async def initialize_submit(
             username=username,
             port=port,
             auth_method=auth_method,
+            vpn_provider=vpn_provider,
         )
 
     _purge_stale_runs()
@@ -191,8 +204,10 @@ async def initialize_submit(
         device_name=device_name,
         auth_method=auth_method,
         password=password or None,
+        vpn_provider=vpn_provider,
         netbird_setup_key=netbird_setup_key.strip() or None,
         netbird_management_url=netbird_management_url or None,
+        wireguard_config=wireguard_config or None,
     )
     return RedirectResponse(
         url=f"/initialize/run/{run_id}", status_code=status.HTTP_303_SEE_OTHER

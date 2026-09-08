@@ -8,6 +8,7 @@ Settings-page config rather than environment variables). Superadmin-only.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 
 from celery.exceptions import TimeoutError as CeleryTimeoutError
 from fastapi import APIRouter, Depends, Form, Request, Response, status
@@ -26,12 +27,14 @@ from app.db.models.app_settings import (
     DEFAULT_OIDC_SCOPES,
     DEFAULT_OIDC_USERNAME_CLAIM,
     DEFAULT_SYSLOG_PORT,
+    AppSettings,
     SyslogProtocol,
+    VpnProvider,
 )
 from app.db.models.audit_log import AuditOutcome
 from app.db.models.honeypot import AuthMethod, Honeypot
 from app.db.session import get_db
-from app.services import netbird
+from app.services import netbird, wireguard
 from app.ssh.identity import (
     activate_pending_identity,
     discard_pending_identity,
@@ -48,7 +51,7 @@ router = APIRouter(prefix="/settings", dependencies=[Depends(require_superadmin)
 # there's only ever one GET route here, not one per tab, since every POST
 # handler below redirects back to /settings regardless of which tab it
 # belongs to).
-_TAB_KEYS = ("general", "security", "integrations", "netbird")
+_TAB_KEYS = ("general", "security", "integrations", "vpn")
 _VALID_TABS = set(_TAB_KEYS)
 _DEFAULT_TAB = "general"
 
@@ -91,9 +94,10 @@ async def _render_settings(
     # Only fetched for the tab that actually shows it — this is a
     # subprocess round trip (app.services.netbird), not worth paying on
     # every other tab's page load/redirect.
-    if tab == "netbird" and "netbird_status" not in context:
+    if tab == "vpn" and "netbird_status" not in context:
         context["netbird_status"] = await netbird.status()
         context["netbird_log"] = netbird.tail_log()
+        context["wireguard_status"] = await wireguard.status()
     response = templates.TemplateResponse(request, "settings/index.html", context)
     if new_cookie:
         set_csrf_cookie(response, new_cookie)
@@ -554,6 +558,24 @@ async def update_syslog_settings(
     return RedirectResponse(url="/settings?tab=integrations", status_code=status.HTTP_303_SEE_OTHER)
 
 
+async def _deactivate_other_provider(
+    db: AsyncSession, app_settings: AppSettings, *, keep: VpnProvider
+) -> None:
+    """Enforces mutual exclusivity (see `VpnProvider`'s docstring): when
+    one provider successfully connects, best-effort disconnect whichever
+    other one was active. Best-effort on purpose — the old provider being
+    unreachable (sidecar restarted, etc.) must never block switching to
+    the new one; `vpn_provider` is set to `keep` regardless."""
+    if app_settings.vpn_provider == VpnProvider.NETBIRD and keep != VpnProvider.NETBIRD:
+        with contextlib.suppress(netbird.NetbirdUnavailableError, netbird.NetbirdCommandError):
+            await netbird.disconnect()
+    elif app_settings.vpn_provider == VpnProvider.WIREGUARD and keep != VpnProvider.WIREGUARD:
+        with contextlib.suppress(
+            wireguard.WireguardUnavailableError, wireguard.WireguardCommandError
+        ):
+            await wireguard.disconnect()
+
+
 @router.post("/netbird", dependencies=[Depends(verify_csrf)])
 async def update_netbird_settings(
     request: Request,
@@ -567,7 +589,8 @@ async def update_netbird_settings(
     """Saves the setup key/management URL (if given) and connects — one
     action, not "save" then a separate "connect" click, since a setup key
     is single-use on NetBird's side anyway (see the wiki): there's rarely
-    a reason to save one without immediately using it."""
+    a reason to save one without immediately using it. Connecting here
+    disconnects WireGuard first if that was active — see `VpnProvider`."""
     app_settings = await get_or_create_app_settings(db)
     errors: list[str] = []
 
@@ -582,7 +605,7 @@ async def update_netbird_settings(
         errors.append("A setup key is required to connect.")
 
     if errors:
-        return await _render_settings(request, db, errors, tab="netbird")
+        return await _render_settings(request, db, errors, tab="vpn")
 
     app_settings.netbird_management_url = management_url or None
     if setup_key:
@@ -604,14 +627,15 @@ async def update_netbird_settings(
             outcome=AuditOutcome.FAILURE,
         )
         await db.commit()
-        return await _render_settings(request, db, [str(exc)], tab="netbird")
+        return await _render_settings(request, db, [str(exc)], tab="vpn")
 
-    app_settings.netbird_enabled = True
+    await _deactivate_other_provider(db, app_settings, keep=VpnProvider.NETBIRD)
+    app_settings.vpn_provider = VpnProvider.NETBIRD
     await db.commit()
     await log_event(
         db, request=request, action="settings.netbird.connect", summary="Connected to NetBird"
     )
-    return RedirectResponse(url="/settings?tab=netbird", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url="/settings?tab=vpn", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/netbird/disconnect", dependencies=[Depends(verify_csrf)])
@@ -628,9 +652,10 @@ async def disconnect_netbird(request: Request, db: AsyncSession = Depends(get_db
             outcome=AuditOutcome.FAILURE,
         )
         await db.commit()
-        return await _render_settings(request, db, [str(exc)], tab="netbird")
+        return await _render_settings(request, db, [str(exc)], tab="vpn")
 
-    app_settings.netbird_enabled = False
+    if app_settings.vpn_provider == VpnProvider.NETBIRD:
+        app_settings.vpn_provider = VpnProvider.NONE
     await db.commit()
     await log_event(
         db,
@@ -638,7 +663,7 @@ async def disconnect_netbird(request: Request, db: AsyncSession = Depends(get_db
         action="settings.netbird.disconnect",
         summary="Disconnected from NetBird",
     )
-    return RedirectResponse(url="/settings?tab=netbird", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url="/settings?tab=vpn", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/netbird/restart", dependencies=[Depends(verify_csrf)])
@@ -646,7 +671,7 @@ async def restart_netbird(request: Request, db: AsyncSession = Depends(get_db)) 
     app_settings = await get_or_create_app_settings(db)
     if app_settings.netbird_setup_key_encrypted is None:
         return await _render_settings(
-            request, db, ["Connect NetBird at least once before restarting it."], tab="netbird"
+            request, db, ["Connect NetBird at least once before restarting it."], tab="vpn"
         )
     setup_key = decrypt_secret(app_settings.netbird_setup_key_encrypted)
 
@@ -663,12 +688,14 @@ async def restart_netbird(request: Request, db: AsyncSession = Depends(get_db)) 
             outcome=AuditOutcome.FAILURE,
         )
         await db.commit()
-        return await _render_settings(request, db, [str(exc)], tab="netbird")
+        return await _render_settings(request, db, [str(exc)], tab="vpn")
 
+    app_settings.vpn_provider = VpnProvider.NETBIRD
+    await db.commit()
     await log_event(
         db, request=request, action="settings.netbird.restart", summary="Restarted NetBird"
     )
-    return RedirectResponse(url="/settings?tab=netbird", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url="/settings?tab=vpn", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/netbird/status-panel")
@@ -682,4 +709,115 @@ async def netbird_status_panel(request: Request) -> Response:
 async def netbird_log_panel(request: Request) -> Response:
     return templates.TemplateResponse(
         request, "partials/netbird_log.html", {"netbird_log": netbird.tail_log()}
+    )
+
+
+@router.post("/wireguard", dependencies=[Depends(verify_csrf)])
+async def update_wireguard_settings(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    # Blank = keep the existing config unchanged, just reconnect — same
+    # convention as NetBird's setup key above.
+    wireguard_config: str = Form(""),
+) -> Response:
+    """Saves the pasted wg-quick config (if given) and connects — see
+    `update_netbird_settings` for why this is one action, not two.
+    Connecting here disconnects NetBird first if that was active."""
+    app_settings = await get_or_create_app_settings(db)
+    config = wireguard_config.strip()
+    if not config and app_settings.wireguard_config_encrypted is None:
+        return await _render_settings(
+            request, db, ["A WireGuard config is required to connect."], tab="vpn"
+        )
+
+    if config:
+        app_settings.wireguard_config_encrypted = encrypt_secret(config)
+    else:
+        assert app_settings.wireguard_config_encrypted is not None
+        config = decrypt_secret(app_settings.wireguard_config_encrypted)
+
+    try:
+        await wireguard.connect(config=config)
+    except (wireguard.WireguardUnavailableError, wireguard.WireguardCommandError) as exc:
+        await log_event(
+            db,
+            request=request,
+            action="settings.wireguard.connect",
+            summary=f"Failed to connect WireGuard: {exc}",
+            outcome=AuditOutcome.FAILURE,
+        )
+        await db.commit()
+        return await _render_settings(request, db, [str(exc)], tab="vpn")
+
+    await _deactivate_other_provider(db, app_settings, keep=VpnProvider.WIREGUARD)
+    app_settings.vpn_provider = VpnProvider.WIREGUARD
+    await db.commit()
+    await log_event(
+        db, request=request, action="settings.wireguard.connect", summary="Connected WireGuard"
+    )
+    return RedirectResponse(url="/settings?tab=vpn", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/wireguard/disconnect", dependencies=[Depends(verify_csrf)])
+async def disconnect_wireguard(request: Request, db: AsyncSession = Depends(get_db)) -> Response:
+    app_settings = await get_or_create_app_settings(db)
+    try:
+        await wireguard.disconnect()
+    except (wireguard.WireguardUnavailableError, wireguard.WireguardCommandError) as exc:
+        await log_event(
+            db,
+            request=request,
+            action="settings.wireguard.disconnect",
+            summary=f"Failed to disconnect WireGuard: {exc}",
+            outcome=AuditOutcome.FAILURE,
+        )
+        await db.commit()
+        return await _render_settings(request, db, [str(exc)], tab="vpn")
+
+    if app_settings.vpn_provider == VpnProvider.WIREGUARD:
+        app_settings.vpn_provider = VpnProvider.NONE
+    await db.commit()
+    await log_event(
+        db,
+        request=request,
+        action="settings.wireguard.disconnect",
+        summary="Disconnected WireGuard",
+    )
+    return RedirectResponse(url="/settings?tab=vpn", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/wireguard/restart", dependencies=[Depends(verify_csrf)])
+async def restart_wireguard(request: Request, db: AsyncSession = Depends(get_db)) -> Response:
+    app_settings = await get_or_create_app_settings(db)
+    if app_settings.wireguard_config_encrypted is None:
+        return await _render_settings(
+            request, db, ["Connect WireGuard at least once before restarting it."], tab="vpn"
+        )
+    config = decrypt_secret(app_settings.wireguard_config_encrypted)
+
+    try:
+        await wireguard.restart(config=config)
+    except (wireguard.WireguardUnavailableError, wireguard.WireguardCommandError) as exc:
+        await log_event(
+            db,
+            request=request,
+            action="settings.wireguard.restart",
+            summary=f"Failed to restart WireGuard: {exc}",
+            outcome=AuditOutcome.FAILURE,
+        )
+        await db.commit()
+        return await _render_settings(request, db, [str(exc)], tab="vpn")
+
+    app_settings.vpn_provider = VpnProvider.WIREGUARD
+    await db.commit()
+    await log_event(
+        db, request=request, action="settings.wireguard.restart", summary="Restarted WireGuard"
+    )
+    return RedirectResponse(url="/settings?tab=vpn", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.get("/wireguard/status-panel")
+async def wireguard_status_panel(request: Request) -> Response:
+    return templates.TemplateResponse(
+        request, "partials/wireguard_status.html", {"wireguard_status": await wireguard.status()}
     )

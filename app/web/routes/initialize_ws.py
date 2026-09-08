@@ -227,8 +227,10 @@ async def initialize_websocket(websocket: WebSocket, run_id: str) -> None:
         script = build_initialize_command(
             device_name=run.device_name,
             service_user=service_user_for(run.username),
+            vpn_provider=run.vpn_provider,
             netbird_setup_key=run.netbird_setup_key,
             netbird_management_url=run.netbird_management_url,
+            wireguard_config=run.wireguard_config,
         )
         script = wrap_for_sudo(
             script,

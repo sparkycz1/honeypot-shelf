@@ -276,15 +276,20 @@ def build_initialize_command(
     *,
     device_name: str,
     service_user: str,
-    netbird_setup_key: str | None,
-    netbird_management_url: str | None,
+    vpn_provider: str = "none",
+    netbird_setup_key: str | None = None,
+    netbird_management_url: str | None = None,
+    wireguard_config: str | None = None,
 ) -> str:
     """Returns one `set -e` shell script provisioning a fresh device end to
     end: base packages, timezone/locale, a full `apt` upgrade, the
     OpenCanary venv + systemd service, hostname/`/etc/hosts`, `vim`/bash
-    config, NetBird (joining it if a setup key was given), OpenCanary's
-    own config (`--copyconfig`), and the portscan/Samba host-side prep
-    described in the module docstring above.
+    config, one of NetBird/WireGuard/nothing per `vpn_provider` (see
+    `app.web.routes.initialize`'s VPN field — this is the honeypot's own
+    connection, not HoneyHive's own; see wiki/Architecture.md's "VPN
+    connectivity" section for how the two relate), OpenCanary's own config
+    (`--copyconfig`), and the portscan/Samba host-side prep described in
+    the module docstring above.
     """
     name = shlex.quote(device_name.strip())
     apt_packages = " ".join(shlex.quote(p) for p in dict.fromkeys(_APT_PACKAGES))
@@ -357,27 +362,47 @@ def build_initialize_command(
     lines.append(_heredoc("/etc/vim/vimrc", _VIMRC, "HONEYHIVE_VIMRC").rstrip())
     lines.append(_heredoc("/etc/bash.bashrc", _BASHRC, "HONEYHIVE_BASHRC").rstrip())
 
-    # --- NetBird: add the repo, install, and (if a setup key was given)
-    # join the network. Installing without joining is also a valid
-    # outcome — `netbird up` only runs when a key is present. ---
-    lines.append(_step("Installing NetBird"))
-    lines.append(
-        "curl -sSL https://pkgs.netbird.io/debian/public.key | "
-        "gpg --dearmor -o /usr/share/keyrings/netbird-archive-keyring.gpg"
-    )
-    lines.append(
-        "echo 'deb [signed-by=/usr/share/keyrings/netbird-archive-keyring.gpg] "
-        "https://pkgs.netbird.io/debian stable main' > /etc/apt/sources.list.d/netbird.list"
-    )
-    lines.append("apt-get update -y")
-    lines.append("apt-get install -y netbird")
-    if netbird_setup_key:
-        lines.append(_step("Joining the NetBird network"))
-        key = shlex.quote(netbird_setup_key.strip())
-        up_cmd = f"netbird up --setup-key {key}"
-        if netbird_management_url:
-            up_cmd += f" --management-url {shlex.quote(netbird_management_url.strip())}"
-        lines.append(up_cmd)
+    # --- VPN: at most one of NetBird or WireGuard, per `vpn_provider` —
+    # this is the honeypot's *own* connection (mirrors, but is independent
+    # of, HoneyHive's own VPN choice in Settings -> VPN). "none" (the
+    # default) skips this whole section — neither package is installed
+    # unless actually selected. ---
+    if vpn_provider == "netbird":
+        lines.append(_step("Installing NetBird"))
+        lines.append(
+            "curl -sSL https://pkgs.netbird.io/debian/public.key | "
+            "gpg --dearmor -o /usr/share/keyrings/netbird-archive-keyring.gpg"
+        )
+        lines.append(
+            "echo 'deb [signed-by=/usr/share/keyrings/netbird-archive-keyring.gpg] "
+            "https://pkgs.netbird.io/debian stable main' > /etc/apt/sources.list.d/netbird.list"
+        )
+        lines.append("apt-get update -y")
+        lines.append("apt-get install -y netbird")
+        if netbird_setup_key:
+            lines.append(_step("Joining the NetBird network"))
+            key = shlex.quote(netbird_setup_key.strip())
+            up_cmd = f"netbird up --setup-key {key}"
+            if netbird_management_url:
+                up_cmd += f" --management-url {shlex.quote(netbird_management_url.strip())}"
+            lines.append(up_cmd)
+    elif vpn_provider == "wireguard" and wireguard_config:
+        # HoneyHive doesn't generate WireGuard keys or run its own server
+        # (see wiki/Architecture.md) — this is the exact peer config an
+        # operator already has from wherever they run their WireGuard
+        # server, brought up verbatim, the same as Settings -> VPN does
+        # for HoneyHive's own side.
+        lines.append(_step("Installing WireGuard"))
+        lines.append("apt-get install -y wireguard-tools")
+        lines.append(_step("Joining the WireGuard network"))
+        lines.append(
+            _heredoc(
+                "/etc/wireguard/wg0.conf", wireguard_config.strip() + "\n", "HONEYHIVE_WG_CONF"
+            )
+        )
+        lines.append("chmod 600 /etc/wireguard/wg0.conf")
+        lines.append("systemctl enable wg-quick@wg0")
+        lines.append("wg-quick up wg0 || (wg-quick down wg0 || true; wg-quick up wg0)")
 
     # --- /mnt/tmpfs: a small ramdisk OpenCanary's own log writes to
     # instead of the SD card (see app.ssh.readonly's module docstring —

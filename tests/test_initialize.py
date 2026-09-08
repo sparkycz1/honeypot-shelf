@@ -40,7 +40,8 @@ async def test_get_initialize_form_has_expected_fields(client):
     response = await client.get("/initialize")
     assert response.status_code == 200
     for field in ("ip_address", "device_name", "username", "port", "auth_method", "password",
-                  "netbird_setup_key", "netbird_management_url"):
+                  "vpn_provider", "netbird_setup_key", "netbird_management_url",
+                  "wireguard_config"):
         assert f'name="{field}"' in response.text
 
 
@@ -131,8 +132,10 @@ async def test_initialize_run_history(client, db_session_factory):
         device_name="acme-honey2",
         auth_method="ssh_key",
         password=None,
+        vpn_provider="none",
         netbird_setup_key=None,
         netbird_management_url=None,
+        wireguard_config=None,
     )
     await _persist_initialize_run(
         db_session_factory,
@@ -204,29 +207,54 @@ def test_service_user_for_root_falls_back_to_pi():
     assert service_user_for("alice") == "alice"
 
 
-def test_build_initialize_command_includes_hostname_and_no_netbird_up_without_key():
+def test_build_initialize_command_includes_hostname_and_installs_no_vpn_by_default():
     script = build_initialize_command(
         device_name="acme-honey1",
         service_user="pi",
-        netbird_setup_key=None,
-        netbird_management_url=None,
     )
     assert "hostnamectl set-hostname acme-honey1" in script
     assert "acme-honey1" in script  # /etc/hosts line
+    assert "netbird" not in script
+    assert "wireguard" not in script.lower()
+    assert "User=pi" in script
+
+
+def test_build_initialize_command_installs_netbird_without_joining_when_no_key():
+    script = build_initialize_command(
+        device_name="acme-honey1",
+        service_user="pi",
+        vpn_provider="netbird",
+        netbird_setup_key=None,
+        netbird_management_url=None,
+    )
     assert "apt-get install -y netbird" in script
     assert "netbird up" not in script
-    assert "User=pi" in script
 
 
 def test_build_initialize_command_joins_netbird_when_setup_key_given():
     script = build_initialize_command(
         device_name="acme-honey1",
         service_user="pi",
+        vpn_provider="netbird",
         netbird_setup_key="abc123",
         netbird_management_url="https://netbird.example.com:443",
     )
     expected = "netbird up --setup-key abc123 --management-url https://netbird.example.com:443"
     assert expected in script
+
+
+def test_build_initialize_command_joins_wireguard_when_config_given():
+    config = "[Interface]\nPrivateKey = abc\n[Peer]\nPublicKey = xyz\nEndpoint = 1.2.3.4:51820"
+    script = build_initialize_command(
+        device_name="acme-honey1",
+        service_user="pi",
+        vpn_provider="wireguard",
+        wireguard_config=config,
+    )
+    assert "apt-get install -y wireguard-tools" in script
+    assert "wg-quick up wg0" in script
+    assert "PrivateKey = abc" in script
+    assert "netbird" not in script
 
 
 def test_build_initialize_command_sets_up_tmpfs_ramdisk():

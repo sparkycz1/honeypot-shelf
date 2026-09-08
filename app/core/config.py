@@ -115,6 +115,19 @@ class Settings(BaseSettings):
         default=30, alias="NETBIRD_COMMAND_TIMEOUT_SECONDS"
     )
 
+    # --- WireGuard for HoneyHive itself (app.services.wireguard, Settings
+    # -> VPN) — the other, mutually-exclusive VPN provider (see
+    # `AppSettings.VpnProvider`). Unlike NetBird, plain `wireguard-tools`
+    # has no daemon+CLI split of its own, so `app.services.vpn_control_server`
+    # (run inside the `vpn` sidecar, see docker-compose.vpn.yml) is a small
+    # purpose-built stand-in for one — this is where `web` reaches it.
+    vpn_control_addr: str = Field(
+        default="/var/run/vpn/control.sock", alias="VPN_CONTROL_ADDR"
+    )
+    vpn_command_timeout_seconds: int = Field(
+        default=30, alias="VPN_COMMAND_TIMEOUT_SECONDS"
+    )
+
     # Comma-separated absolute path prefixes the Logs tab's "view an
     # arbitrary file" feature is allowed to read from a managed honeypot
     # (app.ssh.logs.is_path_allowed) — a UX/scope guardrail, not a hard

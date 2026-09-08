@@ -1,7 +1,7 @@
 <span
   id="netbird-status"
   hx-get="/settings/netbird/status-panel"
-  hx-trigger="every 5s, live-netbird from:body"
+  hx-trigger="every 5s, live-vpn from:body"
   hx-swap="outerHTML settle:600ms"
 >
   {% if netbird_status.connected %}

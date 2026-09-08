@@ -52,6 +52,18 @@ RUN apt-get update \
     && chmod +x /usr/local/bin/netbird \
     && rm -rf /var/lib/apt/lists/*
 
+# `wg`/`wg-quick` (plus `iproute2`'s `ip` command, which `wg-quick` shells
+# out to for the interface/route setup `python:3.14-slim` doesn't ship by
+# default) — needed only inside the `vpn` sidecar
+# (`app.services.vpn_control_server`, run as root there with
+# CAP_NET_ADMIN/`/dev/net/tun`), not by `web`/`worker` themselves; same
+# "harmless to have either way, reused from the same shared image"
+# reasoning as the NetBird CLI above. Both ship in Debian's own repos,
+# unlike NetBird — no extra apt source needed.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends wireguard-tools iproute2 \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd --system app && useradd --system --gid app --home-dir /app --create-home app
 
 ENV PATH="/opt/venv/bin:$PATH" \

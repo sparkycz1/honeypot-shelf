@@ -50,14 +50,48 @@
     <input type="password" id="password" name="password" autocomplete="new-password">
     <p class="hint">{{ t(request, "initialize.field.password_hint") }}</p>
 
-    <label for="netbird_setup_key">{{ t(request, "initialize.field.netbird_setup_key") }}</label>
-    <input type="text" id="netbird_setup_key" name="netbird_setup_key" autocomplete="off">
-    <p class="hint">{{ t(request, "initialize.field.netbird_setup_key_hint") }}</p>
+    <fieldset>
+      <legend>{{ t(request, "initialize.field.vpn_provider") }}</legend>
+      <p class="hint">{{ t(request, "initialize.field.vpn_provider_hint") }}</p>
+      <label>
+        <input type="radio" name="vpn_provider" value="none"
+               data-toggle-hidden="vpn-provider-none-fields"
+               {% if not vpn_provider or vpn_provider == 'none' %}checked{% endif %}>
+        {{ t(request, "initialize.field.vpn_provider.none") }}
+      </label>
+      <label>
+        <input type="radio" name="vpn_provider" value="netbird"
+               data-toggle-hidden="vpn-provider-netbird-fields"
+               {% if vpn_provider == 'netbird' %}checked{% endif %}>
+        {{ t(request, "initialize.field.vpn_provider.netbird") }}
+      </label>
+      <label>
+        <input type="radio" name="vpn_provider" value="wireguard"
+               data-toggle-hidden="vpn-provider-wireguard-fields"
+               {% if vpn_provider == 'wireguard' %}checked{% endif %}>
+        {{ t(request, "initialize.field.vpn_provider.wireguard") }}
+      </label>
+    </fieldset>
 
-    <label for="netbird_management_url">{{ t(request, "initialize.field.netbird_management_url") }}</label>
-    <input type="text" id="netbird_management_url" name="netbird_management_url" autocomplete="off"
-           placeholder="https://netbird.example.com:443">
-    <p class="hint">{{ t(request, "initialize.field.netbird_management_url_hint") }}</p>
+    <div id="vpn-provider-none-fields" {% if vpn_provider and vpn_provider != 'none' %}hidden{% endif %}></div>
+
+    <div id="vpn-provider-netbird-fields" {% if vpn_provider != 'netbird' %}hidden{% endif %}>
+      <label for="netbird_setup_key">{{ t(request, "initialize.field.netbird_setup_key") }}</label>
+      <input type="text" id="netbird_setup_key" name="netbird_setup_key" autocomplete="off">
+      <p class="hint">{{ t(request, "initialize.field.netbird_setup_key_hint") }}</p>
+
+      <label for="netbird_management_url">{{ t(request, "initialize.field.netbird_management_url") }}</label>
+      <input type="text" id="netbird_management_url" name="netbird_management_url" autocomplete="off"
+             placeholder="https://netbird.example.com:443">
+      <p class="hint">{{ t(request, "initialize.field.netbird_management_url_hint") }}</p>
+    </div>
+
+    <div id="vpn-provider-wireguard-fields" {% if vpn_provider != 'wireguard' %}hidden{% endif %}>
+      <label for="wireguard_config">{{ t(request, "initialize.field.wireguard_config") }}</label>
+      <textarea id="wireguard_config" name="wireguard_config" rows="8" autocomplete="off"
+                placeholder="{{ t(request, 'initialize.field.wireguard_config_placeholder') }}"></textarea>
+      <p class="hint">{{ t(request, "initialize.field.wireguard_config_hint") }}</p>
+    </div>
 
     <button type="submit" class="button">{{ t(request, "initialize.submit") }}</button>
   </form>
