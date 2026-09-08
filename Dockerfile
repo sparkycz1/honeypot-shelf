@@ -30,6 +30,28 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # --- Stage 2: minimal runtime image ------------------------------------------
 FROM python:3.14.7-slim AS runtime
 
+# The netbird CLI/daemon binary only — installed straight from its GitHub
+# release tarball, not the `.deb` (whose postinst script tries to install
+# and start a SysV init service — nothing this image ever has, since it
+# only ever runs a single foreground process, so that install would fail
+# the build for no benefit; nothing here needs the systemd unit the `.deb`
+# would set up either). Never run inside `web`/`worker` themselves (that
+# needs CAP_NET_ADMIN/`/dev/net/tun`, which this image's containers
+# deliberately don't have; see app/services/netbird.py's module docstring)
+# — this lets `web` issue `netbird up/down/status` against the optional
+# `docker-compose.vpn.yml` sidecar's daemon over a shared socket volume
+# instead. Harmless to have installed even when that overlay isn't used —
+# the CLI just fails with a clear "can't reach the daemon" error, same as
+# any other optional integration (LDAP/OIDC/syslog) left unconfigured.
+ARG NETBIRD_VERSION=0.78.1
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && curl -fsSL \
+        "https://github.com/netbirdio/netbird/releases/download/v${NETBIRD_VERSION}/netbird_${NETBIRD_VERSION}_linux_amd64.tar.gz" \
+        | tar xz -C /usr/local/bin netbird \
+    && chmod +x /usr/local/bin/netbird \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd --system app && useradd --system --gid app --home-dir /app --create-home app
 
 ENV PATH="/opt/venv/bin:$PATH" \

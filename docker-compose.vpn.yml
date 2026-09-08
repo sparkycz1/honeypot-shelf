@@ -1,0 +1,129 @@
+# Optional VPN sidecar — lets `web`/`worker` (the SSH management plane)
+# reach a honeypot that's only addressable over a VPN, e.g. one that sits
+# behind a NAT with no port forwarded to it. Two providers, configured (and
+# switched between) from Settings -> VPN once this is running — never by
+# changing which compose files you run: NetBird (a managed network, handles
+# NAT traversal itself via its coordination/relay servers — either the
+# public NetBird Cloud or your own self-hosted management server) or
+# WireGuard (HoneyHive joins as a plain peer of a WireGuard server you
+# already run somewhere reachable — see wiki/Architecture.md's "VPN
+# connectivity: NetBird or WireGuard" section for the full design,
+# including why WireGuard alone can't help a honeypot that's *also* behind
+# a NAT the way NetBird can).
+#
+# STATUS: NetBird is fully implemented. WireGuard is designed (see the wiki
+# section above) but not built yet — applying this overlay today gives you
+# NetBird only; the WireGuard option won't appear in Settings until that
+# follow-up work lands.
+#
+# Run alongside the base stack (add docker-compose.caddy.yml too if you use
+# it — see below for the one thing that combination needs to know):
+#
+#   docker compose -f docker-compose.yml -f docker-compose.vpn.yml up -d --build
+#
+# Requires:
+#  - A kernel with WireGuard support (any current Linux) and this host's
+#    Docker allowing CAP_NET_ADMIN + /dev/net/tun for a container — true for
+#    a normal (non-rootless, non-gVisor/Kata-sandboxed) Docker install.
+#  - Docker Compose 2.24+ (for the `!reset` tag below, which clears `web`'s
+#    `ports:` from the base file — `network_mode: "service:vpn"` and a
+#    service's own `ports:` can't coexist; the container that owns the
+#    network namespace, `vpn` here, is what publishes the port instead).
+#
+# `web` and `worker` join `vpn`'s network namespace entirely
+# (`network_mode: "service:vpn"`) rather than each independently trying to
+# reach it — the only container here with CAP_NET_ADMIN/the TUN device is
+# `vpn` itself; `web`/`worker` never gain elevated privileges of their own,
+# they just borrow its already-tunneled network stack. They still reach
+# `db`/`redis` by service name as before (Docker's embedded DNS resolves
+# that through whichever network `vpn` itself is attached to, the default
+# one this project's other services already share).
+#
+# Using docker-compose.caddy.yml too? Its Caddyfile proxies to `web:8080`
+# — once `web` shares `vpn`'s network namespace it stops having its own
+# `web` DNS entry, so `vpn` below claims that name as an extra network
+# alias instead. Nothing in Caddyfile needs to change either way.
+#
+# `beat` deliberately isn't included — it only ever publishes the schedule
+# onto the queue, it never itself connects to a honeypot.
+
+services:
+  vpn:
+    # Reuses the exact same image as web/worker/beat (built by the base
+    # file) — the `netbird`/`wireguard-tools` CLIs are already installed
+    # there (see the Dockerfile), so there's no second image to build or
+    # keep in sync. Only what's run, and as which user, differs here.
+    image: honeyhive:local
+    restart: unless-stopped
+    # Configuring a VPN interface needs to create/configure network
+    # devices — the one deliberate exception to every other container in
+    # this project running as its own unprivileged user (see the
+    # Dockerfile's `USER app`).
+    user: root
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun
+    networks:
+      default:
+        aliases:
+          - web
+    entrypoint: []
+    # Starts the NetBird daemon (idle — not connected to anything — until
+    # `web` calls `netbird up` over the shared socket below, see
+    # app.services.netbird). A future revision adds a second, similarly
+    # idle-until-used process here for WireGuard's control socket (see the
+    # wiki section referenced above) — nothing about this command needs to
+    # "know" which provider Settings has chosen; both just wait to be used.
+    command:
+      - sh
+      - -c
+      - >-
+        mkdir -p /var/run/netbird /var/log/netbird &&
+        exec netbird service run
+        --daemon-addr unix:///var/run/netbird/sock
+        --log-file /var/log/netbird/client.log
+    # Only the daemon itself connects/disconnects (via `netbird up`/`down`,
+    # issued from `web` over the shared socket below) — nothing here reads
+    # a setup key from the environment; that's entered once through
+    # Settings -> VPN and stored (encrypted) in the app's own DB, the same
+    # as every other integration credential in this app.
+    volumes:
+      - netbird_state:/etc/netbird
+      - netbird_sock:/var/run/netbird
+      - netbird_log:/var/log/netbird
+    healthcheck:
+      test: ["CMD", "test", "-S", "/var/run/netbird/sock"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    # Moved from `web` in the base file — see the header comment above for
+    # why a service using `network_mode: "service:X"` can't declare its own
+    # `ports:`; whichever container owns the shared network namespace does
+    # instead.
+    ports:
+      - "${APP_BIND_ADDRESS:-0.0.0.0}:${APP_PORT:-8080}:8080"
+
+  web:
+    network_mode: "service:vpn"
+    ports: !reset []
+    volumes:
+      - netbird_sock:/var/run/netbird:ro
+      - netbird_log:/var/log/netbird:ro
+    depends_on:
+      vpn:
+        condition: service_healthy
+
+  worker:
+    network_mode: "service:vpn"
+    volumes:
+      - netbird_sock:/var/run/netbird:ro
+    depends_on:
+      vpn:
+        condition: service_healthy
+
+volumes:
+  netbird_state:
+  netbird_sock:
+  netbird_log:

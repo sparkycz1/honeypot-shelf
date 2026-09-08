@@ -92,6 +92,29 @@ class Settings(BaseSettings):
     # the connection itself).
     update_timeout_seconds: int = Field(default=1800, alias="UPDATE_TIMEOUT_SECONDS")
 
+    # --- NetBird for HoneyHive itself (app.services.netbird, Settings ->
+    # NetBird) — lets `web`/`worker` reach a honeypot that's only addressable
+    # over NetBird (e.g. behind a NAT with no forwarded SSH port), by sharing
+    # the `netbird` sidecar container's network namespace (see
+    # docker-compose.vpn.yml). These three are deploy-time paths, not
+    # something an operator tunes — hence env config, not a Settings-page
+    # field, unlike the setup key/management URL/enabled flag below, which
+    # *are* on the Settings page (`AppSettings.netbird_*`). ---
+    # Where the `netbird` CLI (installed in this image, see Dockerfile)
+    # reaches the sidecar's daemon — must match that container's own
+    # `--daemon-addr`/default, over the shared `netbird_sock` volume.
+    netbird_daemon_addr: str = Field(
+        default="unix:///var/run/netbird/sock", alias="NETBIRD_DAEMON_ADDR"
+    )
+    # The sidecar's log file, over the shared `netbird_log` volume — read
+    # (never written) by the Settings -> NetBird log viewer.
+    netbird_log_path: str = Field(
+        default="/var/log/netbird/client.log", alias="NETBIRD_LOG_PATH"
+    )
+    netbird_command_timeout_seconds: int = Field(
+        default=30, alias="NETBIRD_COMMAND_TIMEOUT_SECONDS"
+    )
+
     # Comma-separated absolute path prefixes the Logs tab's "view an
     # arbitrary file" feature is allowed to read from a managed honeypot
     # (app.ssh.logs.is_path_allowed) — a UX/scope guardrail, not a hard

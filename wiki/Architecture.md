@@ -215,6 +215,162 @@ same constraint `app.services.live_updates` already has for a related
 reason, and the same fix (move it to Redis) would apply if that ever
 changes.
 
+## 🔌 VPN connectivity: NetBird or WireGuard
+
+**The problem**: every SSH-management-plane feature (terminal, facts,
+updates, power, Scheduling, event ingestion's reverse direction) needs
+`web`/`worker` to open a plain TCP connection to a honeypot's IP. That
+fails outright for a honeypot that sits behind a NAT with no port
+forwarded to it — a very common deployment shape for a honeypot
+specifically (it's often placed on a network the operator doesn't fully
+control, or deliberately kept off any inbound-reachable address). Two
+ways to fix that, **mutually exclusive** — pick one in **Settings → VPN**
+— because both work the same way structurally: `web`/`worker` themselves
+join a virtual network as a peer, and so does the honeypot (via
+[Initialize](Honeypot-Initialize.md)), and once both are peers on that
+same network, a plain SSH connect to the honeypot's *tunnel* address just
+works, no code changes anywhere else in this app.
+
+| | NetBird | WireGuard |
+|---|---|---|
+| **Status** | ✅ Built | 📝 Designed below, not built yet |
+| **Solves NAT on both ends?** | Yes — NetBird's coordination/relay server (the public NetBird Cloud, or your own self-hosted management server) does the NAT traversal/hole-punching for you | **No** — plain WireGuard has no relay of its own. It only works if the WireGuard server the operator already runs (HoneyHive and the honeypot both just join it as peers — see below) is itself reachable, and even then only *that* NAT (the server's) is solved, not each peer's |
+| **What HoneyHive enters** | A setup key + management URL (Settings → VPN) | A complete peer config — the same `.conf` a WireGuard server admin hands out to any other client (Settings → VPN) |
+| **What a honeypot enters** (Initialize) | Its own setup key + management URL | Its own peer config |
+| **"Log"** | The NetBird daemon's own log file, tailed | Thinner — WireGuard itself has no daemon/log; the closest equivalent is `wg-quick up/down`'s own command output plus `wg show` for live state |
+
+### NetBird — built
+
+**Why a sidecar, not NetBird inside `web`/`worker` directly**: creating
+the WireGuard interface NetBird uses under the hood needs
+`CAP_NET_ADMIN` + `/dev/net/tun` — capabilities this project's
+containers deliberately don't have (every container here runs as its own
+unprivileged user; see the `Dockerfile`'s `USER app`). Instead, the
+optional `docker-compose.vpn.yml` overlay (same convention as
+`docker-compose.caddy.yml` — see [Installation](Installation.md)) adds
+one small privileged `vpn` sidecar container that runs *only* the NetBird
+daemon (`netbird service run --daemon-addr unix:///var/run/netbird/sock
+--log-file /var/log/netbird/client.log`, both paths on a named volume
+shared with `web`/`worker`), and `web`/`worker` join **its entire network
+namespace** (`network_mode: "service:vpn"`) rather than each
+independently trying to reach it. They never gain any elevated privilege
+of their own — they just borrow the sidecar's already-tunneled network
+stack, the same way any VPN-sidecar pattern (gluetun, wireguard-easy,
+...) works for other Docker Compose stacks. They still reach `db`/`redis`
+by service name as before (Docker's embedded DNS resolves that through
+whichever network the sidecar itself is attached to, the default one
+every service already shares) — and if you also run
+`docker-compose.caddy.yml`, its `Caddyfile` keeps working unmodified,
+because the `vpn` service claims `web`'s old DNS alias once `web` stops
+having a network identity of its own (see that overlay file's own
+comments for exactly why).
+
+`app.services.netbird` (the control layer, living in `web`) never talks
+to the sidecar container directly — no Docker socket access, deliberately,
+since that would be root-equivalent. It only ever shells out to the
+`netbird` CLI (installed in the same image `web`/`worker`/the sidecar all
+share — see the `Dockerfile`; fetched straight from NetBird's GitHub
+release tarball, not the `.deb`, which tries to install a SysV init
+service this image has no init system to run), pointed at the sidecar's
+daemon over the shared socket via `--daemon-addr`. Without the overlay
+applied, the socket simply isn't there and every function in that module
+fails with a clear "can't reach the daemon" error rather than crashing
+the app — the whole feature is opt-in and harmless to leave unconfigured.
+
+**Settings → VPN** (currently labeled "NetBird" — see "Restructuring
+still to do" below) saves the setup key (encrypted, same as every other
+stored secret in this app — LDAP bind password, a honeypot's own
+password) and management URL, and connects in one action — a setup key
+is single-use on NetBird's own side anyway, so there's rarely a reason to
+save one without immediately using it. Connect/disconnect/restart are
+plain POSTs; status and the log tail are htmx-polled partials
+(`partials/netbird_status.html`/`netbird_log.html`, `every 5s`/`10s`),
+the same live-panel pattern the honeypot detail page's facts/status
+panels already use. `app.main`'s lifespan reconnects automatically on
+every `web` restart if a setup key was saved and NetBird was left
+enabled — otherwise a redeploy would silently leave NetBird-only
+honeypots unreachable until someone noticed and clicked Connect again.
+
+This is a **different** NetBird connection from the one already on the
+[Initialize](Honeypot-Initialize.md) form — that one joins the *honeypot
+being provisioned* to your network; this one joins *HoneyHive's own
+management-plane containers*. A deployment can use either independently,
+but only the combination of both actually reaches a honeypot that has no
+other route to it.
+
+### WireGuard — designed, not built yet
+
+Per the product decision behind this design: HoneyHive does **not** run
+its own WireGuard server. It joins an **existing WireGuard server the
+operator already runs somewhere reachable** as a plain peer — exactly
+the same relationship a honeypot has to it too. Concretely, that means
+Settings → VPN's WireGuard option is a **paste your peer config**
+textarea (a standard `wg-quick`-style `.conf` — the same file any
+WireGuard server admin tool already hands out per client/peer), not a
+key-generation wizard: HoneyHive doesn't need to know how to mint
+WireGuard keys or manage a peer table, it just needs to bring up the
+interface described by the config it's given, the same as a human running
+`wg-quick up wg0` would. Initialize's WireGuard option is the same idea
+applied to the honeypot being provisioned — paste that device's own peer
+config, Initialize writes it to `/etc/wireguard/wg0.conf` over SSH and
+brings the interface up there (needs `wireguard-tools` installed on the
+honeypot too — an extra `apt-get install` alongside the existing
+NetBird/OpenCanary setup in `app.ssh.initialize`).
+
+**Why this needs its own small control-socket server, unlike NetBird**:
+NetBird ships a daemon-plus-CLI split for free — `netbird service run`
+listens on a socket, `netbird up/down/status` are a separate client
+talking to it, which is exactly the shape needed to let `web` (unprivileged)
+control something a privileged sidecar does. Plain `wireguard-tools` has
+no such split — `wg-quick up`/`wg show` just run directly as one-shot
+privileged commands, assuming the caller already has `CAP_NET_ADMIN`
+itself. Since `web` deliberately doesn't, the sidecar needs a small
+purpose-built stand-in for that daemon/CLI split: a tiny asyncio server
+(`app.services.vpn_control_server`, not written yet) listening on its own
+Unix socket inside the sidecar (`/var/run/vpn/control.sock`, another
+shared volume, parallel to NetBird's own), speaking a minimal
+newline-delimited-JSON protocol —
+
+```
+→ {"cmd": "wg_up", "config": "<the pasted .conf, verbatim>"}
+← {"ok": true, "output": "..."}
+→ {"cmd": "wg_down"}
+→ {"cmd": "wg_status"}          # wraps `wg show wg0`
+```
+
+— run as root inside the sidecar (which already has `CAP_NET_ADMIN` +
+`/dev/net/tun` for NetBird), writing the posted config to
+`/etc/wireguard/wg0.conf` and shelling out to `wg-quick`/`wg` itself. On
+`web`'s side, `app.services.wireguard` (not written yet, mirroring
+`app.services.netbird`'s shape) is a plain Python socket client — no
+special binary needed there beyond the standard library, since it's just
+JSON over a Unix socket, not a CLI subprocess this time.
+
+The sidecar's `command:` in `docker-compose.vpn.yml` would start *both*
+the NetBird daemon and this control server unconditionally at boot (both
+idle until actually used) — the provider choice lives entirely in
+Settings, at runtime, never in which process a compose file happens to
+start, so switching providers never needs a container restart.
+
+**What's still open, to settle before building this**:
+- The exact `AppSettings` shape — `vpn_provider: none|netbird|wireguard`
+  plus the already-existing `netbird_*` columns plus a new
+  `wireguard_config_encrypted` (the whole pasted `.conf`, encrypted as one
+  blob — simplest, and avoids inventing separate fields for private
+  key/peer public key/endpoint/allowed-ips/address that operators already
+  have as one file from wherever they run their WireGuard server).
+- A new Alembic migration for that column plus the provider enum.
+- Settings tab rename ("NetBird" → "VPN", matching the table above) and a
+  provider `<select>` gating which of the two config forms shows.
+- Initialize form: a "VPN" selector (None/NetBird/WireGuard) replacing
+  today's always-shown NetBird-only fields, each option revealing its own
+  field set.
+- `wireguard-tools` added to the Initialize script's package list
+  (`app.ssh.initialize`) for the honeypot side.
+- Tests: `app.services.wireguard` mocked the same way
+  `tests/test_netbird.py` mocks `app.services.netbird` (a fake socket
+  server, or monkeypatching the socket client directly).
+
 ## 🔒 Honeypot Config: read-only root filesystem + the OpenCanary module editor
 
 The Honeypot Config tab has two independent live-SSH sections, neither

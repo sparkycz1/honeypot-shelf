@@ -65,6 +65,12 @@ nginx/Traefik/Caddy at it — see the reverse-proxy guides:
 and 443/udp, then
 `docker compose -f docker-compose.yml -f docker-compose.caddy.yml up -d --build`.
 
+If a honeypot sits behind a NAT with no port forwarded to it, add
+`-f docker-compose.vpn.yml` too (combine freely with `docker-compose.caddy.yml`
+above) and configure NetBird from Settings → VPN once the app is running
+— see [Architecture](Architecture.md)'s "VPN connectivity" section for
+what this does and why it's a separate container.
+
 Then create the first superadmin account:
 
 ```bash
