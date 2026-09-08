@@ -67,9 +67,10 @@ and 443/udp, then
 
 If a honeypot sits behind a NAT with no port forwarded to it, add
 `-f docker-compose.vpn.yml` too (combine freely with `docker-compose.caddy.yml`
-above) and configure NetBird from Settings → VPN once the app is running
-— see [Architecture](Architecture.md)'s "VPN connectivity" section for
-what this does and why it's a separate container.
+above) and connect either NetBird or WireGuard from Settings → VPN once
+the app is running — see [Architecture](Architecture.md)'s "VPN
+connectivity" section for what this does, which of the two to pick, and
+why it's a separate container.
 
 Then create the first superadmin account:
 

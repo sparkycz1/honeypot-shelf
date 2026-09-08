@@ -1,7 +1,9 @@
-"""HoneyHive's own NetBird connection (Settings -> NetBird) —
-`app.services.netbird` (subprocess control, mocked here — there's no real
-`netbird` daemon/socket in the test environment) and the Settings routes
-built on top of it."""
+"""HoneyHive's own VPN connection (Settings -> VPN) — `app.services.netbird`
+(subprocess control) and `app.services.wireguard` (a Unix-socket JSON
+client to `app.services.vpn_control_server`), both mocked here — there's
+no real netbird daemon or vpn_control_server socket in the test
+environment — plus the Settings routes and mutual-exclusivity behavior
+built on top of both."""
 
 from __future__ import annotations
 
@@ -9,7 +11,7 @@ import re
 
 import pytest
 
-from app.services import netbird
+from app.services import netbird, wireguard
 
 pytestmark = pytest.mark.asyncio
 
@@ -122,7 +124,7 @@ async def test_tail_log_returns_last_n_lines(tmp_path, monkeypatch):
 async def test_netbird_tab_shows_unavailable_without_the_sidecar(client):
     """No overlay applied in this test environment — the real behavior a
     deployment without docker-compose.vpn.yml sees too."""
-    response = await client.get("/settings", params={"tab": "netbird"})
+    response = await client.get("/settings", params={"tab": "vpn"})
     assert response.status_code == 200
     assert "NetBird" in response.text
 
@@ -132,7 +134,7 @@ async def test_connect_saves_settings_and_reports_failure_cleanly(client, monkey
     gracefully (a readable error, not a 500) while still saving the
     submitted config, exactly like a real deployment before the sidecar is
     up yet."""
-    form = await client.get("/settings", params={"tab": "netbird"})
+    form = await client.get("/settings", params={"tab": "vpn"})
     response = await client.post(
         "/settings/netbird",
         data={
@@ -146,7 +148,7 @@ async def test_connect_saves_settings_and_reports_failure_cleanly(client, monkey
 
 
 async def test_connect_rejects_malformed_management_url(client):
-    form = await client.get("/settings", params={"tab": "netbird"})
+    form = await client.get("/settings", params={"tab": "vpn"})
     response = await client.post(
         "/settings/netbird",
         data={
@@ -160,7 +162,7 @@ async def test_connect_rejects_malformed_management_url(client):
 
 
 async def test_connect_requires_a_setup_key_the_first_time(client):
-    form = await client.get("/settings", params={"tab": "netbird"})
+    form = await client.get("/settings", params={"tab": "vpn"})
     response = await client.post(
         "/settings/netbird",
         data={
@@ -180,7 +182,7 @@ async def test_connect_succeeds_when_netbird_mocked(client, monkeypatch):
 
     monkeypatch.setattr("app.web.routes.settings.netbird.connect", _fake_connect)
 
-    form = await client.get("/settings", params={"tab": "netbird"})
+    form = await client.get("/settings", params={"tab": "vpn"})
     response = await client.post(
         "/settings/netbird",
         data={
@@ -191,7 +193,7 @@ async def test_connect_succeeds_when_netbird_mocked(client, monkeypatch):
         follow_redirects=False,
     )
     assert response.status_code == 303
-    assert response.headers["location"] == "/settings?tab=netbird"
+    assert response.headers["location"] == "/settings?tab=vpn"
 
 
 async def test_disconnect_and_restart_flow(client, monkeypatch):
@@ -209,7 +211,7 @@ async def test_disconnect_and_restart_flow(client, monkeypatch):
     monkeypatch.setattr("app.web.routes.settings.netbird.connect", _fake_connect)
     monkeypatch.setattr("app.web.routes.settings.netbird.disconnect", _fake_disconnect)
 
-    form = await client.get("/settings", params={"tab": "netbird"})
+    form = await client.get("/settings", params={"tab": "vpn"})
     await client.post(
         "/settings/netbird",
         data={
@@ -237,3 +239,145 @@ async def test_disconnect_and_restart_flow(client, monkeypatch):
     # restart() = disconnect() then connect() again, reusing the stored key.
     assert disconnect_calls == [True, True]
     assert connect_calls == ["test-setup-key", "test-setup-key"]
+
+
+# --- app.services.wireguard (mocked Unix-socket control server) ----------
+
+
+class _FakeWriter:
+    def __init__(self) -> None:
+        self.written = b""
+        self.closed = False
+
+    def write(self, data: bytes) -> None:
+        self.written += data
+
+    async def drain(self) -> None:
+        return None
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class _FakeReader:
+    def __init__(self, response: dict[str, object]) -> None:
+        import json
+
+        self._line = (json.dumps(response) + "\n").encode("utf-8")
+
+    async def readline(self) -> bytes:
+        return self._line
+
+
+def _fake_open_unix_connection(response: dict[str, object]):
+    writer = _FakeWriter()
+
+    async def _open(*args, **kwargs):
+        return _FakeReader(response), writer
+
+    return _open, writer
+
+
+async def test_wireguard_connect_unavailable_without_socket(monkeypatch):
+    async def _fake_open(*args, **kwargs):
+        raise FileNotFoundError
+
+    monkeypatch.setattr("asyncio.open_unix_connection", _fake_open)
+    with pytest.raises(wireguard.WireguardUnavailableError):
+        await wireguard.connect(config="[Interface]\nPrivateKey = abc")
+
+
+async def test_wireguard_connect_sends_config(monkeypatch):
+    open_fn, writer = _fake_open_unix_connection({"ok": True, "output": "interface up"})
+    monkeypatch.setattr("asyncio.open_unix_connection", open_fn)
+
+    output = await wireguard.connect(config="[Interface]\nPrivateKey = abc")
+    assert output == "interface up"
+    assert b'"wg_up"' in writer.written
+    assert b"PrivateKey" in writer.written
+
+
+async def test_wireguard_status_parses_up(monkeypatch):
+    open_fn, _ = _fake_open_unix_connection(
+        {"ok": True, "up": True, "output": "interface: wg0\n  public key: abc"}
+    )
+    monkeypatch.setattr("asyncio.open_unix_connection", open_fn)
+
+    result = await wireguard.status()
+    assert result.up is True
+    assert "interface: wg0" in result.raw
+
+
+async def test_wireguard_status_unavailable(monkeypatch):
+    async def _fake_open(*args, **kwargs):
+        raise ConnectionRefusedError
+
+    monkeypatch.setattr("asyncio.open_unix_connection", _fake_open)
+    result = await wireguard.status()
+    assert result.up is False
+    assert result.error is not None
+
+
+# --- Settings -> VPN: WireGuard routes + mutual exclusivity ---------------
+
+
+async def test_wireguard_tab_shows_unavailable_without_the_sidecar(client):
+    response = await client.get("/settings", params={"tab": "vpn"})
+    assert response.status_code == 200
+    assert "WireGuard" in response.text
+
+
+async def test_wireguard_connect_requires_a_config_the_first_time(client):
+    form = await client.get("/settings", params={"tab": "vpn"})
+    response = await client.post(
+        "/settings/wireguard",
+        data={"wireguard_config": "", "csrf_token": _csrf_from(form)},
+    )
+    assert response.status_code == 200
+    assert "WireGuard config is required" in response.text
+
+
+async def test_connecting_wireguard_disconnects_netbird(client, monkeypatch):
+    """VpnProvider is mutually exclusive — connecting WireGuard while
+    NetBird was active disconnects NetBird first."""
+    netbird_disconnect_calls = []
+
+    async def _fake_netbird_connect(*, setup_key, management_url):
+        return "Connected"
+
+    async def _fake_netbird_disconnect():
+        netbird_disconnect_calls.append(True)
+        return "Disconnected"
+
+    async def _fake_wireguard_connect(*, config):
+        return "interface up"
+
+    monkeypatch.setattr("app.web.routes.settings.netbird.connect", _fake_netbird_connect)
+    monkeypatch.setattr("app.web.routes.settings.netbird.disconnect", _fake_netbird_disconnect)
+    monkeypatch.setattr("app.web.routes.settings.wireguard.connect", _fake_wireguard_connect)
+
+    form = await client.get("/settings", params={"tab": "vpn"})
+    # First connect NetBird.
+    await client.post(
+        "/settings/netbird",
+        data={
+            "netbird_setup_key": "test-key",
+            "netbird_management_url": "",
+            "csrf_token": _csrf_from(form),
+        },
+    )
+
+    # Now connect WireGuard — NetBird should be disconnected automatically.
+    response = await client.post(
+        "/settings/wireguard",
+        data={
+            "wireguard_config": "[Interface]\nPrivateKey = abc",
+            "csrf_token": _csrf_from(form),
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert netbird_disconnect_calls == [True]
+
+    status_page = await client.get("/settings", params={"tab": "vpn"})
+    assert "WireGuard" in status_page.text

@@ -44,13 +44,13 @@ link to add another) and fleet-wide/"All honeypots" bulk actions;
 Scheduling, including a per-schedule run history and one-click retry for a
 failed firing; a per-honeypot ingest token (rotate/revoke from that
 honeypot's Settings tab), alternative to the shared `INGEST_TOKEN`;
-NetBird connectivity for HoneyHive's own SSH management plane (Settings →
-VPN, an optional `docker-compose.vpn.yml` sidecar — see
+NetBird or WireGuard connectivity for HoneyHive's own SSH management
+plane (Settings → VPN, an optional `docker-compose.vpn.yml` sidecar — see
 [Architecture](Architecture.md)) for a honeypot that's only reachable over
-NetBird; the REST API mirroring all of the above; Users and Settings
+one of those; the REST API mirroring all of the above; Users and Settings
 (LDAP/OIDC/syslog forwarding, SSH key rotation, retention policies); full
 **English and
-Czech i18n** across every page, not just the site chrome. A 126-test
+Czech i18n** across every page, not just the site chrome. A 148-test
 suite covers the RBAC/scoping-sensitive paths; `ruff check .` and `mypy
 app alembic tests` are both fully clean. See [CLAUDE.md](../CLAUDE.md)'s
 "Current state" section for what's left (mainly: no CI workflow file).
@@ -83,6 +83,3 @@ app alembic tests` are both fully clean. See [CLAUDE.md](../CLAUDE.md)'s
   right for the expected event volume per honeypot?
 - **A map/geo view, CSV export of events, per-event-type dashboards** —
   none of these exist yet; worth asking which (if any) matter for v1.
-- **WireGuard as a second VPN option**, alongside NetBird — fully designed
-  (see [Architecture](Architecture.md)'s "VPN connectivity" section) but
-  not built yet.

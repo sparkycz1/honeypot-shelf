@@ -1,0 +1,14 @@
+<span
+  id="wireguard-status"
+  hx-get="/settings/wireguard/status-panel"
+  hx-trigger="every 5s, live-vpn from:body"
+  hx-swap="outerHTML settle:600ms"
+>
+  {% if wireguard_status.up %}
+    <span class="badge badge-ok">{{ t(request, "settings.wireguard.status_active") }}</span>
+  {% elif wireguard_status.error %}
+    <span class="badge badge-warn">{{ t(request, "settings.wireguard.status_unavailable") }}</span>
+  {% else %}
+    <span class="badge badge-error">{{ t(request, "settings.wireguard.status_inactive") }}</span>
+  {% endif %}
+</span>

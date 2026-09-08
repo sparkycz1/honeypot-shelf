@@ -233,7 +233,7 @@ works, no code changes anywhere else in this app.
 
 | | NetBird | WireGuard |
 |---|---|---|
-| **Status** | ✅ Built | 📝 Designed below, not built yet |
+| **Status** | ✅ Built | ✅ Built |
 | **Solves NAT on both ends?** | Yes — NetBird's coordination/relay server (the public NetBird Cloud, or your own self-hosted management server) does the NAT traversal/hole-punching for you | **No** — plain WireGuard has no relay of its own. It only works if the WireGuard server the operator already runs (HoneyHive and the honeypot both just join it as peers — see below) is itself reachable, and even then only *that* NAT (the server's) is solved, not each peer's |
 | **What HoneyHive enters** | A setup key + management URL (Settings → VPN) | A complete peer config — the same `.conf` a WireGuard server admin hands out to any other client (Settings → VPN) |
 | **What a honeypot enters** (Initialize) | Its own setup key + management URL | Its own peer config |
@@ -277,19 +277,18 @@ applied, the socket simply isn't there and every function in that module
 fails with a clear "can't reach the daemon" error rather than crashing
 the app — the whole feature is opt-in and harmless to leave unconfigured.
 
-**Settings → VPN** (currently labeled "NetBird" — see "Restructuring
-still to do" below) saves the setup key (encrypted, same as every other
-stored secret in this app — LDAP bind password, a honeypot's own
-password) and management URL, and connects in one action — a setup key
-is single-use on NetBird's own side anyway, so there's rarely a reason to
-save one without immediately using it. Connect/disconnect/restart are
-plain POSTs; status and the log tail are htmx-polled partials
+**Settings → VPN**'s NetBird section saves the setup key (encrypted, same
+as every other stored secret in this app — LDAP bind password, a
+honeypot's own password) and management URL, and connects in one action —
+a setup key is single-use on NetBird's own side anyway, so there's rarely
+a reason to save one without immediately using it. Connect/disconnect/
+restart are plain POSTs; status and the log tail are htmx-polled partials
 (`partials/netbird_status.html`/`netbird_log.html`, `every 5s`/`10s`),
 the same live-panel pattern the honeypot detail page's facts/status
 panels already use. `app.main`'s lifespan reconnects automatically on
-every `web` restart if a setup key was saved and NetBird was left
-enabled — otherwise a redeploy would silently leave NetBird-only
-honeypots unreachable until someone noticed and clicked Connect again.
+every `web` restart if a provider was left active (`AppSettings.
+vpn_provider`) — otherwise a redeploy would silently leave a VPN-only
+honeypot unreachable until someone noticed and clicked Connect again.
 
 This is a **different** NetBird connection from the one already on the
 [Initialize](Honeypot-Initialize.md) form — that one joins the *honeypot
@@ -298,7 +297,7 @@ management-plane containers*. A deployment can use either independently,
 but only the combination of both actually reaches a honeypot that has no
 other route to it.
 
-### WireGuard — designed, not built yet
+### WireGuard — built
 
 Per the product decision behind this design: HoneyHive does **not** run
 its own WireGuard server. It joins an **existing WireGuard server the
@@ -324,11 +323,12 @@ talking to it, which is exactly the shape needed to let `web` (unprivileged)
 control something a privileged sidecar does. Plain `wireguard-tools` has
 no such split — `wg-quick up`/`wg show` just run directly as one-shot
 privileged commands, assuming the caller already has `CAP_NET_ADMIN`
-itself. Since `web` deliberately doesn't, the sidecar needs a small
+itself. Since `web` deliberately doesn't, the sidecar runs a small
 purpose-built stand-in for that daemon/CLI split: a tiny asyncio server
-(`app.services.vpn_control_server`, not written yet) listening on its own
-Unix socket inside the sidecar (`/var/run/vpn/control.sock`, another
-shared volume, parallel to NetBird's own), speaking a minimal
+(`app.services.vpn_control_server`, started alongside the NetBird daemon
+in `docker-compose.vpn.yml`'s `vpn` service) listening on its own Unix
+socket inside the sidecar (`/var/run/vpn/control.sock`, another shared
+volume, parallel to NetBird's own), speaking a minimal
 newline-delimited-JSON protocol —
 
 ```
@@ -340,36 +340,45 @@ newline-delimited-JSON protocol —
 
 — run as root inside the sidecar (which already has `CAP_NET_ADMIN` +
 `/dev/net/tun` for NetBird), writing the posted config to
-`/etc/wireguard/wg0.conf` and shelling out to `wg-quick`/`wg` itself. On
-`web`'s side, `app.services.wireguard` (not written yet, mirroring
-`app.services.netbird`'s shape) is a plain Python socket client — no
-special binary needed there beyond the standard library, since it's just
-JSON over a Unix socket, not a CLI subprocess this time.
+`/etc/wireguard/wg0.conf` and shelling out to `wg-quick`/`wg` itself
+(`iproute2` — `wg-quick`'s own dependency for the interface/route setup —
+is installed in the image alongside `wireguard-tools`, since
+`python:3.14-slim` doesn't ship it). On `web`'s side, `app.services.
+wireguard` (mirroring `app.services.netbird`'s shape) is a plain Python
+socket client — no special binary needed there beyond the standard
+library, since it's just JSON over a Unix socket, not a CLI subprocess
+this time. `wg_up` is idempotent (brings any previous session down first)
+and `wg_down` tolerates "never connected"/"already down" the same way
+`app.services.netbird.restart` tolerates NetBird's own `down` failing.
 
-The sidecar's `command:` in `docker-compose.vpn.yml` would start *both*
-the NetBird daemon and this control server unconditionally at boot (both
-idle until actually used) — the provider choice lives entirely in
-Settings, at runtime, never in which process a compose file happens to
-start, so switching providers never needs a container restart.
+The sidecar's `command:` in `docker-compose.vpn.yml` starts *both* the
+NetBird daemon and this control server unconditionally at boot (`bash -c
+'... & ... & wait -n'` — both idle until actually used, and the whole
+container restarts, per its own `restart: unless-stopped`, if either
+backend process dies) — the provider choice lives entirely in Settings,
+at runtime, never in which process a compose file happens to start, so
+switching providers never needs a container restart.
 
-**What's still open, to settle before building this**:
-- The exact `AppSettings` shape — `vpn_provider: none|netbird|wireguard`
-  plus the already-existing `netbird_*` columns plus a new
-  `wireguard_config_encrypted` (the whole pasted `.conf`, encrypted as one
-  blob — simplest, and avoids inventing separate fields for private
-  key/peer public key/endpoint/allowed-ips/address that operators already
-  have as one file from wherever they run their WireGuard server).
-- A new Alembic migration for that column plus the provider enum.
-- Settings tab rename ("NetBird" → "VPN", matching the table above) and a
-  provider `<select>` gating which of the two config forms shows.
-- Initialize form: a "VPN" selector (None/NetBird/WireGuard) replacing
-  today's always-shown NetBird-only fields, each option revealing its own
-  field set.
-- `wireguard-tools` added to the Initialize script's package list
-  (`app.ssh.initialize`) for the honeypot side.
-- Tests: `app.services.wireguard` mocked the same way
-  `tests/test_netbird.py` mocks `app.services.netbird` (a fake socket
-  server, or monkeypatching the socket client directly).
+**Mutual exclusivity, enforced server-side**: `AppSettings.vpn_provider`
+(`none`/`netbird`/`wireguard`) is set automatically by whichever
+`connect()` call last succeeded — never edited directly. Connecting one
+provider best-effort disconnects the other first if it was active (see
+`app.web.routes.settings._deactivate_other_provider`); both providers'
+own saved config stays around either way, so switching back later doesn't
+need re-entering it (only NetBird's setup key is genuinely one-shot, in
+the sense of not being redisplayed once saved).
+
+Initialize's own "VPN" field (None/NetBird/WireGuard, a same-`name` radio
+group toggled via `static/js/toggle-hidden.js` — extended to support
+radio groups, not just a single checkbox, for this) is the honeypot-side
+counterpart, entirely independent of HoneyHive's own choice above:
+`app.ssh.initialize.build_initialize_command`'s `vpn_provider` parameter
+installs at most one of `netbird`/`wireguard-tools` on the device (never
+both, and neither when "None" is picked, unlike the old behavior which
+always installed NetBird regardless), writes `/etc/wireguard/wg0.conf`
+and runs `wg-quick up wg0` (plus `systemctl enable wg-quick@wg0`, so it
+survives a reboot — WireGuard's own kernel interface doesn't need a
+running daemon the way NetBird's connection does) for the WireGuard case.
 
 ## 🔒 Honeypot Config: read-only root filesystem + the OpenCanary module editor
 

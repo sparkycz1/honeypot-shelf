@@ -7,9 +7,11 @@ honeypot over SSH, in one run: base + admin-tool packages, a Python venv
 with OpenCanary/scapy/pcapy-ng, the `opencanary.service` systemd unit,
 locale (English + Czech, matching this app's own two) and timezone
 (Europe/Prague), a full `apt` upgrade, the team's `vim`/`bash.bashrc`
-config, the device's hostname/`/etc/hosts` entry,
-[NetBird](https://netbird.io) (repo + package, and joining your network if
-a setup key is given), generating OpenCanary's own config
+config, the device's hostname/`/etc/hosts` entry, at most one of
+[NetBird](https://netbird.io) or [WireGuard](https://www.wireguard.com)
+(per the VPN field below — see [Architecture](Architecture.md)'s "VPN
+connectivity" section for how this relates to HoneyHive's own,
+independent VPN choice in Settings → VPN), generating OpenCanary's own config
 (`opencanaryd --copyconfig`), and — confirmed against
 [OpenCanary's own wiki](https://github.com/thinkst/opencanary/wiki) as the
 only two modules that need it — the host-side setup **portscan** and
@@ -53,9 +55,11 @@ pins its host key the usual, non-TOFU way, then (optionally) run its own
 | Device name | Set as the device's hostname and `/etc/hosts` entry. Must be a valid hostname (letters/digits/hyphens). |
 | User | `root`, or any other account already reachable over SSH. Anything other than `root` runs the whole script via `sudo`. |
 | SSH port | Defaults to 22. |
-| Authentication | HoneyHive's own shared identity key (assumed already authorized on the device — e.g. preseeded via RPi Imager; see Settings for the public key) or a one-time password. Neither the password nor the two NetBird fields below is ever stored — all three are used for this one run only. |
-| NetBird setup key | Optional. NetBird installs either way; a setup key also joins the device to your network right away (`netbird up --setup-key ...`). Get one from your NetBird management console. |
-| NetBird management URL | Optional. Blank = NetBird Cloud (the public management service); set this only for a self-hosted management server. Entered fresh on every run — like the SSH password and the setup key above, never stored anywhere in HoneyHive. |
+| Authentication | HoneyHive's own shared identity key (assumed already authorized on the device — e.g. preseeded via RPi Imager; see Settings for the public key) or a one-time password. Neither the password nor any of the VPN fields below is ever stored — all of them are used for this one run only. |
+| VPN | None (default), NetBird, or WireGuard — the device's own connection, independent of HoneyHive's own VPN choice in Settings → VPN (see [Architecture](Architecture.md)). Picking one reveals its own fields below; picking neither installs neither package. |
+| NetBird setup key | Optional (shown when VPN = NetBird). NetBird installs either way; a setup key also joins the device to your network right away (`netbird up --setup-key ...`). Get one from your NetBird management console. |
+| NetBird management URL | Optional (shown when VPN = NetBird). Blank = NetBird Cloud (the public management service); set this only for a self-hosted management server. |
+| WireGuard config | Required when VPN = WireGuard. The device's own peer config — the same `.conf` your WireGuard server admin (or its own UI) already hands out for any client. Written to `/etc/wireguard/wg0.conf` and brought up with `wg-quick up wg0` (and `systemctl enable wg-quick@wg0`, so it survives a reboot). |
 
 ## Host-key trust is deliberately trust-on-first-use here
 

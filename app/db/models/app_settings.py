@@ -41,6 +41,20 @@ DEFAULT_OIDC_USERNAME_CLAIM = "email"
 DEFAULT_OIDC_SCOPES = "openid email profile"
 
 
+class VpnProvider(enum.StrEnum):
+    """Which of the two VPN options (if either) HoneyHive's own SSH
+    management plane is currently joined to — see
+    `app.services.netbird`/`app.services.wireguard` and wiki/Architecture.md's
+    "VPN connectivity" section. Mutually exclusive by construction: this
+    column is only ever set by a successful `connect()` (to that provider)
+    or `disconnect()` (back to NONE) — never edited directly, so it can
+    never point at a provider that isn't actually the one last connected."""
+
+    NONE = "none"
+    NETBIRD = "netbird"
+    WIREGUARD = "wireguard"
+
+
 class SyslogProtocol(enum.StrEnum):
     """Transport for `app.audit_syslog` — UDP and TCP are plaintext (RFC 6587
     octet-counting framing for TCP; UDP needs none, one datagram per
@@ -145,21 +159,38 @@ class AppSettings(Base):
     # login.html.
     oidc_provider_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
-    # --- NetBird for HoneyHive itself (app.services.netbird, Settings ->
-    # NetBird) — a different thing from the NetBird setup key entered on an
-    # Initialize run (that joins the *honeypot* to your network; this joins
-    # *HoneyHive's own SSH-management-plane containers*, so honeypots that
-    # only have a NetBird address — e.g. sitting behind a NAT with no
-    # forwarded port — are still reachable). Unlike the Initialize one,
-    # this genuinely needs to persist: it has to survive a container
-    # restart and reconnect on its own (see `app.main`'s lifespan), so
-    # storing it here (setup key encrypted, same as the LDAP/OIDC secrets
-    # above) is the right call this time, not a repeat of the mistake the
-    # dropped `netbird_management_url` column was cleaned up for — that one
-    # stored a value nothing but Initialize's one-time form ever needed. ---
-    netbird_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # --- VPN for HoneyHive itself (app.services.netbird/wireguard,
+    # Settings -> VPN) — a different thing from the NetBird setup key
+    # entered on an Initialize run (that joins the *honeypot* to your
+    # network; this joins *HoneyHive's own SSH-management-plane
+    # containers*, so a honeypot that's only reachable over a VPN — e.g.
+    # sitting behind a NAT with no forwarded port — still works with
+    # everything else in this app). Unlike the Initialize one, this
+    # genuinely needs to persist: it has to survive a container restart
+    # and reconnect on its own (see `app.main`'s lifespan), so storing it
+    # here (secrets encrypted, same as the LDAP/OIDC secrets above) is the
+    # right call this time, not a repeat of the mistake the once-dropped
+    # `netbird_management_url` column was cleaned up for — that one stored
+    # a value nothing but Initialize's one-time form ever needed.
+    #
+    # `vpn_provider` is the single source of truth for "which one (if
+    # either) is active" — mutually exclusive, see `VpnProvider`'s own
+    # docstring. Both providers' config stays saved even while the other
+    # is active (or neither is), so switching back doesn't need
+    # re-entering it — only NetBird's setup key is genuinely one-shot in
+    # the sense of not being re-displayed once saved. ---
+    vpn_provider: Mapped[VpnProvider] = mapped_column(
+        pg_enum(VpnProvider, name="vpn_provider"), default=VpnProvider.NONE, nullable=False
+    )
     netbird_management_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     netbird_setup_key_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    # The whole pasted wg-quick `.conf` HoneyHive itself is a peer with —
+    # see wiki/Architecture.md's "VPN connectivity" section for why this is
+    # one opaque encrypted blob rather than separate private-key/peer/
+    # endpoint/allowed-ips fields: it's the exact file a WireGuard server
+    # admin already hands out per client, nothing here needs to parse it
+    # beyond handing it to `wg-quick` verbatim.
+    wireguard_config_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
 
     # --- Syslog forwarding of audit log entries (app.audit_syslog), e.g. to
     # a SIEM such as Wazuh. Best-effort/fire-and-forget: the DB row is always
