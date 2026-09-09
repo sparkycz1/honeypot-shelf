@@ -50,7 +50,7 @@ plane (Settings → VPN, an optional `docker-compose.vpn.yml` sidecar — see
 one of those; the REST API mirroring all of the above; Users and Settings
 (LDAP/OIDC/syslog forwarding, SSH key rotation, retention policies); full
 **English and
-Czech i18n** across every page, not just the site chrome. A 148-test
+Czech i18n** across every page, not just the site chrome. A 152-test
 suite covers the RBAC/scoping-sensitive paths; `ruff check .` and `mypy
 app alembic tests` are both fully clean. See [CLAUDE.md](../CLAUDE.md)'s
 "Current state" section for what's left (mainly: no CI workflow file).

@@ -141,7 +141,12 @@ def _honeypot_tabs(request: Request, honeypot: Honeypot, user: User) -> list[tup
         tabs.append(("logs", t(request, "honeypots.tabs.logs"), f"{base}/logs"))
         tabs.append(("status", t(request, "honeypots.tabs.status"), f"{base}/status"))
         tabs.append(("config", t(request, "honeypots.tabs.config"), f"{base}/config"))
-    tabs.append(("power", t(request, "honeypots.tabs.power"), f"{base}/power"))
+    # No separate "Power" tab any more — reboot/shut down live directly on
+    # Overview now (see `honeypot_detail`'s own template), the same one-page
+    # placement this honeypot's other one-off actions (test connection,
+    # discover host key) already have, rather than a whole tab for two
+    # buttons. `GET /{id}/power` itself still redirects there for anyone
+    # with the old URL bookmarked/linked — see `power_tab`.
     tabs.append(("settings", t(request, "honeypots.tabs.settings"), f"{base}/edit"))
     return tabs
 
@@ -1130,6 +1135,10 @@ async def honeypot_detail(
             # GET /honeypots/{id}/packages below).
             "package_counts": await _get_package_counts(honeypot_id, db),
             "held_count": await _get_held_count(honeypot_id, db),
+            # One-time notice after a power action redirect — not persisted
+            # anywhere, just echoed back from the query string (see
+            # `power_action`'s own redirect).
+            "power_sent": request.query_params.get("power_sent"),
         },
     )
     if new_cookie:
@@ -2832,21 +2841,13 @@ async def power_tab(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Response:
-    """The "Power" tab landing page — description plus the two confirm-flow
-    links; the actual double-confirmation happens on the dedicated pages
-    below (`GET/POST /{honeypot_id}/power/{action}`)."""
+    """The old "Power" tab's URL — reboot/shut down moved to Overview (see
+    `honeypot_detail`), so this just redirects there instead of 404ing on
+    whatever still links or is bookmarked here."""
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    return templates.TemplateResponse(
-        request,
-        "honeypots/power.html",
-        {
-            "honeypot": honeypot,
-            "tabs": _honeypot_tabs(request, honeypot, current_user),
-            "active_tab": "power",
-            # One-time notice after a power action redirect — not persisted
-            # anywhere, just echoed back from the query string.
-            "power_sent": request.query_params.get("power_sent"),
-        },
+    query = f"?{request.url.query}" if request.url.query else ""
+    return RedirectResponse(
+        url=f"/honeypots/{honeypot.id}{query}", status_code=status.HTTP_301_MOVED_PERMANENTLY
     )
 
 
@@ -2944,7 +2945,7 @@ async def power_action(
     )
 
     return RedirectResponse(
-        url=f"/honeypots/{honeypot.id}/power?power_sent={action.value}",
+        url=f"/honeypots/{honeypot.id}?power_sent={action.value}",
         status_code=status.HTTP_303_SEE_OTHER,
     )
 
