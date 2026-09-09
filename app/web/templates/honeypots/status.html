@@ -40,6 +40,11 @@
       <noscript><button type="submit" class="button">{{ t(request, "honeypots.activity.apply") }}</button></noscript>
     </form>
 
+    <div class="page-header-actions">
+      <a class="button button-secondary" href="/honeypots/{{ honeypot.id }}/status/export?format=csv&range_key={{ range_key }}">{{ t(request, "honeypots.activity.export_csv") }}</a>
+      <a class="button button-secondary" href="/honeypots/{{ honeypot.id }}/status/export?format=json&range_key={{ range_key }}">{{ t(request, "honeypots.activity.export_json") }}</a>
+    </div>
+
     {% if activity.truncated %}
       <div class="alert alert-warn">
         <p>{{ t(request, "honeypots.activity.truncated") }}</p>

@@ -33,6 +33,29 @@ async def _add_honeypot_with_event(db_session_factory, company_id, name="honey1"
     return honeypot
 
 
+async def test_dashboard_shows_fleet_wide_activity_by_type(client, db_session_factory):
+    """Same per-type bucketing the honeypot Activity tab uses
+    (`app.services.canary_activity_history`), fed events across every
+    honeypot in scope instead of one — see `app/web/routes/dashboard.py`."""
+    company = await create_company(db_session_factory, name="Acme")
+    honeypot = await _add_honeypot_with_event(db_session_factory, company.id, "acme1")
+    async with db_session_factory() as db:
+        db.add(
+            HoneypotEvent(
+                honeypot_id=honeypot.id,
+                company_id=company.id,
+                event_type="4002",
+                occurred_at=datetime.now(UTC),
+                raw={},
+            )
+        )
+        await db.commit()
+
+    response = await client.get("/dashboard")
+    assert response.status_code == 200
+    assert "SSH login attempt" in response.text
+
+
 async def test_dashboard_shows_totals_across_companies_for_superadmin(client, db_session_factory):
     company_a = await create_company(db_session_factory, name="Acme")
     company_b = await create_company(db_session_factory, name="Beta")

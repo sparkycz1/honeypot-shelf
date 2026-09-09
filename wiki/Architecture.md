@@ -485,6 +485,44 @@ reachability check every honeypot also gets (same as debcontrol's
 `Machine`) — see `app/db/models/honeypot.py`'s module docstring for why
 the two signals are kept apart.
 
+## 🌐 The REST API: read and write, mirroring the web UI
+
+`app/web/routes/api_v1*.py` — authenticated with a per-user API token
+(`Authorization: Bearer <token>`, minted from that account's own
+`/account` page, see `app.auth.api_tokens`/`app.auth.dependencies.
+get_api_token_user`), not a session cookie. A token can do whatever its
+owning account currently permits, company-scoped exactly the way the web
+UI is (`app.auth.scope.visible_company_id`/`honeypots_visible_to`) — it's
+a second door into the same house, not a looser one, and it stops working
+immediately if the account's access changes or it's deactivated.
+
+Deliberately still web-UI-only, and why: SSH key rotation
+(`/settings/ssh-key/...`), LDAP/OIDC configuration, and syslog forwarding
+are excluded because each one is either a secret/credential surface or
+carries a lock-out/blast-radius risk meant to be handled deliberately, by
+a human, not scriptable. The interactive SSH terminal
+(`app/web/routes/terminal_ws.py`) is excluded for a different reason: an
+inherently interactive, browser-only WebSocket relaying keystrokes to a
+PTY, with no meaningful "REST" shape — nothing for a script to call that
+would do anything useful without a human driving it. A *fresh*, one-time
+password submitted through the "Fix it" readiness flow is excluded for
+the same secret-handling reason SSH key rotation is; the equivalent using
+the credential already on file has an API route. CSV bulk import of
+pending honeypots is excluded too — a script importing honeypots already
+has `POST /honeypots` (or `POST /api/inform` for genuine
+self-registration).
+
+`GET /api/v1/events` (+ `/export`, CSV or JSON — `app/web/routes/
+api_v1_events.py`) is the read surface over `HoneypotEvent`: filterable by
+`honeypot_id`/`event_type`/`source`/`since`/`until`, paginated on the
+plain list endpoint, unpaginated (same tradeoff the audit log's export
+makes) on `/export`. Mirrors `app/web/routes/audit.py`'s/`api_v1_audit.
+py`'s CSV-export shape (`_csv_safe`'s spreadsheet-formula-injection
+guard included) — and the honeypot Activity tab's own `GET /honeypots/
+{id}/status/export` (session-authenticated, not a REST API route, since
+it's a plain `<a href>` download link on that page) reuses the same
+shape again, scoped to one honeypot instead of a whole company/fleet.
+
 ## 🔒 Security model
 
 CSRF, CSP (strict, no inline scripts/styles, no CDN — htmx and Swagger UI

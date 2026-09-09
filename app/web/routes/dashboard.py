@@ -25,6 +25,7 @@ from app.db.models.honeypot import Honeypot
 from app.db.models.honeypot_event import HoneypotEvent
 from app.db.models.user import User
 from app.db.session import get_db
+from app.services.canary_activity_history import MAX_RAW_EVENTS, build_activity_history
 from app.services.honeypot_status import is_online, offline_cutoff
 from app.web.templating import templates
 
@@ -77,6 +78,24 @@ async def dashboard(
         recent_query = recent_query.where(HoneypotEvent.company_id == company_id)
     recent_events = (await db.execute(recent_query)).scalars().all()
 
+    # Fleet-wide (or, for a company-scoped account, this company's own)
+    # "what kind of activity" breakdown — the same per-type bucketing the
+    # honeypot Activity tab uses (`app.services.canary_activity_history`),
+    # just fed events across every honeypot in scope instead of one.
+    # Capped at `MAX_RAW_EVENTS`, same reasoning as that module's own cap:
+    # a 24h window is normally small, but a sustained flood (portscan)
+    # across many honeypots at once could still be a lot of rows.
+    activity_window_query = (
+        select(HoneypotEvent)
+        .where(HoneypotEvent.occurred_at >= now - timedelta(days=1))
+        .order_by(HoneypotEvent.occurred_at)
+        .limit(MAX_RAW_EVENTS)
+    )
+    if company_id is not None:
+        activity_window_query = activity_window_query.where(HoneypotEvent.company_id == company_id)
+    activity_events = (await db.execute(activity_window_query)).scalars().all()
+    activity = build_activity_history(list(activity_events), "24h", now=now)
+
     company_count = None
     company_breakdown = None
     if user.is_superadmin:
@@ -124,5 +143,6 @@ async def dashboard(
             "company_breakdown": company_breakdown,
             "daily_snapshots": daily_snapshots,
             "dashboard_trends_retention_days": settings_row.dashboard_trends_retention_days,
+            "activity": activity,
         },
     )

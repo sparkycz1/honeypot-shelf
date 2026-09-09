@@ -115,7 +115,9 @@ service, locale/timezone, hostname, NetBird, generating OpenCanary's own
 config, and the portscan/Samba modules' host-side prep, all streamed live
 to the browser over a WebSocket — see
 [wiki/Honeypot-Initialize.md](wiki/Honeypot-Initialize.md)), and an
-initial Alembic migration. A 120-test suite covers auth, company
+initial Alembic migration. A 194-test suite (grown well past this
+paragraph's own original count — check `uv run pytest` for the current
+number rather than trusting a number in prose) covers auth, company
 scoping, ingest, the dashboard, honeypot/company/schedule CRUD, `pg_enum`,
 i18n, config, Initialize's script builder, and the proxy-headers/
 CSP-safety regression guards below.
@@ -219,6 +221,34 @@ story. Confirmed fixed live: `docker compose logs beat` now shows
 `Scheduler: Sending due task ...` for entries that never fired before,
 and the worker's task list at startup includes every
 `app.scheduling.jobs.*` task.
+
+Since built on top of that: `GET /api/v1/events` (+ `/export`, CSV/JSON) —
+`app/web/routes/api_v1_events.py` — a company-scoped REST API over
+`HoneypotEvent`, and a per-honeypot `GET /honeypots/{id}/status/export`
+(session-authenticated, same download-link pattern as the audit log's
+export) for the Activity tab's own CSV/JSON button. Both existed only as
+documentation before (`auth/account.html`'s API-tokens hint has referenced
+`GET /api/v1/events` since that page was written) — a real, previously
+undetected gap between what the app claimed and what it did. The
+Dashboard also got a fleet-wide (or, company-scoped, that company's own)
+"activity by alert type" section, reusing
+`canary_activity_history.build_activity_history` across every honeypot in
+scope instead of one. Scheduling gained two debugging actions — "force
+OpenCanary log poll now"/"force monitoring sample now"
+(`app.services.honeypot_actions.trigger_canary_log_poll`/
+`trigger_monitoring_sample`) — for forcing either sweep on demand instead
+of waiting out its own interval.
+
+Also fixed in the same pass: `auth/account.html` ("My account") was
+almost entirely hardcoded English — the Password/2FA/Passkeys/Sessions/
+API-tokens sections and several `data-confirm` prompts never went through
+`t()` at all, despite this file and the wiki claiming complete i18n
+coverage. Same gap, smaller scope, in `settings/_vpn.html`,
+`companies/detail.html`, and `honeypots/list.html`/`edit.html`'s
+`data-confirm`/`aria-label` attributes. All fixed — see
+`tests/test_account_i18n.py` for the regression guard (asserts the Czech
+locale actually renders Czech text on `/account`, not an English
+fallback).
 
 Settled product decisions (see [wiki/Home.md](wiki/Home.md) for the full
 list): only a superadmin creates companies/honeypots/users — a company's
