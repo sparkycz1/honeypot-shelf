@@ -1,5 +1,8 @@
-// "Select all" checkbox for bulk-action tables (e.g. the machine list):
-// toggles every `machine_ids` checkbox inside the same <form>. Kept as an
+// "Select all" checkbox for bulk-action tables (honeypots, users, ...):
+// toggles every same-named checkbox inside the same <form>. The name to
+// toggle comes from the checkbox's own `data-select-all` value (e.g.
+// `data-select-all="honeypot_ids"`) rather than being hardcoded, so this
+// one script works for every bulk-select table in the app. Kept as an
 // external script, not an inline handler — the CSP here has no
 // 'unsafe-inline' for script-src.
 document.addEventListener("change", (event) => {
@@ -7,7 +10,9 @@ document.addEventListener("change", (event) => {
   if (!(target instanceof HTMLInputElement) || !target.matches("[data-select-all]")) return;
   const form = target.closest("form");
   if (!form) return;
-  for (const checkbox of form.querySelectorAll('input[name="machine_ids"]')) {
+  const name = target.getAttribute("data-select-all");
+  if (!name) return;
+  for (const checkbox of form.querySelectorAll(`input[name="${name}"]`)) {
     checkbox.checked = target.checked;
   }
 });

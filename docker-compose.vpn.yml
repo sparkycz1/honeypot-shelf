@@ -94,7 +94,7 @@ services:
       - bash
       - -c
       - >-
-        mkdir -p /var/run/netbird /var/log/netbird &&
+        mkdir -p /var/run/netbird /var/log/netbird /var/log/vpn &&
         netbird service run
         --daemon-addr unix:///var/run/netbird/sock
         --log-file /var/log/netbird/client.log &
@@ -112,6 +112,7 @@ services:
       - netbird_log:/var/log/netbird
       - vpn_control_sock:/var/run/vpn
       - vpn_wireguard_state:/etc/wireguard
+      - vpn_log:/var/log/vpn
     healthcheck:
       test: ["CMD", "sh", "-c", "test -S /var/run/netbird/sock && test -S /var/run/vpn/control.sock"]
       interval: 10s
@@ -132,6 +133,7 @@ services:
       - netbird_sock:/var/run/netbird:ro
       - netbird_log:/var/log/netbird:ro
       - vpn_control_sock:/var/run/vpn:ro
+      - vpn_log:/var/log/vpn:ro
     depends_on:
       vpn:
         condition: service_healthy
@@ -141,6 +143,7 @@ services:
     volumes:
       - netbird_sock:/var/run/netbird:ro
       - vpn_control_sock:/var/run/vpn:ro
+      - vpn_log:/var/log/vpn:ro
     depends_on:
       vpn:
         condition: service_healthy
@@ -151,3 +154,4 @@ volumes:
   netbird_log:
   vpn_control_sock:
   vpn_wireguard_state:
+  vpn_log:

@@ -25,7 +25,7 @@
       <p class="hint">{{ netbird_status.error }}</p>
     {% endif %}
 
-    <form method="post" action="/settings/netbird" class="form" autocomplete="off">
+    <form method="post" action="/settings/netbird" id="netbird-form" class="form" autocomplete="off">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
       <label for="netbird_setup_key">{{ t(request, "settings.netbird.setup_key") }}</label>
@@ -38,11 +38,13 @@
              placeholder="https://netbird.example.com:443"
              value="{{ app_settings.netbird_management_url or '' }}">
       <p class="hint">{{ t(request, "settings.netbird.management_url_hint") }}</p>
-
-      <button type="submit" class="button">{{ t(request, "settings.netbird.connect") }}</button>
     </form>
 
+    {# Connect submits the config form above by id — Restart/Disconnect
+       are separate action-only forms (no config fields of their own) —
+       all three rendered as one row of buttons regardless. #}
     <div class="page-header-actions">
+      <button type="submit" form="netbird-form" class="button">{{ t(request, "settings.netbird.connect") }}</button>
       <form method="post" action="/settings/netbird/restart" class="inline-form"
             data-confirm="{{ t(request, 'settings.netbird.confirm_restart') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -85,18 +87,17 @@
       </details>
     {% endif %}
 
-    <form method="post" action="/settings/wireguard" class="form" autocomplete="off">
+    <form method="post" action="/settings/wireguard" id="wireguard-form" class="form" autocomplete="off">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
       <label for="wireguard_config">{{ t(request, "settings.wireguard.config") }}</label>
       <textarea id="wireguard_config" name="wireguard_config" rows="8" autocomplete="off"
                 placeholder="{{ t(request, 'settings.wireguard.config_placeholder_set') if app_settings.wireguard_config_encrypted else t(request, 'settings.wireguard.config_placeholder_unset') }}"></textarea>
       <p class="hint">{{ t(request, "settings.wireguard.config_hint") }}</p>
-
-      <button type="submit" class="button">{{ t(request, "settings.wireguard.connect") }}</button>
     </form>
 
     <div class="page-header-actions">
+      <button type="submit" form="wireguard-form" class="button">{{ t(request, "settings.wireguard.connect") }}</button>
       <form method="post" action="/settings/wireguard/restart" class="inline-form"
             data-confirm="{{ t(request, 'settings.wireguard.confirm_restart') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -107,5 +108,17 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button type="submit" class="button button-danger">{{ t(request, "settings.wireguard.disconnect") }}</button>
       </form>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>{{ t(request, "settings.wireguard.log_heading") }}</h2>
+    <p class="hint">{{ t(request, "settings.wireguard.log_hint") }}</p>
+    <div
+      hx-get="/settings/wireguard/log"
+      hx-trigger="every 10s, live-vpn from:body"
+      hx-swap="innerHTML"
+    >
+      {% include "partials/wireguard_log.html" %}
     </div>
   </section>

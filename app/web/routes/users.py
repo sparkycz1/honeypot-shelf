@@ -97,6 +97,12 @@ async def list_users(
             "users": users,
             "csrf_token": request.state.csrf_token,
             "filtered_company": filtered_company,
+            "companies": await _get_companies(db),
+            "access_levels": list(AccessLevel),
+            "bulk_error": request.query_params.get("bulk_error"),
+            "bulk_deleted": request.query_params.get("bulk_deleted"),
+            "bulk_assigned": request.query_params.get("bulk_assigned"),
+            "bulk_skipped": request.query_params.get("bulk_skipped"),
         },
     )
 
@@ -215,6 +221,122 @@ async def create_user(
         target_label=user.username,
     )
     return RedirectResponse(url="/users", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/bulk/delete", dependencies=[Depends(verify_csrf)])
+async def bulk_delete_users(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    user_ids: list[uuid.UUID] = Form(default=[]),
+) -> Response:
+    """Deletes every selected user except your own account and the last
+    active superadmin (same two guards `delete_user` enforces one at a
+    time) — either is silently skipped and counted, rather than aborting
+    the whole batch over one unselectable row. Declared before
+    `/{user_id}/...` below — Starlette matches routes in declaration
+    order, and `{user_id}` would otherwise greedily match the literal
+    "bulk" segment first."""
+    if not user_ids:
+        return RedirectResponse(
+            url="/users?bulk_error=Select+at+least+one+user.",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    deleted = 0
+    skipped = 0
+    for user_id in user_ids:
+        user = await db.get(User, user_id)
+        if user is None:
+            continue
+        if user.id == current_user.id or await _would_remove_last_superadmin(db, user):
+            skipped += 1
+            continue
+        username = user.username
+        await db.delete(user)
+        await db.commit()
+        await log_event(
+            db,
+            request=request,
+            action="user.delete",
+            summary=f'Deleted user "{username}" (bulk)',
+            target_type="user",
+            target_id=user_id,
+            target_label=username,
+        )
+        deleted += 1
+
+    return RedirectResponse(
+        url=f"/users?bulk_deleted={deleted}&bulk_skipped={skipped}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+@router.post("/bulk/assign-company", dependencies=[Depends(verify_csrf)])
+async def bulk_assign_company(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user_ids: list[uuid.UUID] = Form(default=[]),
+    company_id: str = Form(""),
+    access_level: str = Form(""),
+) -> Response:
+    """Re-homes every selected non-superadmin user to one company/access
+    level in one go — a superadmin in the selection is skipped and counted
+    (moving a superadmin *out* of superadmin is a deliberate, one-at-a-time
+    decision on that account's own edit page, not a bulk side effect)."""
+    if not user_ids:
+        return RedirectResponse(
+            url="/users?bulk_error=Select+at+least+one+user.",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+    try:
+        parsed_company_id = uuid.UUID(company_id)
+        parsed_access_level = AccessLevel(access_level)
+    except ValueError:
+        return RedirectResponse(
+            url="/users?bulk_error=Pick+a+company+and+access+level.",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+    company = await db.get(Company, parsed_company_id)
+    if company is None:
+        return RedirectResponse(
+            url="/users?bulk_error=Pick+a+company+and+access+level.",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    assigned = 0
+    skipped = 0
+    for user_id in user_ids:
+        user = await db.get(User, user_id)
+        if user is None:
+            continue
+        if user.is_superadmin:
+            skipped += 1
+            continue
+        user.company_id = parsed_company_id
+        user.access_level = parsed_access_level
+        assigned += 1
+
+    await db.commit()
+    if assigned:
+        await log_event(
+            db,
+            request=request,
+            action="user.bulk_assign_company",
+            summary=(
+                f'Assigned {assigned} user(s) to "{company.name}" '
+                f"({parsed_access_level.value})"
+            ),
+            target_type="company",
+            target_id=company.id,
+            target_label=company.name,
+            details={"assigned": assigned, "skipped": skipped},
+        )
+
+    return RedirectResponse(
+        url=f"/users?bulk_assigned={assigned}&bulk_skipped={skipped}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
 
 
 @router.get("/{user_id}/edit")

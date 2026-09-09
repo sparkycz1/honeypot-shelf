@@ -58,7 +58,9 @@ async def _run_command(*args: str) -> tuple[bool, str]:
 
 
 async def _wg_up(config: str) -> dict[str, object]:
+    logger.info("wg_up requested")
     if not config.strip():
+        logger.warning("wg_up rejected: no config given")
         return {"ok": False, "output": "No WireGuard config given."}
 
     os.makedirs("/etc/wireguard", exist_ok=True)
@@ -74,6 +76,7 @@ async def _wg_up(config: str) -> dict[str, object]:
         os.close(fd)
 
     ok, output = await _run_command("wg-quick", "up", WG_INTERFACE)
+    logger.info("wg_up %s: %s", "succeeded" if ok else "failed", output)
     return {"ok": ok, "output": output}
 
 
@@ -81,12 +84,15 @@ _ALREADY_DOWN_MARKERS = ("is not a WireGuard interface", "does not exist")
 
 
 async def _wg_down() -> dict[str, object]:
+    logger.info("wg_down requested")
     ok, output = await _run_command("wg-quick", "down", WG_INTERFACE)
     if not ok and any(marker in output for marker in _ALREADY_DOWN_MARKERS):
         # Already down, or never connected at all (no config file yet) —
         # same "not connected is fine" tolerance `app.services.netbird.
         # restart` applies to NetBird's own `down`.
+        logger.info("wg_down: already down")
         return {"ok": True, "output": "Already down."}
+    logger.info("wg_down %s: %s", "succeeded" if ok else "failed", output)
     return {"ok": ok, "output": output}
 
 
@@ -141,6 +147,21 @@ async def serve(socket_path: str | None = None) -> None:
         await server.serve_forever()
 
 
+def _configure_logging() -> None:
+    """Logs to stderr (`docker compose logs vpn`) *and* to
+    `Settings.wireguard_log_path`, on a shared volume `web` can read — see
+    `app.services.wireguard.tail_log`. Plain `wireguard-tools` keeps no
+    log of its own to expose this way, unlike NetBird's client log."""
+    log_path = get_settings().wireguard_log_path
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    file_handler = logging.FileHandler(log_path)
+    file_handler.setFormatter(formatter)
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+    logging.basicConfig(level=logging.INFO, handlers=[stream_handler, file_handler])
+
+
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    _configure_logging()
     asyncio.run(serve())

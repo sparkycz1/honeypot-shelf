@@ -100,6 +100,22 @@ async def test_package_search_with_a_query_does_not_crash(client, db_session_fac
     assert response.status_code == 200
 
 
+async def test_list_select_all_checkbox_names_the_honeypot_checkboxes(client, db_session_factory):
+    """Regression guard: `bulk-select.js` used to hardcode toggling
+    checkboxes named `machine_ids` (a debcontrol leftover) — honeypot
+    checkboxes are named `honeypot_ids`, so "select all" silently did
+    nothing on this page. Fixed by having the "select all" checkbox name
+    its own target via `data-select-all="honeypot_ids"`."""
+    company = await create_company(db_session_factory)
+    async with db_session_factory() as db:
+        db.add(Honeypot(company_id=company.id, name="acme-honey1"))
+        await db.commit()
+
+    response = await client.get("/honeypots")
+    assert response.status_code == 200
+    assert 'data-select-all="honeypot_ids"' in response.text
+
+
 async def test_ingest_token_rotate_and_revoke(client, db_session_factory):
     """Generating a token shows the raw value exactly once and stores only
     its hash; revoking clears it. See `app.auth.ingest_tokens`."""

@@ -53,6 +53,7 @@
 
   <section class="panel">
     <h2>{{ t(request, "settings.general.background_checks.heading") }}</h2>
+    <p class="hint">{{ t(request, "settings.general.background_checks.hint") }}</p>
     <dl class="detail-list">
       <dt>{{ t(request, "settings.general.background_checks.reachability_check") }}</dt>
       <dd>{{ t(request, "settings.general.background_checks.every_seconds", seconds=settings.reachability_check_interval_seconds) }}
@@ -60,6 +61,23 @@
         {{ t(request, "settings.general.background_checks.reachability_check_detail") }}</dd>
       <dt>{{ t(request, "settings.general.background_checks.facts_refresh") }}</dt>
       <dd>{{ t(request, "settings.general.background_checks.every_seconds", seconds=settings.facts_refresh_interval_seconds) }}
-        (<code>FACTS_REFRESH_INTERVAL_SECONDS</code> {{ t(request, "settings.general.background_checks.in_env") }})</dd>
+        (<code>FACTS_REFRESH_INTERVAL_SECONDS</code> {{ t(request, "settings.general.background_checks.in_env") }}) —
+        {{ t(request, "settings.general.background_checks.facts_refresh_detail") }}</dd>
+      <dt>{{ t(request, "settings.general.background_checks.monitoring_sample") }}</dt>
+      <dd>{{ t(request, "settings.general.background_checks.every_seconds", seconds=settings.monitoring_interval_seconds) }}
+        (<code>MONITORING_INTERVAL_SECONDS</code> {{ t(request, "settings.general.background_checks.in_env") }},
+        {{ t(request, "settings.general.background_checks.overridable_per_honeypot") }}) —
+        {{ t(request, "settings.general.background_checks.monitoring_sample_detail") }}</dd>
+      <dt>{{ t(request, "settings.general.background_checks.canary_log_poll") }}</dt>
+      <dd>{{ t(request, "settings.general.background_checks.every_seconds", seconds=settings.opencanary_log_poll_interval_seconds) }}
+        (<code>OPENCANARY_LOG_POLL_INTERVAL_SECONDS</code> {{ t(request, "settings.general.background_checks.in_env") }},
+        {{ t(request, "settings.general.background_checks.overridable_per_honeypot") }}) —
+        {{ t(request, "settings.general.background_checks.canary_log_poll_detail") }}</dd>
+      <dt>{{ t(request, "settings.general.background_checks.scheduled_tasks") }}</dt>
+      <dd>{{ t(request, "settings.general.background_checks.every_minute") }} —
+        {{ t(request, "settings.general.background_checks.scheduled_tasks_detail") }}</dd>
+      <dt>{{ t(request, "settings.general.background_checks.daily_housekeeping") }}</dt>
+      <dd>{{ t(request, "settings.general.background_checks.once_a_day") }} —
+        {{ t(request, "settings.general.background_checks.daily_housekeeping_detail") }}</dd>
     </dl>
   </section>

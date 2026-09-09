@@ -16,6 +16,17 @@ from app.services import netbird, wireguard
 pytestmark = pytest.mark.asyncio
 
 
+@pytest.fixture(autouse=True)
+def _assume_netbird_socket_exists(monkeypatch):
+    """`app.services.netbird._run` now checks the daemon socket file exists
+    before shelling out at all (see that function's own docstring for why —
+    it's what makes Settings -> VPN fast when the sidecar isn't running).
+    Every test below except the ones specifically testing *that* check
+    mocks `asyncio.create_subprocess_exec` instead and expects it to
+    actually be reached, so this makes the pre-check pass by default."""
+    monkeypatch.setattr("app.services.netbird.os.path.exists", lambda _path: True)
+
+
 def _csrf_from(response) -> str:
     match = re.search(r'name="csrf_token" value="([^"]+)"', response.text)
     assert match, "no csrf_token found in response"
@@ -33,6 +44,33 @@ class _FakeProcess:
 
     def kill(self) -> None:
         self.killed = True
+
+
+async def test_run_fails_fast_when_daemon_socket_file_is_missing(monkeypatch):
+    """The real bug this guards against: without this pre-check, `netbird
+    status` (etc.) shells out regardless and takes the CLI's own ~10s gRPC
+    dial/backoff to fail — the pre-check turns that into a sub-millisecond
+    failure instead, by checking the socket file exists first."""
+    monkeypatch.setattr("app.services.netbird.os.path.exists", lambda _path: False)
+
+    async def _fake_exec(*args, **kwargs):
+        pytest.fail("should never shell out once the pre-check already failed")
+
+    monkeypatch.setattr("asyncio.create_subprocess_exec", _fake_exec)
+    with pytest.raises(netbird.NetbirdUnavailableError):
+        await netbird.connect(setup_key="abc123", management_url=None)
+
+    # `status()` itself catches the same error rather than propagating it
+    # (same tolerance it already has for the CLI/binary missing outright).
+    monkeypatch.setattr("asyncio.create_subprocess_exec", _fake_exec)
+    result = await netbird.status()
+    assert result.connected is False
+    assert result.error is not None
+
+
+def test_daemon_socket_path_parses_the_unix_scheme():
+    assert netbird._daemon_socket_path("unix:///var/run/netbird/sock") == "/var/run/netbird/sock"
+    assert netbird._daemon_socket_path("tcp://127.0.0.1:1234") is None
 
 
 async def test_run_raises_unavailable_when_binary_missing(monkeypatch):
@@ -116,6 +154,33 @@ async def test_tail_log_returns_last_n_lines(tmp_path, monkeypatch):
     tail = netbird.tail_log(lines=3)
     assert tail.strip().splitlines() == ["line 8", "line 9", "line 10"]
     get_settings.cache_clear()
+
+
+async def test_wireguard_tail_log_missing_file_returns_empty(tmp_path, monkeypatch):
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+    monkeypatch.setenv("WIREGUARD_LOG_PATH", str(tmp_path / "does-not-exist.log"))
+    assert wireguard.tail_log() == ""
+    get_settings.cache_clear()
+
+
+async def test_wireguard_tail_log_returns_last_n_lines(tmp_path, monkeypatch):
+    from app.core.config import get_settings
+
+    log_path = tmp_path / "control.log"
+    log_path.write_text("\n".join(f"line {i}" for i in range(1, 11)) + "\n")
+
+    get_settings.cache_clear()
+    monkeypatch.setenv("WIREGUARD_LOG_PATH", str(log_path))
+    tail = wireguard.tail_log(lines=3)
+    assert tail.strip().splitlines() == ["line 8", "line 9", "line 10"]
+    get_settings.cache_clear()
+
+
+async def test_wireguard_log_panel_route(client):
+    response = await client.get("/settings/wireguard/log")
+    assert response.status_code == 200
 
 
 # --- Settings -> NetBird routes --------------------------------------------

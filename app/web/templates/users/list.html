@@ -15,41 +15,82 @@
     </p>
   {% endif %}
 
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th>{{ t(request, "users.field.username") }}</th>
-        <th>{{ t(request, "account.profile.access") }}</th>
-        <th>{{ t(request, "users.field.auth_provider") }}</th>
-        <th>{{ t(request, "users.list.two_fa") }}</th>
-        <th>{{ t(request, "users.field.api_access") }}</th>
-        <th>{{ t(request, "users.list.status") }}</th>
-        <th>{{ t(request, "users.list.last_login") }}</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for u in users %}
+  {% if bulk_error %}
+    <div class="alert alert-error"><p>{{ bulk_error }}</p></div>
+  {% endif %}
+  {% if bulk_deleted %}
+    <div class="alert alert-ok"><p>{{ t(request, "users.list.bulk_deleted_notice", count=bulk_deleted) }}</p></div>
+  {% endif %}
+  {% if bulk_assigned %}
+    <div class="alert alert-ok"><p>{{ t(request, "users.list.bulk_assigned_notice", count=bulk_assigned) }}</p></div>
+  {% endif %}
+  {% if bulk_skipped and bulk_skipped != '0' %}
+    <div class="alert alert-warn"><p>{{ t(request, "users.list.bulk_skipped_notice", count=bulk_skipped) }}</p></div>
+  {% endif %}
+
+  <form method="post" class="form form-wide" id="bulk-actions-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <table class="data-table">
+      <thead>
         <tr>
-          <td>{{ u.display_name or u.username }}</td>
-          <td>
-            {% if u.is_superadmin %}<span class="badge">{{ t(request, "users.list.superadmin_badge") }}</span>
-            {% else %}{{ u.company.name }} — {{ t(request, "users.field.access_level_read_write") if u.access_level.value == "read_write" else t(request, "users.field.access_level_read_only") }}{% endif %}
-          </td>
-          <td>{{ u.auth_provider.value }}</td>
-          <td>{{ t(request, "users.list.on") if u.totp_enabled else '—' }}</td>
-          <td>{{ t(request, "users.list.on") if u.api_access_enabled else '—' }}</td>
-          <td>
-            {% if u.is_active %}
-              <span class="badge badge-ok">{{ t(request, "users.list.active_badge") }}</span>
-            {% else %}
-              <span class="badge badge-error">{{ t(request, "users.list.disabled_badge") }}</span>
-            {% endif %}
-          </td>
-          <td>{{ u.last_login_at | local_time('%Y-%m-%d %H:%M %Z') if u.last_login_at else t(request, "users.list.never") }}</td>
-          <td><a href="/users/{{ u.id }}/edit">{{ t(request, "users.list.edit_link") }}</a></td>
+          <th><input type="checkbox" data-select-all="user_ids" aria-label="{{ t(request, 'users.list.select_all_aria') }}"></th>
+          <th>{{ t(request, "users.field.username") }}</th>
+          <th>{{ t(request, "account.profile.access") }}</th>
+          <th>{{ t(request, "users.field.auth_provider") }}</th>
+          <th>{{ t(request, "users.list.two_fa") }}</th>
+          <th>{{ t(request, "users.list.api_access") }}</th>
+          <th>{{ t(request, "users.list.status") }}</th>
+          <th>{{ t(request, "users.list.last_login") }}</th>
+          <th></th>
         </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+      </thead>
+      <tbody>
+        {% for u in users %}
+          <tr>
+            <td><input type="checkbox" name="user_ids" value="{{ u.id }}" aria-label="{{ t(request, 'users.list.select_aria', name=(u.display_name or u.username)) }}"></td>
+            <td>{{ u.display_name or u.username }}</td>
+            <td>
+              {% if u.is_superadmin %}<span class="badge">{{ t(request, "users.list.superadmin_badge") }}</span>
+              {% else %}{{ u.company.name }} — {{ t(request, "users.field.access_level_read_write") if u.access_level.value == "read_write" else t(request, "users.field.access_level_read_only") }}{% endif %}
+            </td>
+            <td>{{ u.auth_provider.value }}</td>
+            <td>{{ t(request, "users.list.on") if u.totp_enabled else '—' }}</td>
+            <td>{{ t(request, "users.list.on") if u.api_access_enabled else '—' }}</td>
+            <td>
+              {% if u.is_active %}
+                <span class="badge badge-ok">{{ t(request, "users.list.active_badge") }}</span>
+              {% else %}
+                <span class="badge badge-error">{{ t(request, "users.list.disabled_badge") }}</span>
+              {% endif %}
+            </td>
+            <td>{{ u.last_login_at | local_time('%Y-%m-%d %H:%M %Z') if u.last_login_at else t(request, "users.list.never") }}</td>
+            <td><a href="/users/{{ u.id }}/edit">{{ t(request, "users.list.edit_link") }}</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="page-header-actions" id="bulk-actions-bar">
+      <span class="hint">{{ t(request, "users.list.with_selected") }}</span>
+      <select name="company_id" aria-label="{{ t(request, 'users.list.bulk_company_aria') }}">
+        <option value="">{{ t(request, "users.list.bulk_company_placeholder") }}</option>
+        {% for company in companies %}
+          <option value="{{ company.id }}">{{ company.name }}</option>
+        {% endfor %}
+      </select>
+      <select name="access_level" aria-label="{{ t(request, 'users.list.bulk_access_level_aria') }}">
+        {% for level in access_levels %}
+          <option value="{{ level.value }}">{{ t(request, "users.field.access_level_read_write") if level.value == "read_write" else t(request, "users.field.access_level_read_only") }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" formaction="/users/bulk/assign-company" class="button button-secondary">
+        {{ t(request, "users.list.bulk_assign_company") }}
+      </button>
+      <button type="submit" formaction="/users/bulk/delete" class="button button-danger"
+              data-confirm="{{ t(request, 'users.list.confirm_bulk_delete') }}">
+        {{ t(request, "users.list.bulk_delete") }}
+      </button>
+    </div>
+  </form>
 {% endblock %}

@@ -95,9 +95,15 @@ async def _render_settings(
     # subprocess round trip (app.services.netbird), not worth paying on
     # every other tab's page load/redirect.
     if tab == "vpn" and "netbird_status" not in context:
-        context["netbird_status"] = await netbird.status()
+        # Concurrently, not sequentially — each is an independent
+        # subprocess/socket round trip (app.services.netbird/wireguard),
+        # so there's no reason to pay the sum of their two timeouts should
+        # either one ever hang instead of failing fast.
+        context["netbird_status"], context["wireguard_status"] = await asyncio.gather(
+            netbird.status(), wireguard.status()
+        )
         context["netbird_log"] = netbird.tail_log()
-        context["wireguard_status"] = await wireguard.status()
+        context["wireguard_log"] = wireguard.tail_log()
     response = templates.TemplateResponse(request, "settings/index.html", context)
     if new_cookie:
         set_csrf_cookie(response, new_cookie)
@@ -709,6 +715,13 @@ async def netbird_status_panel(request: Request) -> Response:
 async def netbird_log_panel(request: Request) -> Response:
     return templates.TemplateResponse(
         request, "partials/netbird_log.html", {"netbird_log": netbird.tail_log()}
+    )
+
+
+@router.get("/wireguard/log")
+async def wireguard_log_panel(request: Request) -> Response:
+    return templates.TemplateResponse(
+        request, "partials/wireguard_log.html", {"wireguard_log": wireguard.tail_log()}
     )
 
 
