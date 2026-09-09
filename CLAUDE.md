@@ -250,6 +250,50 @@ coverage. Same gap, smaller scope, in `settings/_vpn.html`,
 locale actually renders Czech text on `/account`, not an English
 fallback).
 
+**Settings → VPN used to take ~10 seconds to open.** `netbird status`
+(and every other `netbird` CLI call) doesn't fail fast when the sidecar
+isn't running — its own gRPC client retries with backoff for about 10s
+before giving up with "context deadline exceeded", regardless of this
+app's own `netbird_command_timeout_seconds` (an outer ceiling on top of
+that, not a replacement for it). `app.services.netbird._run` now checks
+the daemon socket file exists first (`os.path.exists`, same fast check
+`app.services.wireguard` already had for its own control socket) — fails
+in microseconds instead. The VPN tab's NetBird/WireGuard status calls are
+also now fetched concurrently (`asyncio.gather`) rather than sequentially.
+WireGuard also gained its own connection log (`app.services.
+vpn_control_server` now writes to `WIREGUARD_LOG_PATH`, a new shared
+volume in `docker-compose.vpn.yml` — plain `wireguard-tools` keeps no log
+of its own, unlike NetBird's client) and all three buttons (Connect/
+Restart/Disconnect) for both providers now render as one row (the
+"Connect" button submits its section's config form by `form="..."` id from
+outside it, rather than living inside a separate form from Restart/
+Disconnect).
+
+**Users list**: the "API access" column header used to render an entire
+sentence (reusing the edit-form field's own label+hint text) — a
+dedicated short `users.list.api_access` key fixes it. Also gained
+checkbox multi-select (bulk delete, bulk assign-to-company/access-level —
+`POST /users/bulk/delete`/`/bulk/assign-company`, both declared *before*
+`/{user_id}/...` in the router, same reasoning `app/web/routes/
+honeypots.py`'s own `/bulk/...` routes are). Fixed alongside: `bulk-
+select.js`'s "select all" checkbox used to hardcode toggling checkboxes
+named `machine_ids` — a debcontrol leftover — so "select all" silently
+did nothing on the Honeypots list (whose checkboxes are `honeypot_ids`);
+the script now reads the checkbox name to toggle from `data-select-
+all="..."` itself, fixing both pages.
+
+**`scripts/setup.py`** now asks whether to add the VPN sidecar
+(`docker-compose.vpn.yml`), same shape as its existing Caddy question —
+no provider/setup-key/config asked there, all of that stays a Settings →
+VPN, post-deploy step. `scripts/upgrade.sh`'s existing Caddy-detection
+technique (a running container's own Compose service label, not an `.env`
+flag) is reused for VPN detection too, in `upgrade.sh` itself and in
+`scripts/setup.py`'s existing-`.env` re-run path. Two new scripts,
+`scripts/stop.sh`/`start.sh`, stop/start the whole stack (`docker compose
+stop`/`start` — nothing removed) with the same auto-detection, so there's
+one command regardless of which overlay file(s) a given deployment
+actually runs.
+
 Settled product decisions (see [wiki/Home.md](wiki/Home.md) for the full
 list): only a superadmin creates companies/honeypots/users — a company's
 own `READ_WRITE` user manages honeypots *within* their own company (via

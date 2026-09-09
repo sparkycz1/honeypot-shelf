@@ -60,7 +60,7 @@ history; the REST API mirroring all of the above, including `GET
 /api/v1/events` (+ `/export`) for scripting against the same event data;
 Users and Settings (LDAP/OIDC/syslog forwarding, SSH key rotation,
 retention policies); full **English and
-Czech i18n** across every page, not just the site chrome. A 194-test
+Czech i18n** across every page, not just the site chrome. A 205-test
 suite covers the RBAC/scoping-sensitive paths; `ruff check .` and `mypy
 app alembic tests` are both fully clean. See [CLAUDE.md](../CLAUDE.md)'s
 "Current state" section for what's left (mainly: no CI workflow file).

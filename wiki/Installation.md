@@ -13,14 +13,19 @@ system `python3` and Docker — nothing from this project's own virtualenv):
 it generates every secret (`SECRET_KEY`, `ENCRYPTION_KEY`,
 `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `INFORM_TOKEN`, `INGEST_TOKEN`),
 asks a handful of questions (timezone, whether to use the bundled Caddy
-reverse proxy and its domain/email if so, whether the app's own port
-should only accept local connections, the facts/reachability check
-intervals, event retention, the superadmin password — or auto-generates
-one — and the host port), writes `.env`, applies the Alembic migration,
-brings the stack up, waits for it to become healthy, and creates the
-first superadmin account (`admin`). Re-running it against an existing
-`.env` just tops that file up with any new `.env.example` variables and
-restarts the stack — it won't regenerate secrets or touch your data.
+reverse proxy and its domain/email if so, whether to add the optional VPN
+sidecar (`docker-compose.vpn.yml` — no provider/setup key/config asked
+here, that's all done from Settings → VPN once the app is running, see
+[Architecture](Architecture.md)'s "VPN connectivity" section), whether the
+app's own port should only accept local connections, the facts/
+reachability check intervals, event retention, the superadmin password —
+or auto-generates one — and the host port), writes `.env`, applies the
+Alembic migration, brings the stack up, waits for it to become healthy,
+and creates the first superadmin account (`admin`). Re-running it against
+an existing `.env` just tops that file up with any new `.env.example`
+variables and restarts the stack (auto-detecting whether Caddy/the VPN
+sidecar were previously running, same as [`scripts/upgrade.sh`](#updating)
+does) — it won't regenerate secrets or touch your data.
 
 Once it finishes, log in and create at least one `Company` and one
 `Honeypot` from the Companies/Honeypots pages (both superadmin-only) —
@@ -169,6 +174,33 @@ apart.
 
 Pulls the latest code, syncs any new `.env.example` variables into your
 `.env` (`scripts/env_sync.py`), rebuilds, and re-applies migrations.
+Auto-detects whether the bundled Caddy or the VPN sidecar are currently
+running (by their Compose service label, not an `.env` flag) and includes
+the matching overlay file(s) automatically — nothing to pass by hand.
+
+## Stopping and starting
+
+```bash
+./scripts/stop.sh
+./scripts/start.sh
+```
+
+`stop.sh` stops every container (`docker compose stop` — nothing removed,
+your data stays exactly as it was); `start.sh` starts them again. Both
+auto-detect whether Caddy and/or the VPN sidecar are part of this
+deployment the same way `upgrade.sh` does — by each container's own
+Compose service label, not anything in `.env` — so it's the same one
+command whichever of `docker-compose.yml` alone,
+`+ docker-compose.caddy.yml`, `+ docker-compose.vpn.yml`, or both overlays
+together you're actually running; nothing to remember or pass by hand.
+`start.sh` refuses to run (with a pointer to `scripts/setup.py` instead)
+if it finds no existing HoneyHive containers at all — it only starts a
+stack that's already been set up once, it doesn't create one.
+
+For a one-off restart of just one service instead of the whole stack
+(e.g. after editing `Caddyfile`), `docker compose restart <service>`
+still works as usual — these two scripts are for stopping/starting
+*everything* together.
 
 ## Locked out?
 

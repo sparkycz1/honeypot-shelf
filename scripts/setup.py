@@ -160,6 +160,28 @@ def _read_env_value(path: Path, key: str) -> str | None:
     return None
 
 
+def _vpn_overlay_running(docker_path: str) -> bool:
+    """Same detection `scripts/upgrade.sh` uses for Caddy — a running
+    container carrying the Compose service label is a more reliable signal
+    than an `.env` marker would be, since which compose files to pass is a
+    deploy-topology choice, not something the app itself configures (the
+    actual VPN setup key/config are entered from Settings -> VPN, after
+    the app is already running)."""
+    result = subprocess.run(  # noqa: S603 - fixed args, no user input
+        [
+            docker_path, "ps",
+            "--filter", "label=com.docker.compose.project=honeyhive",
+            "--filter", "label=com.docker.compose.service=vpn",
+            "--format", "{{.Names}}",
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return bool(result.stdout.strip())
+
+
 def _ensure_migration(docker_path: str, compose_files: list[str]) -> None:
     """Generate the first Alembic migration against the now-running
     Postgres if `alembic/versions/` is still empty (a fresh clone of this
@@ -215,6 +237,9 @@ def _sync_and_start(docker_path: str) -> None:
     compose_files = ["-f", "docker-compose.yml"]
     if use_caddy:
         compose_files += ["-f", "docker-compose.caddy.yml"]
+    if _vpn_overlay_running(docker_path):
+        print("==> VPN sidecar detected — including docker-compose.vpn.yml.")
+        compose_files += ["-f", "docker-compose.vpn.yml"]
 
     print("==> Starting the database and cache...")
     build_env = {**os.environ, "GIT_COMMIT": _git_commit()}
@@ -304,6 +329,14 @@ def main() -> None:
         lines = _set_env_line(lines, "DOMAIN", domain)
         lines = _set_env_line(lines, "ACME_EMAIL", email)
 
+    use_vpn = _prompt_yes_no(
+        "Add the optional VPN sidecar (lets HoneyHive reach a honeypot that's "
+        "only addressable over NetBird or WireGuard, e.g. behind a NAT with no "
+        "forwarded SSH port)? You'll pick a provider and enter its setup key/"
+        "config from Settings -> VPN once this finishes — nothing to enter here.",
+        default=False,
+    )
+
     print()
     # Bundled Caddy reaches `web` over the compose network regardless of
     # this — it never needs the published host port at all — so anyone
@@ -354,6 +387,8 @@ def main() -> None:
     compose_files = ["-f", "docker-compose.yml"]
     if use_caddy:
         compose_files += ["-f", "docker-compose.caddy.yml"]
+    if use_vpn:
+        compose_files += ["-f", "docker-compose.vpn.yml"]
 
     if env_existed:
         # We just generated a fresh POSTGRES_PASSWORD/REDIS_PASSWORD above, but
@@ -451,6 +486,10 @@ def main() -> None:
     print("You'll also need at least one Company and one Honeypot before")
     print("anything shows up on the dashboard — create them from the Companies")
     print("and Honeypots pages once logged in (superadmin-only).")
+    if use_vpn:
+        print()
+        print("VPN sidecar is running — connect NetBird or WireGuard from")
+        print("Settings -> VPN once logged in.")
     print("=" * 64)
 
 

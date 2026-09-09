@@ -34,6 +34,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 
 from app.core.config import get_settings
 
@@ -66,11 +67,35 @@ class NetbirdCommandError(Exception):
         self.output = output
 
 
+def _daemon_socket_path(daemon_addr: str) -> str | None:
+    """The filesystem path inside a `unix://...`-style `--daemon-addr`, or
+    `None` for any other scheme this can't pre-check."""
+    prefix = "unix://"
+    return daemon_addr.removeprefix(prefix) if daemon_addr.startswith(prefix) else None
+
+
 async def _run(*args: str) -> str:
     """Runs `netbird <args> --daemon-addr <configured>`, returns combined
     stdout+stderr on success. Never includes `args` itself in a raised
-    exception's message — the setup key is one of them for `up`."""
+    exception's message — the setup key is one of them for `up`.
+
+    Checks the daemon socket file exists *before* shelling out — without
+    the sidecar running, the `netbird` CLI itself doesn't fail fast: its
+    own gRPC client retries with backoff for a good ~10 seconds before
+    giving up with "context deadline exceeded", regardless of this app's
+    own `netbird_command_timeout_seconds` (that's just an outer ceiling on
+    top of it). The Settings -> VPN tab calls this on every load and every
+    5-second status poll, so that ~10s was very noticeable — a plain
+    `os.path.exists` first (a few microseconds) fails exactly as fast as
+    `app.services.wireguard`'s own control-socket check already does."""
     settings = get_settings()
+    socket_path = _daemon_socket_path(settings.netbird_daemon_addr)
+    if socket_path is not None and not await asyncio.to_thread(os.path.exists, socket_path):
+        raise NetbirdUnavailableError(
+            "Can't reach the NetBird daemon socket — is the vpn sidecar "
+            "(docker-compose.vpn.yml) running?"
+        )
+
     full_args = [*args, "--daemon-addr", settings.netbird_daemon_addr]
     try:
         process = await asyncio.create_subprocess_exec(

@@ -28,8 +28,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 
 from app.core.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 class WireguardUnavailableError(Exception):
@@ -133,3 +136,23 @@ async def status() -> WireguardStatus:
     except WireguardCommandError as exc:
         return WireguardStatus(up=False, raw=exc.output, error=str(exc))
     return WireguardStatus(up=bool(response.get("up")), raw=str(response.get("output", "")))
+
+
+def tail_log(lines: int = 200) -> str:
+    """The `vpn_control_server`'s own log file, over the shared volume —
+    see `app.services.vpn_control_server._configure_logging`. Plain
+    synchronous file I/O, same as `app.services.netbird.tail_log`; missing
+    file (sidecar never run, or no overlay applied) isn't an error, just
+    an empty/explanatory result."""
+    settings = get_settings()
+    try:
+        with open(settings.wireguard_log_path, encoding="utf-8", errors="replace") as f:
+            all_lines = f.readlines()
+    except FileNotFoundError:
+        return ""
+    except OSError as exc:
+        logger.warning(
+            "Could not read WireGuard control log at %s: %s", settings.wireguard_log_path, exc
+        )
+        return ""
+    return "".join(all_lines[-lines:])

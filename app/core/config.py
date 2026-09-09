@@ -127,6 +127,15 @@ class Settings(BaseSettings):
     vpn_command_timeout_seconds: int = Field(
         default=30, alias="VPN_COMMAND_TIMEOUT_SECONDS"
     )
+    # `vpn_control_server`'s own log (connect/disconnect attempts, results,
+    # errors) — over a shared volume between the sidecar and `web`, the
+    # same idea as `netbird_log_path` above. Plain `wireguard-tools` keeps
+    # no log of its own (`wg-quick`/`wg` are one-shot commands, nothing
+    # daemonized to log continuously) — this is the closest equivalent,
+    # written by the control server itself rather than by WireGuard.
+    wireguard_log_path: str = Field(
+        default="/var/log/vpn/control.log", alias="WIREGUARD_LOG_PATH"
+    )
 
     # Comma-separated absolute path prefixes the Logs tab's "view an
     # arbitrary file" feature is allowed to read from a managed honeypot
