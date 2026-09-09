@@ -44,7 +44,7 @@ visudo -cf /etc/sudoers.d/{{ honeypot.username }}</code></pre>
           </p>
           <form method="post" action="/honeypots/{{ honeypot.id }}/run-onboarding-with-credential"
                 class="form" autocomplete="off"
-                data-confirm="Temporarily connect as this account to fix what's missing, then switch back to HoneyHive's own SSH key?">
+                data-confirm="{{ t(request, 'honeypots.edit.confirm_run_onboarding_with_credential') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <label for="readiness_username">{{ t(request, 'honeypots.edit.username') }}</label>
             <input type="text" id="readiness_username" name="username" value="root" required>
@@ -221,7 +221,7 @@ visudo -cf /etc/sudoers.d/{{ honeypot.username }}</code></pre>
         {% endif %}
         <form method="post" action="/honeypots/{{ honeypot.id }}/run-onboarding"
               class="inline-form"
-              data-confirm="Create a &quot;HoneyHive&quot; user, grant it scoped sudo, and switch this honeypot to HoneyHive's own SSH key?">
+              data-confirm="{{ t(request, 'honeypots.edit.confirm_run_onboarding') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <button type="submit" class="button">{{ t(request, 'honeypots.edit.run_initial_setup') }}</button>
         </form>
@@ -246,13 +246,13 @@ visudo -cf /etc/sudoers.d/{{ honeypot.username }}</code></pre>
       {% endif %}
     </p>
     <form method="post" action="/honeypots/{{ honeypot.id }}/ingest-token/rotate" class="inline-form"
-          data-confirm="Generate a new ingest token for this honeypot? Any previous token stops working immediately.">
+          data-confirm="{{ t(request, 'honeypots.edit.confirm_ingest_token_rotate') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button type="submit" class="button button-secondary">{{ t(request, 'honeypots.edit.ingest_token_rotate') }}</button>
     </form>
     {% if honeypot.ingest_token_hash %}
       <form method="post" action="/honeypots/{{ honeypot.id }}/ingest-token/revoke" class="inline-form"
-            data-confirm="Revoke this honeypot's ingest token? It will have to use the shared token (or a new one) to keep sending events.">
+            data-confirm="{{ t(request, 'honeypots.edit.confirm_ingest_token_revoke') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button type="submit" class="button button-secondary">{{ t(request, 'honeypots.edit.ingest_token_revoke') }}</button>
       </form>
@@ -263,7 +263,7 @@ visudo -cf /etc/sudoers.d/{{ honeypot.username }}</code></pre>
     <h2>{{ t(request, 'honeypots.edit.delete_heading') }}</h2>
     <p class="hint">{{ t(request, 'honeypots.edit.delete_hint') }}</p>
     <form method="post" action="/honeypots/{{ honeypot.id }}/delete"
-          class="inline-form" data-confirm="Delete this honeypot?">
+          class="inline-form" data-confirm="{{ t(request, 'honeypots.edit.confirm_delete') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button type="submit" class="button button-danger">{{ t(request, 'honeypots.edit.delete_button') }}</button>
     </form>

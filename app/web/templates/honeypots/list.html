@@ -109,9 +109,9 @@
         <span class="saved-view-chip">
           <a href="/honeypots?{{ view.query_string }}">{{ view.name }}</a>
           <form method="post" action="/honeypots/views/{{ view.id }}/delete" class="inline-form"
-                data-confirm="Delete the saved view &quot;{{ view.name }}&quot;?">
+                data-confirm="{{ t(request, 'honeypots.list.confirm_delete_view', name=view.name) }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <button type="submit" class="link-button" aria-label="Delete saved view {{ view.name }}">&times;</button>
+            <button type="submit" class="link-button" aria-label="{{ t(request, 'honeypots.list.delete_view_aria', name=view.name) }}">&times;</button>
           </form>
         </span>
       {% endfor %}
@@ -201,12 +201,12 @@
             <div class="honeypot-card">
               <div class="honeypot-card-header">
                 <input type="checkbox" name="honeypot_ids" value="{{ honeypot.id }}"
-                       aria-label="Select {{ honeypot.name }}">
+                       aria-label="{{ t(request, 'honeypots.list.select_aria', name=honeypot.name) }}">
                 {{ render_os_badge(honeypot.os_id, size=32) }}
                 <a href="/honeypots/{{ honeypot.id }}" class="honeypot-card-name">{{ honeypot.name }}</a>
               </div>
               <dl class="honeypot-card-details">
-                <dt>IP</dt><dd>{{ honeypot.ip_address }}</dd>
+                <dt>{{ t(request, 'honeypots.table.ip') }}</dt><dd>{{ honeypot.ip_address }}</dd>
                 <dt>{{ t(request, 'honeypots.table.company') }}</dt>
                 <dd>
                   {% if honeypot.company %}
@@ -243,7 +243,7 @@
         <table class="data-table">
           <thead>
             <tr>
-              <th><input type="checkbox" data-select-all aria-label="Select all honeypots"></th>
+              <th><input type="checkbox" data-select-all aria-label="{{ t(request, 'honeypots.list.select_all_aria') }}"></th>
               <th>{{ t(request, 'honeypots.table.name') }}</th>
               <th>{{ t(request, 'honeypots.table.ip') }}</th>
               <th>{{ t(request, 'honeypots.table.hostname') }}</th>
@@ -290,7 +290,7 @@
         <button type="submit" formaction="/honeypots/bulk/check-updates" class="button button-secondary">
           {{ t(request, 'honeypots.bulk.check_updates') }}
         </button>
-        <select name="strategy" aria-label="Upgrade strategy for bulk update">
+        <select name="strategy" aria-label="{{ t(request, 'honeypots.list.bulk_strategy_aria') }}">
           <option value="dist_upgrade">dist-upgrade</option>
           <option value="full_upgrade">full-upgrade</option>
         </select>
@@ -302,7 +302,7 @@
           {{ t(request, 'honeypots.bulk.shutdown') }}
         </button>
         <input type="text" name="tags" class="inline-text-input" placeholder="{{ t(request, 'honeypots.bulk.tags_placeholder') }}"
-               aria-label="Tags for the buttons below">
+               aria-label="{{ t(request, 'honeypots.list.bulk_tags_aria') }}">
         <button type="submit" formaction="/honeypots/bulk/tags/add" class="button button-secondary">
           {{ t(request, 'honeypots.bulk.add_tags') }}
         </button>

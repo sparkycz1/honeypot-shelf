@@ -7,7 +7,7 @@
   <div class="page-header">
     <h1>{{ company.name }}</h1>
     <form method="post" action="/companies/{{ company.id }}/delete"
-          data-confirm="Delete this company? Honeypots in it will be unassigned, not deleted.">
+          data-confirm="{{ t(request, 'companies.detail.confirm_delete') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button type="submit" class="button button-danger">{{ t(request, "companies.detail.delete") }}</button>
     </form>

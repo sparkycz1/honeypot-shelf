@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import csv
 import io
+import json
 import re
 import uuid
 from datetime import UTC, datetime
@@ -63,6 +64,7 @@ from app.services.honeypot_tags import (
     remove_tags_from_honeypots,
     set_honeypot_tags,
 )
+from app.services.opencanary_logtypes import logtype_label
 from app.services.saved_views import (
     DuplicateViewNameError,
     build_query_string,
@@ -2642,6 +2644,89 @@ async def honeypot_status_tab(
     if new_cookie:
         set_csrf_cookie(response, new_cookie)
     return response
+
+
+_ACTIVITY_EXPORT_FIELDS = (
+    "id",
+    "occurred_at",
+    "received_at",
+    "event_type",
+    "event_label",
+    "src_ip",
+    "src_port",
+    "dst_port",
+    "source",
+)
+
+
+@router.get("/{honeypot_id}/status/export", dependencies=[_terminal])
+async def export_honeypot_activity(
+    request: Request,
+    honeypot_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    range_key: str = "",
+    format: str = "csv",  # noqa: A002
+) -> Response:
+    """Every `HoneypotEvent` for this honeypot, as CSV or JSON — same
+    filter as the Activity tab's chart when `range_key` is one of
+    `monitoring_history.TIME_RANGES`, or this honeypot's whole history
+    when left blank. Same download-link pattern as the audit log's export
+    (`app/web/routes/audit.py`) — a plain `<a href>`, not a POST."""
+    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+
+    query = select(HoneypotEvent).where(HoneypotEvent.honeypot_id == honeypot_id)
+    valid_range_keys = {key for key, _label, _delta in monitoring_history.TIME_RANGES}
+    if range_key in valid_range_keys:
+        since = datetime.now(UTC) - monitoring_history.time_range_delta(range_key)
+        query = query.where(HoneypotEvent.occurred_at >= since)
+    result = await db.execute(query.order_by(HoneypotEvent.occurred_at.asc()))
+    events = list(result.scalars().all())
+
+    await log_event(
+        db,
+        request=request,
+        action="honeypot.activity_export",
+        summary=f'Exported {len(events)} activity event(s) for "{honeypot.name}" as {format}',
+        target_type="honeypot",
+        target_id=honeypot.id,
+        target_label=honeypot.name,
+        details={"count": len(events), "format": format, "range_key": range_key},
+    )
+
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    rows = [
+        {
+            "id": str(e.id),
+            "occurred_at": e.occurred_at.isoformat(),
+            "received_at": e.received_at.isoformat(),
+            "event_type": e.event_type,
+            "event_label": logtype_label(e.event_type),
+            "src_ip": e.src_ip,
+            "src_port": e.src_port,
+            "dst_port": e.dst_port,
+            "source": e.source,
+        }
+        for e in events
+    ]
+
+    filename_base = f"{honeypot.name}-activity-{timestamp}"
+    if format == "json":
+        return Response(
+            content=json.dumps(rows, indent=2),
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="{filename_base}.json"'},
+        )
+
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=_ACTIVITY_EXPORT_FIELDS)
+    writer.writeheader()
+    writer.writerows({k: _csv_safe(v) for k, v in row.items()} for row in rows)
+    return Response(
+        content=buffer.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename_base}.csv"'},
+    )
 
 
 async def _load_readonly_state(

@@ -45,16 +45,22 @@ SSH before it's ever added to HoneyHive, with a persisted run history for
 debugging a failed provisioning after the fact; Company management (each
 company's own page shows just its users and its honeypots, each with a
 link to add another) and fleet-wide/"All honeypots" bulk actions;
-Scheduling, including a per-schedule run history and one-click retry for a
-failed firing; a per-honeypot ingest token (rotate/revoke from that
-honeypot's Settings tab), alternative to the shared `INGEST_TOKEN`;
-NetBird or WireGuard connectivity for HoneyHive's own SSH management
-plane (Settings → VPN, an optional `docker-compose.vpn.yml` sidecar — see
+Scheduling, including a per-schedule run history, one-click retry for a
+failed firing, and two on-demand debugging actions ("force OpenCanary log
+poll now"/"force monitoring sample now") alongside update/power/run-
+command; a per-honeypot ingest token (rotate/revoke from that honeypot's
+Settings tab), alternative to the shared `INGEST_TOKEN`; NetBird or
+WireGuard connectivity for HoneyHive's own SSH management plane
+(Settings → VPN, an optional `docker-compose.vpn.yml` sidecar — see
 [Architecture](Architecture.md)) for a honeypot that's only reachable over
-one of those; the REST API mirroring all of the above; Users and Settings
-(LDAP/OIDC/syslog forwarding, SSH key rotation, retention policies); full
-**English and
-Czech i18n** across every page, not just the site chrome. A 177-test
+one of those; a fleet-wide "activity by alert type" breakdown on the
+Dashboard, the same OpenCanary-log-derived chart each honeypot's own
+Activity tab has, plus a CSV/JSON export of that honeypot's own event
+history; the REST API mirroring all of the above, including `GET
+/api/v1/events` (+ `/export`) for scripting against the same event data;
+Users and Settings (LDAP/OIDC/syslog forwarding, SSH key rotation,
+retention policies); full **English and
+Czech i18n** across every page, not just the site chrome. A 194-test
 suite covers the RBAC/scoping-sensitive paths; `ruff check .` and `mypy
 app alembic tests` are both fully clean. See [CLAUDE.md](../CLAUDE.md)'s
 "Current state" section for what's left (mainly: no CI workflow file).
@@ -85,5 +91,7 @@ app alembic tests` are both fully clean. See [CLAUDE.md](../CLAUDE.md)'s
 
 - **Event retention & volume.** `EVENT_RETENTION_DAYS` defaults to 180 —
   right for the expected event volume per honeypot?
-- **A map/geo view, CSV export of events, per-event-type dashboards** —
-  none of these exist yet; worth asking which (if any) matter for v1.
+- **A map/geo view** — doesn't exist yet; worth asking whether it matters
+  for v1. (CSV export of events and per-event-type dashboards are done —
+  see the Activity tab, the Dashboard's "activity by alert type", and
+  `GET /api/v1/events`/`/export`.)

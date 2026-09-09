@@ -22,8 +22,10 @@ from app.db.models.honeypot_update_run import HoneypotUpdateRun, UpgradeStrategy
 from app.ssh.power import PowerAction
 from app.tasks.jobs import (
     check_honeypot_updates,
+    poll_honeypot_canary_log,
     run_honeypot_update,
     run_remote_ssh_command,
+    sample_honeypot_monitoring,
     send_honeypot_power_command,
 )
 
@@ -67,6 +69,29 @@ async def send_power_to_honeypots(honeypots: list[Honeypot], action: PowerAction
     eligible = [m for m in honeypots if m.host_key_fingerprint]
     for honeypot in eligible:
         send_honeypot_power_command.delay(str(honeypot.id), action.value)
+    return len(honeypots) - len(eligible)
+
+
+async def trigger_canary_log_poll(honeypots: list[Honeypot]) -> int:
+    """Enqueue a `poll_honeypot_canary_log` task for every eligible
+    (pinned) honeypot — forces an immediate OpenCanary-log read instead of
+    waiting for the next `OPENCANARY_LOG_POLL_INTERVAL_SECONDS` tick, e.g.
+    for on-demand remote debugging via Scheduling's "run now". Returns
+    skipped count."""
+    eligible = [m for m in honeypots if m.host_key_fingerprint]
+    for honeypot in eligible:
+        poll_honeypot_canary_log.delay(str(honeypot.id))
+    return len(honeypots) - len(eligible)
+
+
+async def trigger_monitoring_sample(honeypots: list[Honeypot]) -> int:
+    """Enqueue a `sample_honeypot_monitoring` task for every eligible
+    (pinned) honeypot — forces an immediate CPU/RAM/disk sample instead of
+    waiting for the next `MONITORING_INTERVAL_SECONDS` tick. Returns
+    skipped count."""
+    eligible = [m for m in honeypots if m.host_key_fingerprint]
+    for honeypot in eligible:
+        sample_honeypot_monitoring.delay(str(honeypot.id))
     return len(honeypots) - len(eligible)
 
 

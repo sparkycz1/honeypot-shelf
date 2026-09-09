@@ -1,5 +1,7 @@
 {% extends "base.html" %}
-{% from "macros/charts.html" import sparkline %}
+{% from "macros/charts.html" import sparkline, trend_chart %}
+
+{% set palette = ['#5b8fff', '#46bf8a', '#e0ab4a', '#f0685f', '#a970ff', '#38bdf8', '#f472b6', '#facc15'] %}
 
 {% block title %}{{ t(request, "nav.dashboard") }} — HoneyHive{% endblock %}
 
@@ -63,6 +65,31 @@
       <a href="/settings">{{ t(request, "nav.settings") }}</a>{{ t(request, "dashboard.event_trend_hint2") }}
     </p>
     {{ sparkline(daily_snapshots | map(attribute='event_count') | list, '#e0ab4a', request=request) }}
+  </section>
+  {% endif %}
+
+  {% if activity.counts_by_type %}
+  <section class="panel">
+    <h2>{{ t(request, "dashboard.by_type_heading") }}</h2>
+    <p class="hint">{{ t(request, "dashboard.by_type_hint") }}</p>
+    {% set by_type_series = [] %}
+    {% for label, points in activity.counts_by_type.items() %}
+      {% set _ = by_type_series.append({'label': label, 'color': palette[loop.index0 % palette|length], 'points': points}) %}
+    {% endfor %}
+    {{ trend_chart(by_type_series, activity.bucket_timestamps) }}
+    <table class="data-table">
+      <thead>
+        <tr><th>{{ t(request, "dashboard.type") }}</th><th>{{ t(request, "dashboard.count") }}</th></tr>
+      </thead>
+      <tbody>
+        {% for label, count in activity.totals_by_type | dictsort(by='value', reverse=True) %}
+          <tr><td>{{ label }}</td><td>{{ count }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if activity.truncated %}
+      <p class="hint">{{ t(request, "dashboard.by_type_truncated") }}</p>
+    {% endif %}
   </section>
   {% endif %}
 

@@ -30,7 +30,9 @@ from app.scheduling.actions import (
 from app.services.honeypot_actions import (
     run_custom_command_on_honeypots,
     send_power_to_honeypots,
+    trigger_canary_log_poll,
     trigger_check_updates,
+    trigger_monitoring_sample,
     trigger_updates,
 )
 from app.ssh.power import PowerAction
@@ -72,6 +74,20 @@ async def _run_custom_command(
     if not command:
         return ActionRunResult(attempted=0, skipped=len(honeypots))
     skipped = await run_custom_command_on_honeypots(honeypots, command)
+    return ActionRunResult(attempted=len(honeypots) - skipped, skipped=skipped)
+
+
+async def _run_canary_log_poll(
+    db: AsyncSession, honeypots: list[Honeypot], params: dict[str, str]
+) -> ActionRunResult:
+    skipped = await trigger_canary_log_poll(honeypots)
+    return ActionRunResult(attempted=len(honeypots) - skipped, skipped=skipped)
+
+
+async def _run_monitoring_sample(
+    db: AsyncSession, honeypots: list[Honeypot], params: dict[str, str]
+) -> ActionRunResult:
+    skipped = await trigger_monitoring_sample(honeypots)
     return ActionRunResult(attempted=len(honeypots) - skipped, skipped=skipped)
 
 
@@ -151,5 +167,31 @@ def register_builtin_actions() -> None:
             ],
             run=_run_custom_command,
             destructive=True,
+        )
+    )
+    register_action(
+        ScheduledActionSpec(
+            key="poll_canary_log",
+            label="Force OpenCanary log poll now",
+            description=(
+                "Reads whatever's new in OpenCanary's own log immediately, instead of "
+                "waiting for the next OPENCANARY_LOG_POLL_INTERVAL_SECONDS tick — same "
+                "read the Activity tab's automatic sweep does. Useful for on-demand "
+                "remote debugging."
+            ),
+            run=_run_canary_log_poll,
+        )
+    )
+    register_action(
+        ScheduledActionSpec(
+            key="sample_monitoring",
+            label="Force monitoring sample now",
+            description=(
+                "Takes a CPU/RAM/disk-I/O/failed-services sample immediately, instead "
+                "of waiting for the next MONITORING_INTERVAL_SECONDS tick — same sample "
+                "the Monitoring tab's automatic sweep takes. Useful for on-demand "
+                "remote debugging."
+            ),
+            run=_run_monitoring_sample,
         )
     )

@@ -44,12 +44,12 @@
 
     <div class="page-header-actions">
       <form method="post" action="/settings/netbird/restart" class="inline-form"
-            data-confirm="Restart the NetBird connection? Honeypots reachable only over NetBird will be briefly unreachable.">
+            data-confirm="{{ t(request, 'settings.netbird.confirm_restart') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button type="submit" class="button button-secondary">{{ t(request, "settings.netbird.restart") }}</button>
       </form>
       <form method="post" action="/settings/netbird/disconnect" class="inline-form"
-            data-confirm="Disconnect from NetBird? Honeypots reachable only over NetBird will become unreachable.">
+            data-confirm="{{ t(request, 'settings.netbird.confirm_disconnect') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button type="submit" class="button button-danger">{{ t(request, "settings.netbird.disconnect") }}</button>
       </form>
@@ -98,12 +98,12 @@
 
     <div class="page-header-actions">
       <form method="post" action="/settings/wireguard/restart" class="inline-form"
-            data-confirm="Restart the WireGuard connection? Honeypots reachable only over WireGuard will be briefly unreachable.">
+            data-confirm="{{ t(request, 'settings.wireguard.confirm_restart') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button type="submit" class="button button-secondary">{{ t(request, "settings.wireguard.restart") }}</button>
       </form>
       <form method="post" action="/settings/wireguard/disconnect" class="inline-form"
-            data-confirm="Disconnect WireGuard? Honeypots reachable only over WireGuard will become unreachable.">
+            data-confirm="{{ t(request, 'settings.wireguard.confirm_disconnect') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button type="submit" class="button button-danger">{{ t(request, "settings.wireguard.disconnect") }}</button>
       </form>
