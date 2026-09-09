@@ -81,6 +81,7 @@ class HoneypotUpdate(BaseModel):
     facts_refresh_interval_seconds: int | None = Field(default=None, ge=1)
     monitoring_interval_seconds: int | None = Field(default=None, ge=1)
     monitoring_history_retention_days: int | None = Field(default=None, ge=1)
+    opencanary_log_poll_interval_seconds: int | None = Field(default=None, ge=1)
 
     @field_validator("ip_address")
     @classmethod

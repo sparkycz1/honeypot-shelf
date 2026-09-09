@@ -27,8 +27,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.db.models.honeypot import Honeypot
-from app.db.models.honeypot_event import HoneypotEvent
 from app.db.session import get_db
+from app.services.honeypot_events import EventSource, build_event
 
 router = APIRouter(prefix="/api/ingest", tags=["ingest"])
 
@@ -60,22 +60,6 @@ async def _authenticate_honeypot(
     return honeypot
 
 
-def _parse_occurred_at(raw: dict[str, Any]) -> datetime:
-    """OpenCanary's `local_time` is a naive, locally-formatted timestamp
-    (the Pi's own clock, usually NTP-synced but not guaranteed) — parsed
-    best-effort; falls back to "now" (still correct to within network
-    latency) rather than rejecting an otherwise-valid event over a
-    malformed/missing timestamp."""
-    value = raw.get("local_time") or raw.get("utc_time")
-    if isinstance(value, str):
-        for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S"):
-            try:
-                return datetime.strptime(value, fmt).replace(tzinfo=UTC)
-            except ValueError:
-                continue
-    return datetime.now(UTC)
-
-
 @router.post("/{honeypot_id}/events", status_code=status.HTTP_201_CREATED)
 async def ingest_event(
     honeypot_id: uuid.UUID,
@@ -86,18 +70,7 @@ async def ingest_event(
 ) -> dict[str, str]:
     honeypot = await _authenticate_honeypot(db, honeypot_id, authorization)
 
-    event = HoneypotEvent(
-        honeypot_id=honeypot.id,
-        company_id=honeypot.company_id,
-        event_type=str(
-            payload.get("logtype") or payload.get("logdata", {}).get("type") or "UNKNOWN"
-        ),
-        occurred_at=_parse_occurred_at(payload),
-        src_ip=payload.get("src_host"),
-        src_port=payload.get("src_port"),
-        dst_port=payload.get("dst_port"),
-        raw=payload,
-    )
+    event = build_event(honeypot, payload, source=EventSource.PUSH)
     db.add(event)
 
     honeypot.last_seen_at = datetime.now(UTC)

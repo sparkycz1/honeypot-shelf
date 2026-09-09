@@ -49,6 +49,7 @@ from app.db.models.honeypot_reachability_sample import HoneypotReachabilitySampl
 from app.db.models.honeypot_service import HoneypotService
 from app.db.models.honeypot_update_run import HoneypotUpdateRun, UpdateRunStatus, UpgradeStrategy
 from app.services.company_stats import compute_company_stats
+from app.services.honeypot_events import EventSource, build_event
 from app.services.honeypot_status import offline_cutoff
 from app.services.live_updates import (
     KIND_FACTS,
@@ -58,6 +59,7 @@ from app.services.live_updates import (
     KIND_UPDATES,
     publish_honeypot_event,
 )
+from app.ssh.canary_activity import poll_log
 from app.ssh.client import open_connection, test_connection
 from app.ssh.credentials import resolve_honeypot_credential
 from app.ssh.exceptions import SSHConnectionError
@@ -1060,6 +1062,11 @@ async def _refresh_all_honeypot_services() -> None:
         refresh_honeypot_services.delay(str(honeypot_id))
 
 
+@celery_app.task(name="app.tasks.jobs.refresh_all_honeypot_services")
+def refresh_all_honeypot_services() -> None:
+    asyncio.run(_refresh_all_honeypot_services())
+
+
 async def _sample_honeypot_monitoring(honeypot_id: str) -> dict[str, Any]:
     """Connect to one honeypot and take one CPU/RAM/disk/failed-services
     sample for the Monitoring tab. Requires a pinned host key — honeypots
@@ -1144,6 +1151,129 @@ async def _monitor_all_honeypots() -> None:
 @celery_app.task(name="app.tasks.jobs.monitor_all_honeypots")
 def monitor_all_honeypots() -> None:
     asyncio.run(_monitor_all_honeypots())
+
+
+async def _poll_honeypot_canary_log(honeypot_id: str) -> dict[str, Any]:
+    """Connect to one honeypot, read whatever's new in its OpenCanary log
+    since the last poll, and store each new line as a `HoneypotEvent`
+    (`source="ssh_poll"`) — the Activity tab. Requires a pinned host key —
+    honeypots without one are skipped, same as monitoring/facts sampling.
+
+    Unlike the push-ingest endpoint, this can also *advance*
+    `Honeypot.opencanary_log_offset` on a poll that found zero new events
+    (nothing new since last time is the common case, not an error)."""
+    async with db_session.AsyncSessionLocal() as session:
+        honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
+        if honeypot is None:
+            return {"ok": False, "error": "Honeypot not found."}
+        if not honeypot.host_key_fingerprint:
+            return {"ok": False, "error": "No pinned host key fingerprint yet."}
+
+        secret = await resolve_honeypot_credential(honeypot, session)
+
+        try:
+            result = await poll_log(honeypot, secret, get_settings().ssh_connect_timeout)
+        except SSHConnectionError as exc:
+            logger.warning("poll_honeypot_canary_log failed for %s: %s", honeypot.name, exc)
+            return {"ok": False, "error": str(exc)}
+
+        now = datetime.now(UTC)
+        honeypot.opencanary_log_polled_at = now
+        if result.new_offset >= 0:
+            honeypot.opencanary_log_offset = result.new_offset
+        for payload in result.events:
+            session.add(build_event(honeypot, payload, source=EventSource.SSH_POLL))
+        if result.events:
+            honeypot.last_seen_at = now
+            # No "connecting client" to read an IP from for a pull, unlike
+            # the push endpoint — the honeypot's own configured address is
+            # the closest equivalent or "last seen alive at".
+            honeypot.last_seen_ip = honeypot.ip_address
+        await session.commit()
+
+        return {"ok": True, "new_events": len(result.events)}
+
+
+@celery_app.task(
+    name="app.tasks.jobs.poll_honeypot_canary_log",
+    time_limit=get_settings().ssh_connect_timeout + 30,
+)
+def poll_honeypot_canary_log(honeypot_id: str) -> dict[str, Any]:
+    return asyncio.run(_poll_honeypot_canary_log(honeypot_id))
+
+
+async def _poll_all_honeypot_canary_logs() -> None:
+    """Periodic sweep scheduling a log poll for every honeypot with a
+    pinned host key, minus whichever aren't due yet under their own
+    `Honeypot.opencanary_log_poll_interval_seconds` override (see
+    `_due_honeypots`) — same fan-out-only pattern as the other sweeps,
+    cadence owned by Celery Beat (`OPENCANARY_LOG_POLL_INTERVAL_SECONDS`)."""
+    async with db_session.AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(Honeypot).where(Honeypot.is_active, Honeypot.host_key_fingerprint.is_not(None))
+        )
+        honeypots = _due_honeypots(
+            list(result.scalars().all()),
+            last_checked_at=lambda m: m.opencanary_log_polled_at,
+            override_seconds=lambda m: m.opencanary_log_poll_interval_seconds,
+            global_default_seconds=get_settings().opencanary_log_poll_interval_seconds,
+            now=datetime.now(UTC),
+        )
+        honeypot_ids = [m.id for m in honeypots]
+
+    for honeypot_id in honeypot_ids:
+        poll_honeypot_canary_log.delay(str(honeypot_id))
+
+
+@celery_app.task(name="app.tasks.jobs.poll_all_honeypot_canary_logs")
+def poll_all_honeypot_canary_logs() -> None:
+    asyncio.run(_poll_all_honeypot_canary_logs())
+
+
+_EVENT_PURGE_ACTOR = "retention policy (automatic)"
+
+
+async def _purge_old_events() -> None:
+    """Delete `HoneypotEvent` rows older than `Settings.event_retention_days`
+    — a fixed daily sweep referenced by `app.tasks.celery_app`'s
+    `beat_schedule` since this project's very first commit, but never
+    actually implemented until now: nothing ever purged old events, so
+    `EVENT_RETENTION_DAYS` was a silent no-op and this table only ever grew.
+    `EVENT_RETENTION_DAYS` lives in `.env` (not `AppSettings` — same reason
+    `event_retention_days`'s own docstring in `app.core.config` gives), so
+    unlike `_purge_old_audit_log_entries` there's no "unset = keep forever"
+    case to skip here."""
+    async with db_session.AsyncSessionLocal() as session:
+        retention_days = get_settings().event_retention_days
+        cutoff = datetime.now(UTC) - timedelta(days=retention_days)
+
+        count_result = await session.execute(
+            select(func.count())
+            .select_from(HoneypotEvent)
+            .where(HoneypotEvent.occurred_at < cutoff)
+        )
+        deleted_count = count_result.scalar_one()
+        if not deleted_count:
+            return
+
+        await session.execute(delete(HoneypotEvent).where(HoneypotEvent.occurred_at < cutoff))
+        await session.commit()
+
+        await log_event(
+            session,
+            actor=_EVENT_PURGE_ACTOR,
+            action="honeypot_events.purge",
+            summary=(
+                f"Purged {deleted_count} honeypot event"
+                f"{'' if deleted_count == 1 else 's'} older than {retention_days} day(s)"
+            ),
+            details={"deleted_count": deleted_count, "retention_days": retention_days},
+        )
+
+
+@celery_app.task(name="app.tasks.jobs.purge_old_events")
+def purge_old_events() -> None:
+    asyncio.run(_purge_old_events())
 
 
 _MONITORING_SAMPLE_PURGE_ACTOR = "retention policy (automatic)"

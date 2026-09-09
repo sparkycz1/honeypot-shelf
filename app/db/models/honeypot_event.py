@@ -61,6 +61,15 @@ class HoneypotEvent(Base):
     # source of truth for anything not promoted to its own column above.
     raw: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
 
+    # How this row got here — "push" (a forwarder called POST
+    # /api/ingest/{id}/events, see app/web/routes/ingest.py) or "ssh_poll"
+    # (HoneyHive itself read a new line from OpenCanary's log over SSH, see
+    # app.ssh.canary_activity/app.tasks.jobs.poll_all_honeypot_canary_logs).
+    # Free text like `event_type`, not an enum, for the same reason — kept
+    # simple since there are only ever the two values in practice. Existing
+    # rows predate this column and were all "push" (see the migration).
+    source: Mapped[str] = mapped_column(String(20), nullable=False, server_default="push")
+
     def __repr__(self) -> str:  # pragma: no cover - debugging aid only
         return (
             f"HoneypotEvent(id={self.id!r}, event_type={self.event_type!r}, "

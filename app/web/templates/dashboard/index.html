@@ -76,7 +76,7 @@
           <tr>
             <td>{{ event.occurred_at | local_time('%Y-%m-%d %H:%M %Z') }}</td>
             <td><a href="/honeypots/{{ event.honeypot_id }}">{{ event.honeypot.name }}</a></td>
-            <td><span class="badge">{{ event.event_type }}</span></td>
+            <td><span class="badge">{{ event.event_type | canary_label }}</span></td>
             <td>{{ event.src_ip or '—' }}</td>
           </tr>
           {% endfor %}

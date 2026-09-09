@@ -7,23 +7,34 @@ it, or picking which OpenCanary modules to enable; that's the team's own
 internal deployment runbook, kept elsewhere on purpose (it has
 site-specific and credential material that doesn't belong in this repo).
 
-## The gap this bridges
+## The gap this bridges — and the alternative that needs no forwarder
 
 OpenCanary has no built-in "POST events to a URL" output — its `logger`
 config only writes to a local file, syslog, or a handful of other sinks
 (see [OpenCanary's own docs](https://github.com/thinkst/opencanary/wiki)).
-HoneyHive's ingest endpoint therefore expects a small forwarder running
-*on* (or reachable from) the Pi that reads OpenCanary's own JSON log
-output and re-POSTs each event.
+HoneyHive's ingest endpoint below is one way to bridge that: a small
+forwarder running *on* (or reachable from) the Pi that reads OpenCanary's
+own JSON log output and re-POSTs each event.
+
+**Setting up a forwarder is optional, not required, for events to show
+up in HoneyHive.** Once a honeypot's host key is pinned, HoneyHive itself
+also reads whatever's new in OpenCanary's own log over the same SSH
+management connection every other periodic sweep uses — no forwarder, no
+extra config on the Pi at all. See that honeypot's own **Activity** tab,
+and [Architecture.md](Architecture.md#-honeypot-data-model)'s "How events
+actually arrive" section for how the two mechanisms relate
+(`HoneypotEvent.source` records which one produced each row). The
+push-based endpoint below is still worth setting up if you want events to
+land with less latency than the poll interval, or from a honeypot
+HoneyHive doesn't otherwise manage over SSH.
 
 ## `POST /api/ingest/{honeypot_id}/events`
 
 - **Auth**: `Authorization: Bearer <token>` — either the shared
   `INGEST_TOKEN` (from this HoneyHive instance's `.env`; simplest to start
   with, revoke/rotate it for every honeypot at once if it ever leaks), or
-  a token scoped to one `Honeypot` row (`Honeypot.ingest_token_hash` — the
-  model exists; there's no UI to generate one yet, see
-  [Home.md](Home.md)'s open questions).
+  a token scoped to one `Honeypot` row (`Honeypot.ingest_token_hash` —
+  rotate/revoke it from that honeypot's own Settings tab).
 - **`honeypot_id`**: this honeypot's HoneyHive-assigned UUID (from the
   `Honeypot` row created for it — see [Installation](Installation.md) for
   how to create one today).

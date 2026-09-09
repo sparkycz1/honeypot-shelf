@@ -38,6 +38,7 @@ from app.core.security import encrypt_secret
 from app.db.models.audit_log import AuditOutcome
 from app.db.models.company import Company
 from app.db.models.honeypot import AuthMethod, Honeypot
+from app.db.models.honeypot_event import HoneypotEvent
 from app.db.models.honeypot_monitoring_sample import HoneypotMonitoringSample
 from app.db.models.honeypot_package import HoneypotPackage
 from app.db.models.honeypot_reachability_sample import HoneypotReachabilitySample
@@ -49,7 +50,7 @@ from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.honeypot import HoneypotCreate, HoneypotUpdate
 from app.schemas.honeypot_config import HoneypotConfigExport
-from app.services import monitoring_history
+from app.services import canary_activity_history, monitoring_history
 from app.services.honeypot_actions import (
     send_power_to_honeypots,
     trigger_check_updates,
@@ -139,7 +140,7 @@ def _honeypot_tabs(request: Request, honeypot: Honeypot, user: User) -> list[tup
         # being available to a read-only account — see the "Logs" route's
         # own docstring for why.
         tabs.append(("logs", t(request, "honeypots.tabs.logs"), f"{base}/logs"))
-        tabs.append(("status", t(request, "honeypots.tabs.status"), f"{base}/status"))
+        tabs.append(("status", t(request, "honeypots.tabs.activity"), f"{base}/status"))
         tabs.append(("config", t(request, "honeypots.tabs.config"), f"{base}/config"))
     # No separate "Power" tab any more — reboot/shut down live directly on
     # Overview now (see `honeypot_detail`'s own template), the same one-page
@@ -1694,6 +1695,7 @@ async def update_honeypot(
     facts_refresh_interval_seconds: str = Form(""),
     monitoring_interval_seconds: str = Form(""),
     monitoring_history_retention_days: str = Form(""),
+    opencanary_log_poll_interval_seconds: str = Form(""),
     tags: str = Form(""),
     current_user: User = Depends(get_current_user),
 ) -> Response:
@@ -1738,6 +1740,11 @@ async def update_honeypot(
             monitoring_history_retention_days=(
                 int(monitoring_history_retention_days)
                 if monitoring_history_retention_days.strip()
+                else None
+            ),
+            opencanary_log_poll_interval_seconds=(
+                int(opencanary_log_poll_interval_seconds)
+                if opencanary_log_poll_interval_seconds.strip()
                 else None
             ),
         )
@@ -1804,6 +1811,7 @@ async def update_honeypot(
     honeypot.facts_refresh_interval_seconds = payload.facts_refresh_interval_seconds
     honeypot.monitoring_interval_seconds = payload.monitoring_interval_seconds
     honeypot.monitoring_history_retention_days = payload.monitoring_history_retention_days
+    honeypot.opencanary_log_poll_interval_seconds = payload.opencanary_log_poll_interval_seconds
 
     if payload.auth_method == AuthMethod.PASSWORD:
         if payload.secret:
@@ -2577,12 +2585,44 @@ async def honeypot_status_tab(
     request: Request,
     honeypot_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    range_key: str = monitoring_history.DEFAULT_TIME_RANGE,
     current_user: User = Depends(get_current_user),
 ) -> Response:
-    """Honeypot status — placeholder for a future live-status summary.
-    Empty for now; the Overview tab already covers "is it reachable/
-    online" in the meantime."""
+    """Activity tab — what OpenCanary has actually seen on this honeypot,
+    read from its own log over SSH every `opencanary_log_poll_interval_
+    seconds` (see `app.ssh.canary_activity`,
+    `app.tasks.jobs.poll_honeypot_canary_log`) and stored as `HoneypotEvent`
+    rows (`source="ssh_poll"`) exactly like a pushed ingest event. Same
+    aggregate-chart-plus-recent-list shape as the Dashboard, but scoped to
+    this one honeypot and with a time-range picker like the Monitoring
+    tab's."""
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+
+    valid_range_keys = {key for key, _label, _delta in monitoring_history.TIME_RANGES}
+    if range_key not in valid_range_keys:
+        range_key = monitoring_history.DEFAULT_TIME_RANGE
+
+    now = datetime.now(UTC)
+    since = now - monitoring_history.time_range_delta(range_key)
+    windowed_result = await db.execute(
+        select(HoneypotEvent)
+        .where(HoneypotEvent.honeypot_id == honeypot_id, HoneypotEvent.occurred_at >= since)
+        .order_by(HoneypotEvent.occurred_at)
+        .limit(canary_activity_history.MAX_RAW_EVENTS)
+    )
+    windowed_events = list(windowed_result.scalars().all())
+    activity = canary_activity_history.build_activity_history(windowed_events, range_key, now=now)
+
+    recent_result = await db.execute(
+        select(HoneypotEvent)
+        .where(HoneypotEvent.honeypot_id == honeypot_id)
+        .order_by(HoneypotEvent.occurred_at.desc())
+        .limit(canary_activity_history.RECENT_EVENTS_LIMIT)
+    )
+    recent_events = canary_activity_history.summarize_recent_events(
+        list(recent_result.scalars().all())
+    )
+
     csrf_token, new_cookie = get_or_create_csrf_token(request)
     response = templates.TemplateResponse(
         request,
@@ -2592,6 +2632,11 @@ async def honeypot_status_tab(
             "tabs": _honeypot_tabs(request, honeypot, current_user),
             "active_tab": "status",
             "csrf_token": csrf_token,
+            "activity": activity,
+            "recent_events": recent_events,
+            "time_ranges": monitoring_history.TIME_RANGES,
+            "range_key": range_key,
+            "global_settings": get_settings(),
         },
     )
     if new_cookie:

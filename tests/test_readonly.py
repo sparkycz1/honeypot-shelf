@@ -52,13 +52,15 @@ async def _create_pinned_honeypot(db_session_factory, company_id) -> Honeypot:
     return honeypot
 
 
-async def test_status_tab_is_an_empty_placeholder(client, db_session_factory):
+async def test_status_tab_is_the_activity_tab_not_the_readonly_toggle(client, db_session_factory):
+    """The Status URL (`/status`) is the Activity tab (OpenCanary log
+    activity — see `tests/test_canary_activity_route.py`), a separate page
+    from Config's read-only-root toggle tested below."""
     company = await create_company(db_session_factory)
     honeypot = await _create_pinned_honeypot(db_session_factory, company.id)
 
     response = await client.get(f"/honeypots/{honeypot.id}/status")
     assert response.status_code == 200
-    assert "Honeypot status" in response.text
     assert "Read-only root filesystem" not in response.text
 
 

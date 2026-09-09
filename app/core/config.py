@@ -164,6 +164,23 @@ class Settings(BaseSettings):
         default=600, alias="HONEYPOT_OFFLINE_AFTER_SECONDS"
     )
 
+    # How often (seconds) HoneyHive itself connects over SSH and reads
+    # whatever's new in OpenCanary's own log (`app.ssh.logs.HONEYPOT_LOG_PATH`)
+    # since the last read, for every honeypot with a pinned host key — the
+    # Honeypot Activity tab (`app.ssh.canary_activity`,
+    # `app.tasks.jobs.poll_all_honeypot_canary_logs`). Each new line found
+    # this way is recorded exactly like a pushed event (see
+    # `app.services.honeypot_events`) — `HoneypotEvent.source` distinguishes
+    # the two — so a honeypot never needs its own forwarder set up (see
+    # wiki/Honeypot-Onboarding.md) just to show up on this tab or the
+    # Dashboard. Overridable per honeypot
+    # (`Honeypot.opencanary_log_poll_interval_seconds`); `None` there means
+    # "use this default". Same SSH round trip shape as `monitoring_interval_
+    # seconds` above, just aimed at OpenCanary's log instead of `/proc`.
+    opencanary_log_poll_interval_seconds: int = Field(
+        default=120, alias="OPENCANARY_LOG_POLL_INTERVAL_SECONDS"
+    )
+
     # --- Branding (nav-bar/login logo, favicon) ---
     # Either an absolute/relative URL (http://, https://) or a filesystem
     # path readable inside the `web` container. A URL is linked directly;
