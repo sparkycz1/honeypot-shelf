@@ -194,6 +194,32 @@ exclusive (`AppSettings.vpn_provider`, set automatically by whichever
 `web` to talk to. See [wiki/Architecture.md](wiki/Architecture.md)'s "VPN
 connectivity: NetBird or WireGuard" section for the full design.
 
+**The Honeypot Activity tab** (`app.ssh.canary_activity`,
+`app.services.canary_activity_history`/`opencanary_logtypes`) reads
+whatever's new in OpenCanary's own log over SSH every
+`OPENCANARY_LOG_POLL_INTERVAL_SECONDS` (default 120, per-honeypot
+overridable) — no forwarder setup needed on the honeypot side, unlike the
+push-based ingest endpoint. Both paths write the same `HoneypotEvent`
+table (`source` distinguishes them) — see
+[wiki/Architecture.md](wiki/Architecture.md)'s "How events actually
+arrive" section. Building this surfaced a serious pre-existing bug, fixed
+in the same change: `app/tasks/celery_app.py`'s `beat_schedule` only ever
+had 3 of the ~14 periodic entries it should have (no periodic
+reachability/facts/packages/services/readiness/update-check/monitoring
+sweep, no honeypot Scheduling ever firing on its own cron, no purge of
+`HoneypotEvent`/monitoring-sample/update-run history) since this
+project's first commit — and `app.scheduling.jobs` wasn't in Celery's
+`include=[...]` list at all, so a standalone `worker`/`beat` process
+never even registered `run_scheduled_task`, the task an operator's "Run
+now" button enqueues. Invisible to `pytest` because
+`tests/conftest.py` monkeypatches `Task.apply_async` itself for the whole
+suite — see `tests/test_beat_schedule.py`, the regression guard added
+alongside the fix, and `app.tasks.celery_app`'s own comments for the full
+story. Confirmed fixed live: `docker compose logs beat` now shows
+`Scheduler: Sending due task ...` for entries that never fired before,
+and the worker's task list at startup includes every
+`app.scheduling.jobs.*` task.
+
 Settled product decisions (see [wiki/Home.md](wiki/Home.md) for the full
 list): only a superadmin creates companies/honeypots/users — a company's
 own `READ_WRITE` user manages honeypots *within* their own company (via

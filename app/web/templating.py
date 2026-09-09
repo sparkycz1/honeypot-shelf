@@ -18,6 +18,7 @@ from app.core.config import get_settings
 from app.core.version import APP_VERSION, get_git_commit
 from app.i18n import get_locale
 from app.i18n import translate as _translate
+from app.services.opencanary_logtypes import logtype_label
 from app.web import branding
 from app.web.os_logos import badge_for
 
@@ -88,6 +89,12 @@ def iso_list(timestamps: list[datetime]) -> list[str]:
 
 
 templates.env.filters["iso_list"] = iso_list
+
+# `HoneypotEvent.event_type` (and OpenCanary's own raw `logtype`) is just a
+# bare integer as a string, e.g. "4002" — see
+# `app.services.opencanary_logtypes` for the full id -> label mapping and
+# why it lives there rather than in the model itself.
+templates.env.filters["canary_label"] = logtype_label
 
 
 def tojson_filter(value: object) -> Markup:

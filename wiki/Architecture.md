@@ -433,26 +433,57 @@ flow run once to pick up the new grant.
   only; HoneyHive never connects to it.
 - **`HoneypotEvent`** — one row per OpenCanary alert, close to OpenCanary's
   own JSON shape (`raw`), with `event_type`/`occurred_at`/`src_ip`/
-  `src_port`/`dst_port` promoted to real columns for the common
+  `src_port`/`dst_port`/`source` promoted to real columns for the common
   list/filter/dashboard queries. Denormalizes `company_id` onto the event
   itself so every scoped query avoids a join through `Honeypot`.
 - **`CompanySnapshot`** — one row per company per day, written by a daily
   Celery Beat job, backing the Dashboard's trend sparkline — mirrors
   debcontrol's `FleetSnapshot` one-to-one.
 
-### How events actually arrive
+### How events actually arrive — two ways, same table
 
 OpenCanary itself has no built-in "POST to a URL" output — it only writes
-to a local log/its own handlers. `POST
-/api/ingest/{honeypot_id}/events` (`app/web/routes/ingest.py`) is what a
-small forwarder on the Pi calls, authenticated with either the shared
-`INGEST_TOKEN` (bootstrap, same shape as debcontrol's `INFORM_TOKEN`) or a
-per-honeypot token (`Honeypot.ingest_token_hash` — model exists, no UI to
-generate one yet). See [Honeypot Onboarding](Honeypot-Onboarding.md).
+to a local log/its own handlers. Two independent mechanisms turn that log
+into `HoneypotEvent` rows (`HoneypotEvent.source` records which one — both
+go through the same `app.services.honeypot_events.build_event`, so a row
+looks identical either way):
 
-"Online"/"offline" (`app/services/honeypot_status.py`) is purely derived
-from `Honeypot.last_seen_at` vs. `HONEYPOT_OFFLINE_AFTER_SECONDS` — no
-separate reachability check exists (there's nothing to reach).
+1. **Push** (`source="push"`) — `POST /api/ingest/{honeypot_id}/events`
+   (`app/web/routes/ingest.py`) is what a small forwarder on the Pi calls,
+   authenticated with either the shared `INGEST_TOKEN` (bootstrap, same
+   shape as debcontrol's `INFORM_TOKEN`) or a per-honeypot token
+   (`Honeypot.ingest_token_hash`, rotate/revoke from that honeypot's
+   Settings tab). Needs a forwarder set up on the honeypot side — see
+   [Honeypot Onboarding](Honeypot-Onboarding.md).
+2. **SSH poll** (`source="ssh_poll"`) — every
+   `OPENCANARY_LOG_POLL_INTERVAL_SECONDS` (default 120, overridable per
+   honeypot), HoneyHive itself connects over the same SSH management
+   plane every other periodic sweep uses and reads whatever's new in
+   OpenCanary's own log (`app.ssh.canary_activity`, incremental by byte
+   offset — `Honeypot.opencanary_log_offset`) — no forwarder needed at
+   all. This is what backs the honeypot's own **Activity** tab
+   (`app.services.canary_activity_history`): an aggregated trend chart by
+   alert type plus a recent-alerts list, both reading straight from
+   `HoneypotEvent`. `app.services.opencanary_logtypes` maps OpenCanary's
+   numeric `logtype` ids (its own
+   [`logger.py`](https://github.com/thinkst/opencanary/blob/master/opencanary/logger.py))
+   to human labels and to the Honeypot Config tab's module keys, used by
+   both the Activity tab and the Dashboard's recent-events list (the
+   `canary_label` Jinja filter).
+
+Running both against the same honeypot is fine — a poll never re-reads a
+line it already saw (offset-tracked), and a forwarder's push is a
+different physical alert than whatever the poll would separately pick up
+from its own last-read position, so they don't produce duplicate rows for
+the same log line.
+
+"Online"/"offline" (`app/services/honeypot_status.py`) is derived from
+`Honeypot.last_seen_at` vs. `HONEYPOT_OFFLINE_AFTER_SECONDS` — set by
+either mechanism above. This is deliberately independent from
+`is_reachable`/`last_ping_at`, the plain SSH-management-plane
+reachability check every honeypot also gets (same as debcontrol's
+`Machine`) — see `app/db/models/honeypot.py`'s module docstring for why
+the two signals are kept apart.
 
 ## 🔒 Security model
 

@@ -27,10 +27,11 @@ counts/packages mirror debcontrol's `Machine` exactly — see
 **Two independent "is this honeypot alive" signals coexist** — don't
 conflate them: `is_reachable`/`last_ping_at` is the SSH-management-plane
 check (same as debcontrol); `last_seen_at`/`last_seen_ip` is when this
-honeypot last pushed an OpenCanary *event* to `POST
-/api/ingest/{id}/events` (see `app.services.honeypot_status`) — a
-honeypot can be SSH-reachable but have OpenCanary itself down, or vice
-versa.
+honeypot last *produced* an OpenCanary event — either pushed to `POST
+/api/ingest/{id}/events`, or found by HoneyHive itself SSH-polling
+OpenCanary's own log (see `app.ssh.canary_activity`,
+`app.services.honeypot_status`) — a honeypot can be SSH-reachable but have
+OpenCanary itself down, or vice versa.
 """
 
 from __future__ import annotations
@@ -137,6 +138,9 @@ class Honeypot(Base):
     monitoring_history_retention_days: Mapped[int | None] = mapped_column(
         Integer, nullable=True
     )
+    opencanary_log_poll_interval_seconds: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
 
     # --- Monitoring tab: CPU/RAM/disk-usage samples and the systemd service
     # snapshot ---
@@ -172,6 +176,18 @@ class Honeypot(Base):
     # alternative to the shared INGEST_TOKEN. Only the SHA-256 hash is
     # stored.
     ingest_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
+
+    # --- Activity tab: SSH-polling OpenCanary's own log (see
+    # app.ssh.canary_activity, app.tasks.jobs.poll_all_honeypot_canary_logs)
+    # — the other way (besides the ingest push above) a HoneypotEvent row
+    # gets created; see HoneypotEvent.source. ---
+    # Byte offset already read from OPENCANARY_LOG_PATH — only the bytes
+    # appended since this offset are fetched on the next poll. Reset to 0 if
+    # the file has shrunk since (rotated/truncated).
+    opencanary_log_offset: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, server_default="0"
+    )
+    opencanary_log_polled_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     events: Mapped[list[HoneypotEvent]] = relationship(
         back_populates="honeypot", cascade="all, delete-orphan"
