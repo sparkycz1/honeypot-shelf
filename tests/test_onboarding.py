@@ -22,6 +22,12 @@ def test_build_sudoers_grant_command_grants_exactly_the_readiness_scope():
     assert "visudo -cf" in command  # validated before ever taking effect
 
 
+def test_build_sudoers_grant_command_grants_raspi_config_and_honeyhive_scripts():
+    command = build_sudoers_grant_command("pi")
+    assert "/usr/bin/raspi-config" in command
+    assert "/usr/bin/bash /tmp/.honeyhive-*" in command
+
+
 def test_build_sudoers_grant_command_conditionally_grants_flatpak_snap():
     command = build_sudoers_grant_command("pi")
     assert "/usr/bin/flatpak" in command

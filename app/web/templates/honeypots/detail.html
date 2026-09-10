@@ -41,8 +41,6 @@
     <dt>{{ t(request, 'honeypots.detail.user') }}</dt><dd>{{ honeypot.username }}</dd>
     <dt>{{ t(request, 'honeypots.detail.auth_method') }}</dt>
     <dd>{{ t(request, 'honeypots.detail.auth_method_ssh_key') if honeypot.auth_method.value == 'ssh_key' else t(request, 'honeypots.detail.auth_method_password') }}</dd>
-    <dt>{{ t(request, 'honeypots.detail.operating_system') }}</dt>
-    <dd>{{ honeypot.os_version or '—' }}</dd>
     <dt>{{ t(request, 'honeypots.detail.company') }}</dt>
     <dd>
       {% if honeypot.company %}

@@ -29,7 +29,7 @@
 
     <label for="port">{{ t(request, 'honeypots.edit.ssh_port') }}</label>
     <input type="number" id="port" name="port" min="1" max="65535"
-           value="{{ form.port or 22 }}">
+           value="{{ form.port or 22222 }}">
 
     <label for="username">{{ t(request, 'honeypots.edit.username') }}</label>
     <input type="text" id="username" name="username" required maxlength="255"

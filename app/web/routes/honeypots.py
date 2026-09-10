@@ -498,7 +498,7 @@ async def create_honeypot(
     db: AsyncSession = Depends(get_db),
     name: str = Form(...),
     ip_address: str = Form(...),
-    port: int = Form(22),
+    port: int = Form(22222),
     username: str = Form(...),
     auth_method: AuthMethod = Form(...),
     secret: str = Form(""),

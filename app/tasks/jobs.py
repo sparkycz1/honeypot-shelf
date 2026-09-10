@@ -33,6 +33,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import asyncssh
 from sqlalchemy import delete, func, select
 
 from app.audit import log_event
@@ -473,6 +474,7 @@ async def _write_honeypot_opencanary_config(
                     command,
                     check=False,
                     timeout=settings.ssh_connect_timeout + _SSH_COMMAND_EXTRA_SECONDS,
+                    stderr=asyncssh.STDOUT,
                 )
         except (SSHConnectionError, OSError) as exc:
             logger.warning(
