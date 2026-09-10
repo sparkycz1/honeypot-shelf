@@ -299,6 +299,18 @@ def test_build_initialize_command_installs_netbird_without_joining_when_no_key()
     assert "netbird up" not in script
 
 
+def test_build_initialize_command_gpg_dearmor_never_prompts_on_a_rerun():
+    """Regression guard: without --batch --yes, gpg silently asks
+    "overwrite existing file?" when the NetBird keyring already exists
+    from an earlier run — and since this runs over a plain SSH exec with
+    no pty, gpg can't read that prompt at all, crashing with "cannot open
+    '/dev/tty'" (confirmed live) instead of just overwriting it."""
+    script = build_initialize_command(
+        device_name="acme-honey1", service_user="pi", vpn_provider="netbird"
+    )
+    assert "gpg --batch --yes --dearmor" in script
+
+
 def test_build_initialize_command_joins_netbird_when_setup_key_given():
     script = build_initialize_command(
         device_name="acme-honey1",

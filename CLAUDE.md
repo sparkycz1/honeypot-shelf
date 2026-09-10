@@ -387,6 +387,19 @@ no longer means retyping everything to retry, matching the POST-failure
 re-render path's own long-standing "prefill non-secrets, never
 passwords/keys" convention.
 
+**One more found live, same day**: `gpg --dearmor -o
+.../netbird-archive-keyring.gpg` crashed a re-run against a device that
+already had that keyring from an earlier attempt — plain `gpg --dearmor`
+silently prompts "overwrite existing file?" on stdin, and since Initialize
+runs everything over a plain SSH exec with no pty allocated, gpg can't
+read that prompt from `/dev/tty` at all, failing with `gpg: cannot open
+'/dev/tty': No such device or address` (exit 2, which `set -e` then
+aborts the whole script on) instead of just overwriting it. Reproduced
+directly in a `debian:trixie-slim` container (`gpg --dearmor -o
+/tmp/test.gpg` twice in a row against the same output path) before
+fixing. Fixed with `gpg --batch --yes --dearmor`, which is genuinely
+idempotent instead of just documented as such.
+
 Settled product decisions (see [wiki/Home.md](wiki/Home.md) for the full
 list): only a superadmin creates companies/honeypots/users — a company's
 own `READ_WRITE` user manages honeypots *within* their own company (via
