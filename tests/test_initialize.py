@@ -8,12 +8,16 @@ from __future__ import annotations
 import re
 import uuid
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING, cast
 
 from app.db.models.user import AccessLevel, User
 from app.ssh.initialize import build_initialize_command, service_user_for, wrap_for_sudo
 from app.web.routes.initialize import PENDING_RUNS, PendingInitializeRun
 from app.web.routes.initialize_ws import _persist_initialize_run
 from tests.conftest import ADMIN_USERNAME, create_company
+
+if TYPE_CHECKING:
+    from fastapi import WebSocket
 
 
 def _csrf_from(response) -> str:
@@ -483,6 +487,49 @@ def test_build_initialize_command_skips_authorized_keys_step_when_none_given():
     assert "getent passwd" not in script
 
 
+def test_build_initialize_command_grants_passwordless_sudo_for_a_non_root_connection():
+    script = build_initialize_command(
+        device_name="acme-honey1", service_user="pi", ssh_username="pi"
+    )
+    assert "pi ALL=(root) NOPASSWD" in script
+    assert "/usr/bin/apt-get" in script
+    assert "/usr/sbin/shutdown" in script
+    assert "/usr/sbin/dmidecode" in script
+    assert "/usr/bin/systemctl" in script
+    assert "visudo -cf" in script
+
+
+def test_build_initialize_command_skips_sudo_grant_for_a_root_connection():
+    """Root never needs sudo granted to itself — see app.ssh.readiness's
+    module docstring for the same reasoning applied on the read side."""
+    script = build_initialize_command(
+        device_name="acme-honey1", service_user="pi", ssh_username="root"
+    )
+    assert "NOPASSWD" not in script
+
+
+def test_build_initialize_command_skips_sudo_grant_when_no_ssh_username_given():
+    script = build_initialize_command(device_name="acme-honey1", service_user="pi")
+    assert "NOPASSWD" not in script
+
+
+def test_build_initialize_command_installs_ncurses_term():
+    script = build_initialize_command(device_name="acme-honey1", service_user="pi")
+    assert "ncurses-term" in script
+
+
+def test_build_initialize_command_reboots_last_of_all():
+    from app.ssh.initialize import INITIALIZE_SUCCESS_MARKER
+
+    script = build_initialize_command(device_name="acme-honey1", service_user="pi")
+    assert "reboot" in script
+    # After the success marker, not before — a reader (app.web.routes.
+    # initialize_ws) must see "the script succeeded" before the reboot
+    # trigger, since the connection may not survive much longer either way.
+    assert script.index(INITIALIZE_SUCCESS_MARKER) < script.rindex("reboot")
+    assert script.rstrip().endswith("disown")
+
+
 def test_build_initialize_command_emits_step_markers():
     from app.ssh.initialize import STEP_MARKER_PREFIX
 
@@ -510,3 +557,80 @@ def test_wrap_for_sudo_non_root_without_password_uses_sudo_dash_n():
 def test_wrap_for_sudo_non_root_with_password_pipes_it_to_sudo_dash_capital_s():
     wrapped = wrap_for_sudo("echo hi\n", ssh_username="pi", sudo_password="hunter2")
     assert "echo hunter2 | sudo -S" in wrapped
+
+
+# --- _wait_for_reboot: the post-script "did it actually come back up"
+# phase — mocked SSH probe, no network, and every timing constant patched
+# down to ~0 so the tests run instantly instead of waiting out the real
+# multi-minute budget. ---
+
+
+class _FakeWebSocket:
+    def __init__(self) -> None:
+        self.sent: list[dict[str, object]] = []
+
+    async def send_text(self, text: str) -> None:
+        import json
+
+        self.sent.append(json.loads(text))
+
+
+async def test_wait_for_reboot_succeeds_once_the_device_answers_again(monkeypatch):
+    import app.web.routes.initialize_ws as initialize_ws_module
+
+    monkeypatch.setattr(initialize_ws_module, "REBOOT_GRACE_SECONDS", 0)
+    monkeypatch.setattr(initialize_ws_module, "REBOOT_POLL_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr(initialize_ws_module, "REBOOT_WAIT_MAX_SECONDS", 5)
+
+    async def fake_discover(host: str, port: int, timeout_seconds: int) -> str:
+        return "SHA256:samefingerprint"
+
+    monkeypatch.setattr(initialize_ws_module, "discover_host_key_fingerprint", fake_discover)
+
+    websocket = _FakeWebSocket()
+    error = await initialize_ws_module._wait_for_reboot(
+        cast("WebSocket", websocket), "192.0.2.10", 22222, "SHA256:samefingerprint"
+    )
+    assert error is None
+    assert any(m.get("label") == "Back up after reboot" for m in websocket.sent)
+
+
+async def test_wait_for_reboot_reports_a_fingerprint_mismatch_immediately(monkeypatch):
+    import app.web.routes.initialize_ws as initialize_ws_module
+
+    monkeypatch.setattr(initialize_ws_module, "REBOOT_GRACE_SECONDS", 0)
+    monkeypatch.setattr(initialize_ws_module, "REBOOT_POLL_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr(initialize_ws_module, "REBOOT_WAIT_MAX_SECONDS", 5)
+
+    async def fake_discover(host: str, port: int, timeout_seconds: int) -> str:
+        return "SHA256:adifferentfingerprint"
+
+    monkeypatch.setattr(initialize_ws_module, "discover_host_key_fingerprint", fake_discover)
+
+    websocket = _FakeWebSocket()
+    error = await initialize_ws_module._wait_for_reboot(
+        cast("WebSocket", websocket), "192.0.2.10", 22222, "SHA256:originalfingerprint"
+    )
+    assert error is not None
+    assert "different SSH host key" in error
+
+
+async def test_wait_for_reboot_times_out_if_the_device_never_comes_back(monkeypatch):
+    import app.web.routes.initialize_ws as initialize_ws_module
+    from app.ssh.exceptions import SSHConnectionError
+
+    monkeypatch.setattr(initialize_ws_module, "REBOOT_GRACE_SECONDS", 0)
+    monkeypatch.setattr(initialize_ws_module, "REBOOT_POLL_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr(initialize_ws_module, "REBOOT_WAIT_MAX_SECONDS", 0)
+
+    async def fake_discover(host: str, port: int, timeout_seconds: int) -> str:
+        raise SSHConnectionError("connection refused")
+
+    monkeypatch.setattr(initialize_ws_module, "discover_host_key_fingerprint", fake_discover)
+
+    websocket = _FakeWebSocket()
+    error = await initialize_ws_module._wait_for_reboot(
+        cast("WebSocket", websocket), "192.0.2.10", 22222, "SHA256:originalfingerprint"
+    )
+    assert error is not None
+    assert "didn't come back up" in error

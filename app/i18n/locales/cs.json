@@ -255,6 +255,8 @@
     "honeypots.bulk.check_updates": "Zkontrolovat aktualizace",
     "honeypots.bulk.reboot": "Restartovat",
     "honeypots.bulk.remove_tags": "Odebrat štítky",
+    "honeypots.bulk.delete": "Smazat",
+    "honeypots.bulk.confirm_delete": "Trvale smazat všechny vybrané honeypoty? Toto nelze vrátit zpět.",
     "honeypots.bulk.run_update": "Spustit aktualizaci",
     "honeypots.bulk.shutdown": "Vypnout",
     "honeypots.bulk.tags_placeholder": "štítek1, štítek2",

@@ -431,6 +431,40 @@ generated identity keeps its old comment until rotated (Settings → SSH
 identity → Generate/Push/Activate, already a supported flow — nothing new
 needed for that).
 
+**Found live testing a real Initialize run against real hardware, same
+round**: three more root-caused fixes, all traced to the same underlying
+gap — a freshly Initialized device had none of the passwordless-sudo
+grants `app.ssh.readiness` checks for. Initialize now grants the exact
+same scoped sudo (`apt-get`/`shutdown`/`dmidecode`/`systemctl`(+flatpak/
+snap), shared via a new `app.ssh.onboarding.build_sudoers_grant_command`
+extracted from that module's own onboarding script) to the connecting
+account, alongside `ncurses-term` in `_APT_PACKAGES` — closing the exact
+gap that was making a fresh device fail every readiness check, and, in
+turn, silently breaking the Honeypot Config tab's "Apply" (needs
+`systemctl`) and leaving `opencanary.service` dead after a failed
+restart. The very **last step now reboots the device**, and
+`app.web.routes.initialize_ws` doesn't declare success until it polls the
+device back up on the new port (host-key probe only, no login) — see
+`REBOOT_GRACE_SECONDS`/`REBOOT_POLL_INTERVAL_SECONDS`/
+`REBOOT_WAIT_MAX_SECONDS` in `app.ssh.initialize` for the timing, and a
+presented host key that *changed* across the reboot is reported as a
+problem, never silently accepted. Separately, `app.ssh.facts`'s CPU model
+probe (`grep '^model name' /proc/cpuinfo`) is x86-only — an ARM kernel's
+`/proc/cpuinfo` (every Raspberry Pi honeypot) has no such line at all,
+leaving `cpu_model` empty on the Overview tab; fixed by preferring
+`lscpu`'s own `Model name:` line (present on both architectures), with
+the grep explicitly tolerant of the leading whitespace modern util-linux
+nests it under (confirmed against a real Pi's own `lscpu` output, not
+guessed). Also: `honeypots/list.html`'s Cards view rendered completely
+unstyled — the CSS for it was still selector-scoped to `.machine-card*`
+(a straight copy-paste leftover from the port that was never renamed to
+match the templates' actual `.honeypot-card*` classes, so none of it ever
+matched anything); renamed the whole block. And the Honeypots list
+gained a "Delete" bulk action (`POST /honeypots/bulk/delete`, same
+`/bulk/...`-before-`/{id}/...` routing-order convention every other bulk
+route here follows) — deleting a honeypot used to only be reachable one
+at a time, from that honeypot's own Settings tab.
+
 Settled product decisions (see [wiki/Home.md](wiki/Home.md) for the full
 list): only a superadmin creates companies/honeypots/users — a company's
 own `READ_WRITE` user manages honeypots *within* their own company (via

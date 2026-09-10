@@ -53,7 +53,21 @@ FACTS_COMMAND = (
     "| sed -E 's/^linux-image-//' | grep -E '^[0-9]' | sort -V | tail -1; "
     "echo ===ARCH===; uname -m 2>/dev/null; "
     "echo ===CPU===; nproc 2>/dev/null; "
+    # `lscpu` (util-linux, already assumed present — see module docstring)
+    # normalizes this across architectures: `/proc/cpuinfo`'s `model
+    # name` field is x86-only — an ARM kernel's `/proc/cpuinfo` (every
+    # Raspberry Pi honeypot) has no such line at all, silently leaving
+    # cpu_model empty. `lscpu`'s own `Model name:` line exists on both —
+    # but modern util-linux nests it under `Vendor ID:` in its tree-style
+    # output (`  Model name:`, two leading spaces, confirmed against a
+    # real Raspberry Pi's own `lscpu`), so the grep here explicitly
+    # allows (does not require) leading whitespace rather than anchoring
+    # straight to column 1. Falls back to the old /proc/cpuinfo probe
+    # only if lscpu itself is somehow missing (a genuinely minimal image
+    # without util-linux). ---
     "echo ===CPU_MODEL===; "
+    "(lscpu 2>/dev/null | grep -m1 -E '^[[:space:]]*Model name:' | cut -d: -f2- "
+    "| sed -e 's/^ *//' -e 's/ \\+/ /g') || "
     "(grep -m1 '^model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | sed -e 's/^ *//' "
     "-e 's/ \\+/ /g'); "
     "echo ===RAM_KB===; awk '/MemTotal/ {print $2}' /proc/meminfo 2>/dev/null; "

@@ -309,6 +309,10 @@
         <button type="submit" formaction="/honeypots/bulk/tags/remove" class="button button-secondary">
           {{ t(request, 'honeypots.bulk.remove_tags') }}
         </button>
+        <button type="submit" formaction="/honeypots/bulk/delete" class="button button-danger"
+                data-confirm="{{ t(request, 'honeypots.bulk.confirm_delete') }}">
+          {{ t(request, 'honeypots.bulk.delete') }}
+        </button>
       </div>
     </form>
 
