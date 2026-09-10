@@ -567,16 +567,39 @@ async def delete_company(
     # honeypot can be left in. The confirmation form
     # (`companies/detail.html`) makes this explicit before this route is
     # ever reached.
+    #
+    # A company-scoped `User`, unlike a `Honeypot`, is never left
+    # companyless either — `User.company_id` is required for every
+    # non-superadmin account (see that model's own CheckConstraint), so
+    # there's no "no company" state to fall back to for a user here any
+    # more than there is for a honeypot. Deleted along with the company,
+    # same as its honeypots — `User.company_id`'s FK is `ondelete=
+    # RESTRICT` (deliberately, so an *accidental* company delete with
+    # users still on it fails loudly at the DB level instead of silently
+    # orphaning them) rather than `CASCADE`, so this has to happen
+    # explicitly, before the company itself is deleted, or the delete
+    # below fails outright.
+    users_result = await db.execute(select(User).where(User.company_id == company.id))
+    deleted_users = list(users_result.scalars().all())
+    for user in deleted_users:
+        await db.delete(user)
+
     await db.delete(company)
     await db.commit()
     await log_event(
         db,
         request=request,
         action="company.delete",
-        summary=f'Deleted company "{company_name}" and its {honeypot_count} honeypot(s)',
+        summary=(
+            f'Deleted company "{company_name}", its {honeypot_count} honeypot(s), '
+            f"and {len(deleted_users)} user(s)"
+        ),
         target_type="company",
         target_id=company_id,
         target_label=company_name,
-        details={"honeypot_count": honeypot_count},
+        details={
+            "honeypot_count": honeypot_count,
+            "deleted_usernames": [user.username for user in deleted_users],
+        },
     )
     return RedirectResponse(url="/companies", status_code=status.HTTP_303_SEE_OTHER)

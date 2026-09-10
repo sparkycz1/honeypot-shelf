@@ -157,7 +157,7 @@
     "companies.detail.add_honeypot": "Add honeypot",
     "companies.detail.add_user": "Add user",
     "companies.detail.col_user": "User",
-    "companies.detail.confirm_delete": "Delete this company? Honeypots in it will be unassigned, not deleted.",
+    "companies.detail.confirm_delete": "Delete this company? This permanently deletes every honeypot in it (and their event/monitoring/update history), plus every user account scoped to this company. This cannot be undone.",
     "companies.detail.delete": "Delete company",
     "companies.detail.empty": "No honeypots in this company yet.",
     "companies.detail.honeypots_heading": "Honeypots in this company",

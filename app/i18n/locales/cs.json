@@ -157,7 +157,7 @@
     "companies.detail.add_honeypot": "Přidat honeypot",
     "companies.detail.add_user": "Přidat uživatele",
     "companies.detail.col_user": "Uživatel",
-    "companies.detail.confirm_delete": "Smazat tuto firmu? Honeypoty v ní zůstanou, jen se jí přestanou přiřazovat, nesmažou se.",
+    "companies.detail.confirm_delete": "Smazat tuto firmu? Trvale se smažou všechny honeypoty v ní (a jejich historie eventů/monitoringu/aktualizací) i všechny uživatelské účty patřící k této firmě. Toto nelze vrátit zpět.",
     "companies.detail.delete": "Smazat firmu",
     "companies.detail.empty": "V této firmě zatím nejsou žádné honeypoty.",
     "companies.detail.honeypots_heading": "Honeypoty v této firmě",
