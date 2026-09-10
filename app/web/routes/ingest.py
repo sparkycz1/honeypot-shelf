@@ -30,6 +30,7 @@ from app.core.config import get_settings
 from app.db.models.honeypot import Honeypot
 from app.db.session import get_db
 from app.services.honeypot_events import EventSource, build_event
+from app.services.live_updates import KIND_ACTIVITY, publish_honeypot_event
 from app.services.opencanary_logtypes import is_internal_logtype
 
 router = APIRouter(prefix="/api/ingest", tags=["ingest"])
@@ -82,4 +83,5 @@ async def ingest_event(
         event_id = str(event.id)
 
     await db.commit()
+    await publish_honeypot_event(str(honeypot_id), KIND_ACTIVITY)
     return {"status": "accepted", "event_id": event_id}

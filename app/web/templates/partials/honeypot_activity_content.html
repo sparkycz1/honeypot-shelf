@@ -1,0 +1,116 @@
+{% from "macros/charts.html" import trend_chart %}
+
+{# Everything the Activity tab shows below its tab nav — same "one
+   partial, several routes" shape partials/honeypot_monitoring_content.html
+   uses: `GET /{id}/status` (first paint), `GET /{id}/activity-panel` (the
+   auto-poll/live-update fetch), and `POST /{id}/status/refresh` ("Refresh
+   now") all render this exact markup. #}
+
+{% if not honeypot.opencanary_log_polled_at and not recent_events %}
+  <section class="panel">
+    <p class="hint">{{ t(request, "honeypots.activity.not_gathered") }}</p>
+  </section>
+{% else %}
+  <div class="page-header-actions">
+    <p class="hint">
+      {{ t(request, "honeypots.activity.last_checked") }}
+      {% if honeypot.opencanary_log_polled_at %}{{ honeypot.opencanary_log_polled_at | local_time('%Y-%m-%d %H:%M %Z') }}{% else %}—{% endif %}
+    </p>
+    <button
+      class="button button-secondary"
+      hx-post="/honeypots/{{ honeypot.id }}/status/refresh"
+      hx-vals='{"csrf_token": "{{ csrf_token }}", "range_key": "{{ range_key }}"}'
+      hx-target="#activity-content"
+      hx-swap="innerHTML"
+    >
+      {{ t(request, "honeypots.activity.refresh_now") }}
+    </button>
+  </div>
+
+  <form method="get" action="/honeypots/{{ honeypot.id }}/status" class="search-form">
+    <select name="range_key" data-autosubmit>
+      {% for key, label, _delta in time_ranges %}
+        <option value="{{ key }}" {% if key == range_key %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <noscript><button type="submit" class="button">{{ t(request, "honeypots.activity.apply") }}</button></noscript>
+  </form>
+
+  <div class="page-header-actions">
+    <a class="button button-secondary" href="/honeypots/{{ honeypot.id }}/status/export?format=csv&range_key={{ range_key }}">{{ t(request, "honeypots.activity.export_csv") }}</a>
+    <a class="button button-secondary" href="/honeypots/{{ honeypot.id }}/status/export?format=json&range_key={{ range_key }}">{{ t(request, "honeypots.activity.export_json") }}</a>
+  </div>
+
+  {% if activity.truncated %}
+    <div class="alert alert-warn">
+      <p>{{ t(request, "honeypots.activity.truncated") }}</p>
+    </div>
+  {% endif %}
+
+  <section class="panel">
+    <h2>{{ t(request, "honeypots.activity.overview_heading") }}</h2>
+    <p class="hint">
+      {{ t(request, "honeypots.activity.total_in_range", count=activity.total) }}
+    </p>
+    {% if activity.total_counts and activity.total %}
+      {{ trend_chart([{'label': t(request, 'honeypots.activity.events'), 'color': palette[0], 'points': activity.total_counts}], activity.bucket_timestamps) }}
+    {% else %}
+      <p class="hint">{{ t(request, "honeypots.activity.no_data_in_range") }}</p>
+    {% endif %}
+  </section>
+
+  {% if activity.counts_by_type %}
+    <section class="panel">
+      <h2>{{ t(request, "honeypots.activity.by_type_heading") }}</h2>
+      {% set by_type_series = [] %}
+      {% for label, points in activity.counts_by_type.items() %}
+        {% set _ = by_type_series.append({'label': label, 'color': palette[loop.index0 % palette|length], 'points': points}) %}
+      {% endfor %}
+      {{ trend_chart(by_type_series, activity.bucket_timestamps) }}
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>{{ t(request, "honeypots.activity.column_type") }}</th>
+            <th>{{ t(request, "honeypots.activity.column_count") }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for label, count in activity.totals_by_type | dictsort(by='value', reverse=True) %}
+            <tr>
+              <td>{{ label }}</td>
+              <td>{{ count }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  {% endif %}
+
+  {% if recent_events %}
+    <section class="panel">
+      <h2>{{ t(request, "honeypots.activity.recent_heading") }}</h2>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>{{ t(request, "honeypots.activity.column_time") }}</th>
+            <th>{{ t(request, "honeypots.activity.column_type") }}</th>
+            <th>{{ t(request, "honeypots.activity.column_source_ip") }}</th>
+            <th>{{ t(request, "honeypots.activity.column_via") }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for event in recent_events %}
+            <tr>
+              <td>{{ event.occurred_at | local_time('%Y-%m-%d %H:%M:%S %Z') }}</td>
+              <td><span class="badge">{{ event.label }}</span></td>
+              <td>{{ event.src_ip or '—' }}{% if event.src_port %}:{{ event.src_port }}{% endif %}</td>
+              <td>
+                {{ t(request, "honeypots.activity.source_ssh_poll") if event.source == 'ssh_poll' else t(request, "honeypots.activity.source_push") }}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  {% endif %}
+{% endif %}

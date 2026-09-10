@@ -7,6 +7,7 @@ import contextlib
 import csv
 import io
 import json
+import logging
 import re
 import uuid
 from datetime import UTC, datetime
@@ -57,6 +58,7 @@ from app.services.honeypot_actions import (
     trigger_updates,
 )
 from app.services.honeypot_config import export_honeypot_config, import_honeypot_config
+from app.services.honeypot_status import as_aware_utc
 from app.services.honeypot_tags import (
     add_tags_to_honeypots,
     parse_tag_names_from_text,
@@ -105,6 +107,8 @@ _BULK_POWER_CONFIRM_PHRASE = "SELECTED HONEYPOTS"
 HONEYPOTS_VIEW_COOKIE_NAME = "honeypots_view"
 _HONEYPOTS_VIEW_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365
 _HONEYPOT_VIEW_MODES = ("table", "list", "cards")
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/honeypots")
 # debcontrol gates updates/power/terminal behind their own separate
@@ -1187,6 +1191,79 @@ async def honeypot_detail(
     return response
 
 
+#: Shared by monitoring.html/status.html and the -panel/refresh routes
+#: below that render partials/honeypot_{monitoring,activity}_content.html
+#: directly (no including template to inherit a template-level `{% set %}`
+#: from) — same rotating palette for chart series without one fixed color.
+_CHART_PALETTE = [
+    "#5b8fff", "#46bf8a", "#e0ab4a", "#f0685f", "#a970ff", "#38bdf8", "#f472b6", "#facc15",
+]
+
+
+def _normalize_range_key(range_key: str) -> str:
+    valid_range_keys = {key for key, _label, _delta in monitoring_history.TIME_RANGES}
+    return range_key if range_key in valid_range_keys else monitoring_history.DEFAULT_TIME_RANGE
+
+
+async def _build_monitoring_context(
+    honeypot: Honeypot, range_key: str, db: AsyncSession
+) -> dict[str, Any]:
+    """The Monitoring tab's own data, shared by the first-paint route, the
+    auto-refresh/live-update panel route, and the "Refresh now" route —
+    see partials/honeypot_monitoring_content.html's own comment for why
+    these three routes all funnel through the one partial."""
+    range_key = _normalize_range_key(range_key)
+    since = datetime.now(UTC) - monitoring_history.time_range_delta(range_key)
+    result = await db.execute(
+        select(HoneypotMonitoringSample)
+        .where(
+            HoneypotMonitoringSample.honeypot_id == honeypot.id,
+            HoneypotMonitoringSample.sampled_at >= since,
+        )
+        .order_by(HoneypotMonitoringSample.sampled_at)
+        .limit(monitoring_history.MAX_RAW_SAMPLES)
+    )
+    samples = list(result.scalars().all())
+    history = monitoring_history.build_monitoring_history(samples, range_key)
+
+    reachability_result = await db.execute(
+        select(HoneypotReachabilitySample)
+        .where(
+            HoneypotReachabilitySample.honeypot_id == honeypot.id,
+            HoneypotReachabilitySample.checked_at >= since,
+        )
+        .order_by(HoneypotReachabilitySample.checked_at)
+        .limit(monitoring_history.MAX_RAW_SAMPLES)
+    )
+    reachability_samples = list(reachability_result.scalars().all())
+    availability = monitoring_history.build_availability_history(reachability_samples, range_key)
+
+    # One unified "last checked" for the whole tab, rather than a separate
+    # timestamp per graph (CPU/RAM/OpenCanary all share one round trip's
+    # `monitoring_updated_at`; Availability's own reachability check runs
+    # independently) — the more recent of the two, so the header always
+    # reflects whichever check actually ran most recently. Both need
+    # `as_aware_utc` first: SQLite (tests) drops tzinfo on round-trip,
+    # real Postgres columns never do (see app.services.honeypot_status).
+    candidates = [
+        as_aware_utc(t)
+        for t in (honeypot.monitoring_updated_at, honeypot.last_ping_at)
+        if t is not None
+    ]
+    last_checked_at = max(candidates) if candidates else None
+
+    return {
+        "honeypot": honeypot,
+        "history": history,
+        "availability": availability,
+        "time_ranges": monitoring_history.TIME_RANGES,
+        "range_key": range_key,
+        "service_counts": await _get_service_counts(honeypot.id, db),
+        "last_checked_at": last_checked_at,
+        "palette": _CHART_PALETTE,
+    }
+
+
 @router.get("/{honeypot_id}/monitoring")
 async def honeypot_monitoring(
     request: Request,
@@ -1202,55 +1279,81 @@ async def honeypot_monitoring(
     erroring, same tolerance `status_filter` on the Updates tab already has
     for a bad query param."""
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-
-    valid_range_keys = {key for key, _label, _delta in monitoring_history.TIME_RANGES}
-    if range_key not in valid_range_keys:
-        range_key = monitoring_history.DEFAULT_TIME_RANGE
-
-    since = datetime.now(UTC) - monitoring_history.time_range_delta(range_key)
-    result = await db.execute(
-        select(HoneypotMonitoringSample)
-        .where(
-            HoneypotMonitoringSample.honeypot_id == honeypot_id,
-            HoneypotMonitoringSample.sampled_at >= since,
-        )
-        .order_by(HoneypotMonitoringSample.sampled_at)
-        .limit(monitoring_history.MAX_RAW_SAMPLES)
-    )
-    samples = list(result.scalars().all())
-    history = monitoring_history.build_monitoring_history(samples, range_key)
-
-    reachability_result = await db.execute(
-        select(HoneypotReachabilitySample)
-        .where(
-            HoneypotReachabilitySample.honeypot_id == honeypot_id,
-            HoneypotReachabilitySample.checked_at >= since,
-        )
-        .order_by(HoneypotReachabilitySample.checked_at)
-        .limit(monitoring_history.MAX_RAW_SAMPLES)
-    )
-    reachability_samples = list(reachability_result.scalars().all())
-    availability = monitoring_history.build_availability_history(reachability_samples, range_key)
+    context = await _build_monitoring_context(honeypot, range_key, db)
 
     csrf_token, new_cookie = get_or_create_csrf_token(request)
     response = templates.TemplateResponse(
         request,
         "honeypots/monitoring.html",
         {
-            "honeypot": honeypot,
+            **context,
             "tabs": _honeypot_tabs(request, honeypot, current_user),
             "active_tab": "monitoring",
             "csrf_token": csrf_token,
-            "history": history,
-            "availability": availability,
-            "time_ranges": monitoring_history.TIME_RANGES,
-            "range_key": range_key,
-            "service_counts": await _get_service_counts(honeypot_id, db),
         },
     )
     if new_cookie:
         set_csrf_cookie(response, new_cookie)
     return response
+
+
+@router.get("/{honeypot_id}/monitoring-panel")
+async def honeypot_monitoring_panel(
+    request: Request,
+    honeypot_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    range_key: str = monitoring_history.DEFAULT_TIME_RANGE,
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """The `#monitoring-content` div's own auto-poll/live-update fetch
+    target (see honeypots/monitoring.html) — a plain re-read of whatever's
+    currently in the DB, no SSH round trip. Distinct from `POST .../
+    monitoring/refresh` below, which forces a fresh sample first."""
+    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    context = await _build_monitoring_context(honeypot, range_key, db)
+    csrf_token, _ = get_or_create_csrf_token(request)
+    return templates.TemplateResponse(
+        request, "partials/honeypot_monitoring_content.html", {**context, "csrf_token": csrf_token}
+    )
+
+
+@router.post(
+    "/{honeypot_id}/monitoring/refresh", dependencies=[_manage, Depends(verify_csrf)]
+)
+async def refresh_monitoring_endpoint(
+    request: Request,
+    honeypot_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    range_key: str = Form(monitoring_history.DEFAULT_TIME_RANGE),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """"Refresh now" on the Monitoring tab — forces both an immediate
+    CPU/RAM/OpenCanary sample and an immediate reachability check (the
+    tab's two independent data sources, see `_build_monitoring_context`),
+    waits for both synchronously (same "enqueue, then block on the Celery
+    result" shape `refresh_facts_endpoint` already uses), then re-renders
+    the same partial the auto-poll panel does."""
+    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    settings = get_settings()
+
+    monitoring_result = tasks.sample_honeypot_monitoring.delay(str(honeypot.id))
+    reachability_result = tasks.check_honeypot_reachability.delay(str(honeypot.id))
+    for async_result in (monitoring_result, reachability_result):
+        try:
+            await asyncio.to_thread(
+                async_result.get, timeout=settings.ssh_connect_timeout + 5
+            )
+        except CeleryTimeoutError:
+            logger.warning("refresh_monitoring_endpoint: a background job timed out")
+        except Exception:
+            logger.warning("refresh_monitoring_endpoint: a background job failed", exc_info=True)
+
+    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    context = await _build_monitoring_context(honeypot, range_key, db)
+    csrf_token, _ = get_or_create_csrf_token(request)
+    return templates.TemplateResponse(
+        request, "partials/honeypot_monitoring_content.html", {**context, "csrf_token": csrf_token}
+    )
 
 
 # --- Self-polling fragments -------------------------------------------------
@@ -2611,6 +2714,44 @@ async def honeypot_logs(
     return response
 
 
+async def _build_activity_context(
+    honeypot: Honeypot, range_key: str, db: AsyncSession
+) -> dict[str, Any]:
+    """The Activity tab's own data — same "shared by first-paint/panel/
+    refresh routes" shape as `_build_monitoring_context`."""
+    range_key = _normalize_range_key(range_key)
+    now = datetime.now(UTC)
+    since = now - monitoring_history.time_range_delta(range_key)
+    windowed_result = await db.execute(
+        select(HoneypotEvent)
+        .where(HoneypotEvent.honeypot_id == honeypot.id, HoneypotEvent.occurred_at >= since)
+        .order_by(HoneypotEvent.occurred_at)
+        .limit(canary_activity_history.MAX_RAW_EVENTS)
+    )
+    windowed_events = list(windowed_result.scalars().all())
+    activity = canary_activity_history.build_activity_history(windowed_events, range_key, now=now)
+
+    recent_result = await db.execute(
+        select(HoneypotEvent)
+        .where(HoneypotEvent.honeypot_id == honeypot.id)
+        .order_by(HoneypotEvent.occurred_at.desc())
+        .limit(canary_activity_history.RECENT_EVENTS_LIMIT)
+    )
+    recent_events = canary_activity_history.summarize_recent_events(
+        list(recent_result.scalars().all())
+    )
+
+    return {
+        "honeypot": honeypot,
+        "activity": activity,
+        "recent_events": recent_events,
+        "time_ranges": monitoring_history.TIME_RANGES,
+        "range_key": range_key,
+        "global_settings": get_settings(),
+        "palette": _CHART_PALETTE,
+    }
+
+
 @router.get("/{honeypot_id}/status")
 async def honeypot_status_tab(
     request: Request,
@@ -2628,51 +2769,71 @@ async def honeypot_status_tab(
     this one honeypot and with a time-range picker like the Monitoring
     tab's."""
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-
-    valid_range_keys = {key for key, _label, _delta in monitoring_history.TIME_RANGES}
-    if range_key not in valid_range_keys:
-        range_key = monitoring_history.DEFAULT_TIME_RANGE
-
-    now = datetime.now(UTC)
-    since = now - monitoring_history.time_range_delta(range_key)
-    windowed_result = await db.execute(
-        select(HoneypotEvent)
-        .where(HoneypotEvent.honeypot_id == honeypot_id, HoneypotEvent.occurred_at >= since)
-        .order_by(HoneypotEvent.occurred_at)
-        .limit(canary_activity_history.MAX_RAW_EVENTS)
-    )
-    windowed_events = list(windowed_result.scalars().all())
-    activity = canary_activity_history.build_activity_history(windowed_events, range_key, now=now)
-
-    recent_result = await db.execute(
-        select(HoneypotEvent)
-        .where(HoneypotEvent.honeypot_id == honeypot_id)
-        .order_by(HoneypotEvent.occurred_at.desc())
-        .limit(canary_activity_history.RECENT_EVENTS_LIMIT)
-    )
-    recent_events = canary_activity_history.summarize_recent_events(
-        list(recent_result.scalars().all())
-    )
+    context = await _build_activity_context(honeypot, range_key, db)
 
     csrf_token, new_cookie = get_or_create_csrf_token(request)
     response = templates.TemplateResponse(
         request,
         "honeypots/status.html",
         {
-            "honeypot": honeypot,
+            **context,
             "tabs": _honeypot_tabs(request, honeypot, current_user),
             "active_tab": "status",
             "csrf_token": csrf_token,
-            "activity": activity,
-            "recent_events": recent_events,
-            "time_ranges": monitoring_history.TIME_RANGES,
-            "range_key": range_key,
-            "global_settings": get_settings(),
         },
     )
     if new_cookie:
         set_csrf_cookie(response, new_cookie)
     return response
+
+
+@router.get("/{honeypot_id}/activity-panel")
+async def honeypot_activity_panel(
+    request: Request,
+    honeypot_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    range_key: str = monitoring_history.DEFAULT_TIME_RANGE,
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """The `#activity-content` div's own auto-poll/live-update fetch
+    target (see honeypots/status.html) — a plain re-read of whatever's
+    currently in the DB, no SSH round trip."""
+    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    context = await _build_activity_context(honeypot, range_key, db)
+    csrf_token, _ = get_or_create_csrf_token(request)
+    return templates.TemplateResponse(
+        request, "partials/honeypot_activity_content.html", {**context, "csrf_token": csrf_token}
+    )
+
+
+@router.post("/{honeypot_id}/status/refresh", dependencies=[_manage, Depends(verify_csrf)])
+async def refresh_activity_endpoint(
+    request: Request,
+    honeypot_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    range_key: str = Form(monitoring_history.DEFAULT_TIME_RANGE),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """"Refresh now" on the Activity tab — forces an immediate OpenCanary
+    log poll, waits for it synchronously, then re-renders the same
+    partial the auto-poll panel does."""
+    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    settings = get_settings()
+
+    async_result = tasks.poll_honeypot_canary_log.delay(str(honeypot.id))
+    try:
+        await asyncio.to_thread(async_result.get, timeout=settings.ssh_connect_timeout + 5)
+    except CeleryTimeoutError:
+        logger.warning("refresh_activity_endpoint: the background job timed out")
+    except Exception:
+        logger.warning("refresh_activity_endpoint: the background job failed", exc_info=True)
+
+    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    context = await _build_activity_context(honeypot, range_key, db)
+    csrf_token, _ = get_or_create_csrf_token(request)
+    return templates.TemplateResponse(
+        request, "partials/honeypot_activity_content.html", {**context, "csrf_token": csrf_token}
+    )
 
 
 _ACTIVITY_EXPORT_FIELDS = (
