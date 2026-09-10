@@ -24,7 +24,9 @@
   <h2>{{ t(request, "initialize.output") }}</h2>
   <pre class="log-output" id="initialize-output" data-initialize-output></pre>
 
-  <p><a href="/initialize">{{ t(request, "initialize.back_to_form") }}</a></p>
+  <p>
+    <a href="/initialize?ip_address={{ ip_address | urlencode }}&device_name={{ device_name | urlencode }}&username={{ username | urlencode }}&port={{ port }}&auth_method={{ auth_method | urlencode }}&vpn_provider={{ vpn_provider | urlencode }}&new_ssh_port={{ new_ssh_port }}">{{ t(request, "initialize.back_to_form") }}</a>
+  </p>
 
   <div data-ws-path="/initialize/run/{{ run_id }}/ws" data-initialize-root hidden></div>
   <script src="/static/js/initialize.js" defer></script>

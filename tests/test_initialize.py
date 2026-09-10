@@ -39,18 +39,43 @@ async def test_nav_hides_initialize_for_a_read_only_user(client, login_as, db_se
 async def test_get_initialize_form_has_expected_fields(client):
     response = await client.get("/initialize")
     assert response.status_code == 200
-    for field in ("ip_address", "device_name", "username", "port", "auth_method", "password",
-                  "vpn_provider", "netbird_setup_key", "netbird_management_url",
-                  "wireguard_config"):
+    for field in ("ip_address", "device_name", "username", "port", "new_ssh_port",
+                  "auth_method", "password", "vpn_provider", "netbird_setup_key",
+                  "netbird_management_url", "wireguard_config"):
         assert f'name="{field}"' in response.text
 
 
-async def test_get_initialize_form_mentions_the_new_ssh_port(client):
+async def test_get_initialize_form_defaults_new_ssh_port_to_22222(client):
     from app.ssh.initialize import NEW_SSH_PORT
 
+    assert NEW_SSH_PORT == 22222
     response = await client.get("/initialize")
     assert response.status_code == 200
-    assert str(NEW_SSH_PORT) in response.text
+    assert 'name="new_ssh_port"' in response.text
+    assert f'value="{NEW_SSH_PORT}"' in response.text
+
+
+async def test_get_initialize_form_prefills_from_query_params(client):
+    """Used by the run page's "Back to Initialize" link so a failed run's
+    fields don't have to be retyped — see `initialize_form`'s docstring."""
+    response = await client.get(
+        "/initialize",
+        params={
+            "ip_address": "192.0.2.50",
+            "device_name": "acme-honey2",
+            "username": "pi",
+            "port": "2222",
+            "auth_method": "password",
+            "vpn_provider": "netbird",
+            "new_ssh_port": "33333",
+        },
+    )
+    assert response.status_code == 200
+    assert 'value="192.0.2.50"' in response.text
+    assert 'value="acme-honey2"' in response.text
+    assert 'value="pi"' in response.text
+    assert 'value="2222"' in response.text
+    assert 'value="33333"' in response.text
 
 
 async def test_read_only_user_cannot_reach_initialize(client, login_as, db_session_factory):
@@ -94,12 +119,46 @@ async def test_post_initialize_stages_a_pending_run_and_redirects(client):
     assert run.device_name == "acme-honey1"
     assert run.auth_method == "ssh_key"
     assert run.netbird_management_url == "https://netbird.example.com:443"
+    from app.ssh.initialize import NEW_SSH_PORT
+
+    assert run.new_ssh_port == NEW_SSH_PORT  # not given in the form -> Form(NEW_SSH_PORT) default
 
     run_page = await client.get(location)
     assert run_page.status_code == 200
     assert f'data-ws-path="/initialize/run/{run_id}/ws"' in run_page.text
     assert "acme-honey1" in run_page.text
+    # "Back to Initialize" carries the (non-secret) fields forward so a
+    # failed run's inputs don't have to be retyped to retry.
+    back_link = 'href="/initialize?ip_address=192.0.2.10&device_name=acme-honey1'
+    assert back_link in run_page.text
+    assert f"new_ssh_port={NEW_SSH_PORT}" in run_page.text
 
+    PENDING_RUNS.pop(run_id, None)
+
+
+async def test_post_initialize_with_a_custom_new_ssh_port_is_used(client):
+    form = await client.get("/initialize")
+    csrf_token = _csrf_from(form)
+
+    response = await client.post(
+        "/initialize",
+        data={
+            "ip_address": "192.0.2.11",
+            "device_name": "acme-honey3",
+            "username": "root",
+            "port": "22",
+            "new_ssh_port": "2222",
+            "auth_method": "ssh_key",
+            "password": "",
+            "csrf_token": csrf_token,
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    run_id = response.headers["location"].removeprefix("/initialize/run/")
+    run = PENDING_RUNS.get(run_id)
+    assert run is not None
+    assert run.new_ssh_port == 2222
     PENDING_RUNS.pop(run_id, None)
 
 
@@ -144,6 +203,7 @@ async def test_initialize_run_history(client, db_session_factory):
         netbird_setup_key=None,
         netbird_management_url=None,
         wireguard_config=None,
+        new_ssh_port=22222,
     )
     await _persist_initialize_run(
         db_session_factory,
@@ -315,6 +375,16 @@ def test_build_initialize_command_prepares_portscan():
     assert '"portscan.iptables_path"' in script
 
 
+def test_build_initialize_command_makes_kern_log_world_readable():
+    """Regression guard: rsyslog's own default $FileCreateMode/$FileOwner/
+    $FileGroup (0640 root:adm) would otherwise make a freshly created
+    kern.log unreadable by opencanaryd's unprivileged nobody:nogroup once
+    the portscan module tails it."""
+    script = build_initialize_command(device_name="acme-honey1", service_user="pi")
+    assert "touch /var/log/kern.log" in script
+    assert "chmod 644 /var/log/kern.log" in script
+
+
 def test_build_initialize_command_prepares_samba_with_service_disabled():
     script = build_initialize_command(
         device_name="acme-honey1",
@@ -331,6 +401,19 @@ def test_build_initialize_command_prepares_samba_with_service_disabled():
     # Prepared, not switched on — enabling either module is a separate,
     # deliberate manual step.
     assert '"smb.enabled": true' not in script
+
+
+def test_build_initialize_command_does_not_chown_to_the_nonexistent_syslog_user():
+    """Regression guard: `chown syslog:adm` used to crash the whole run
+    with "invalid user: 'syslog'" — Debian trixie's rsyslog package no
+    longer creates that dedicated system user (rsyslogd runs as root via
+    systemd capabilities instead). `chmod 644` (root-owned) is all the
+    file actually needs — rsyslogd itself runs as root regardless of file
+    ownership, and opencanaryd's smb module, which tails this file as
+    nobody:nogroup, only needs world-read."""
+    script = build_initialize_command(device_name="acme-honey1", service_user="pi")
+    assert "syslog:adm" not in script
+    assert "chmod 644 /var/log/samba-audit.log" in script
     assert '"portscan.enabled": true' not in script
 
 
@@ -358,6 +441,14 @@ def test_build_initialize_command_moves_ssh_to_the_new_port_last():
     assert script.index("systemctl restart ssh") < script.index(INITIALIZE_SUCCESS_MARKER)
     apt_install_index = script.index("apt-get install -y ")
     assert apt_install_index < script.index("systemctl restart ssh")
+
+
+def test_build_initialize_command_honors_a_custom_new_ssh_port():
+    script = build_initialize_command(
+        device_name="acme-honey1", service_user="pi", new_ssh_port=2222
+    )
+    assert "echo 'Port 2222' > /etc/ssh/sshd_config.d/honeyhive-ssh-port.conf" in script
+    assert "Port 22222" not in script
 
 
 def test_build_initialize_command_emits_step_markers():
