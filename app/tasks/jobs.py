@@ -54,7 +54,9 @@ from app.services.company_stats import compute_company_stats
 from app.services.honeypot_events import EventSource, build_event
 from app.services.honeypot_status import offline_cutoff
 from app.services.live_updates import (
+    KIND_ACTIVITY,
     KIND_FACTS,
+    KIND_MONITORING,
     KIND_PACKAGES,
     KIND_SERVICES,
     KIND_STATUS,
@@ -917,6 +919,42 @@ def ping_all_honeypots() -> None:
     asyncio.run(_ping_all_honeypots())
 
 
+async def _check_honeypot_reachability(honeypot_id: str) -> dict[str, Any]:
+    """Same single check `_ping_all_honeypots` does per-honeypot in its
+    fleet-wide sweep, exposed as its own task — the Monitoring tab's
+    "Refresh now" button (`app.web.routes.honeypots.refresh_monitoring_
+    endpoint`) fires this alongside `sample_honeypot_monitoring` so a
+    manual refresh actually updates everything the page shows, not just
+    the CPU/RAM/OpenCanary sample."""
+    async with db_session.AsyncSessionLocal() as session:
+        honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
+        if honeypot is None:
+            return {"ok": False, "error": "Honeypot not found."}
+        if not honeypot.ip_address:
+            return {"ok": False, "error": "No IP address set."}
+
+        outcome = await check_reachable(honeypot.ip_address, honeypot.port)
+        now = datetime.now(UTC)
+        honeypot.is_reachable = outcome.reachable
+        honeypot.last_ping_at = now
+        session.add(
+            HoneypotReachabilitySample(
+                honeypot_id=honeypot.id,
+                checked_at=now,
+                reachable=outcome.reachable,
+                latency_ms=outcome.latency_ms,
+            )
+        )
+        await session.commit()
+        await publish_honeypot_event(honeypot_id, KIND_STATUS)
+        return {"ok": True, "reachable": outcome.reachable}
+
+
+@celery_app.task(name="app.tasks.jobs.check_honeypot_reachability")
+def check_honeypot_reachability(honeypot_id: str) -> dict[str, Any]:
+    return asyncio.run(_check_honeypot_reachability(honeypot_id))
+
+
 async def _refresh_honeypot_facts(honeypot_id: str) -> dict[str, Any]:
     """Connect to one honeypot and refresh its OS/kernel/arch/CPU/RAM/disk/
     uptime/process-count facts. Requires a pinned host key — honeypots
@@ -1183,6 +1221,7 @@ async def _sample_honeypot_monitoring(honeypot_id: str) -> dict[str, Any]:
         )
         honeypot.monitoring_updated_at = now
         await session.commit()
+        await publish_honeypot_event(honeypot_id, KIND_MONITORING)
 
         return {"ok": True}
 
@@ -1284,6 +1323,7 @@ async def _poll_honeypot_canary_log(honeypot_id: str) -> dict[str, Any]:
             # the closest equivalent or "last seen alive at".
             honeypot.last_seen_ip = honeypot.ip_address
         await session.commit()
+        await publish_honeypot_event(honeypot_id, KIND_ACTIVITY)
 
         return {"ok": True, "new_events": len(alert_events)}
 

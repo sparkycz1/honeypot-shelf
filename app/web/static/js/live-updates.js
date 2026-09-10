@@ -1,7 +1,7 @@
 // "Something changed, go check" — the browser half of app/services/
 // live_updates.py and app/web/routes/live_ws.py. Opens one WebSocket per
-// machine page (Overview, Monitoring, Updates — anywhere with a
-// `[data-live-machine-id]` element) and turns each `{"kind": "..."}`
+// honeypot page (Overview, Monitoring, Activity, Updates — anywhere with a
+// `[data-live-honeypot-id]` element) and turns each `{"kind": "..."}`
 // message it receives into a plain DOM event (`live-<kind>`) dispatched on
 // `document.body`. Every htmx panel that used to poll on a fixed interval
 // now also listens for its matching event (`hx-trigger="every 60s,
@@ -18,20 +18,31 @@
 // the tab fully closed. It only ever surfaces something this same open
 // tab already received over the WebSocket above.
 //
-// No-ops entirely on a page with no `[data-live-machine-id]` anchor —
-// nothing loads this unconditionally, each machine-scoped page opts in by
-// including it (see machines/detail.html, monitoring.html,
+// No-ops entirely on a page with no `[data-live-honeypot-id]` anchor —
+// nothing loads this unconditionally, each honeypot-scoped page opts in by
+// including it (see honeypots/detail.html, monitoring.html, status.html,
 // update_history.html).
+//
+// **Found live, previously undetected**: this whole script silently never
+// worked — a debcontrol leftover looked for `[data-live-machine-id]` (this
+// app's templates all set `data-live-honeypot-id` instead) and built the
+// socket URL as `/machines/{id}/live/ws` (the real route, still, is
+// `/honeypots/{id}/live/ws` — see app/web/routes/live_ws.py). The selector
+// mismatch meant `anchor` was always null, so the whole file no-opped on
+// every single page, on every load, since this app's first commit — no
+// page's htmx panel ever received a push, everything ran on its polling
+// fallback alone the whole time. Same class of bug as the `machine_ids`/
+// `honeypot_ids` bulk-select mixup CLAUDE.md already documents elsewhere.
 (() => {
   "use strict";
 
-  const anchor = document.querySelector("[data-live-machine-id]");
-  const machineId = anchor && anchor.getAttribute("data-live-machine-id");
-  if (!machineId) return;
-  const machineName = anchor.getAttribute("data-live-machine-name") || "This machine";
+  const anchor = document.querySelector("[data-live-honeypot-id]");
+  const honeypotId = anchor && anchor.getAttribute("data-live-honeypot-id");
+  if (!honeypotId) return;
+  const honeypotName = anchor.getAttribute("data-live-honeypot-name") || "This honeypot";
 
   const scheme = window.location.protocol === "https:" ? "wss" : "ws";
-  const url = `${scheme}://${window.location.host}/machines/${encodeURIComponent(machineId)}/live/ws`;
+  const url = `${scheme}://${window.location.host}/honeypots/${encodeURIComponent(honeypotId)}/live/ws`;
 
   const INITIAL_RETRY_MS = 1000;
   const MAX_RETRY_MS = 30000;
@@ -91,7 +102,7 @@
 
   // --- Browser notifications ------------------------------------------
 
-  const NOTIFY_PREF_KEY = "debcontrol:notifications-enabled";
+  const NOTIFY_PREF_KEY = "honeyhive:notifications-enabled";
 
   const KIND_MESSAGES = {
     status: "Reachability status changed",
@@ -99,6 +110,8 @@
     packages: "Installed packages refreshed",
     services: "Services refreshed",
     updates: "Update availability changed",
+    monitoring: "New monitoring sample",
+    activity: "New OpenCanary activity",
   };
 
   function notificationsWanted() {
@@ -127,7 +140,7 @@
     const body = KIND_MESSAGES[kind] || "Something changed";
     let notification;
     try {
-      notification = new Notification(machineName, { body, tag: `debcontrol-${machineId}` });
+      notification = new Notification(honeypotName, { body, tag: `honeyhive-${honeypotId}` });
     } catch {
       return; // some browsers throw if constructed from a background/service context
     }

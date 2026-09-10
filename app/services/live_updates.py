@@ -46,6 +46,8 @@ KIND_FACTS = "facts"
 KIND_PACKAGES = "packages"
 KIND_SERVICES = "services"
 KIND_UPDATES = "updates"
+KIND_MONITORING = "monitoring"
+KIND_ACTIVITY = "activity"
 
 
 def channel_for(honeypot_id: str) -> str:

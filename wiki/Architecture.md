@@ -533,6 +533,55 @@ reachability and from OpenCanary having emitted any events recently, and
 useful specifically for catching an OpenCanary process that's dead while
 the honeypot itself is still perfectly SSH-reachable.
 
+### Live updates over WebSocket, and "Refresh now"
+
+Every honeypot-scoped page (Overview, Monitoring, Activity, Updates)
+opens one WebSocket to `GET /honeypots/{id}/live/ws`
+(`app/web/routes/live_ws.py`) and turns each `{"kind": "..."}` message a
+background job publishes (`app.services.live_updates.publish_honeypot_
+event`) into a `live-<kind>` DOM event on `document.body`
+(`app/web/static/js/live-updates.js`). Every htmx panel that polls on a
+fixed interval also listens for its matching event, so it updates within
+about a second of the job finishing rather than waiting out the poll —
+see that file's own comments for the full design, including the
+best-effort/at-most-a-doorbell reasoning (a publish carries no honeypot
+data, just a kind, so a missed one costs nothing but a slightly later
+refresh).
+
+**Found live, previously undetected, fixed this round**: this whole
+mechanism silently never worked, on any page, since this app's first
+commit — a debcontrol leftover in `live-updates.js` looked for
+`[data-live-machine-id]` (every template here has always set
+`data-live-honeypot-id` instead) and built the socket URL as
+`/machines/{id}/live/ws` (the real route has always been
+`/honeypots/{id}/live/ws`). The selector mismatch meant the anchor lookup
+always returned nothing, so the script no-opped immediately on every
+load — every htmx panel that looked live-connected was actually running
+on its polling fallback alone the whole time. Same class of bug as the
+`machine_ids`/`honeypot_ids` bulk-select mixup this file's "Users list"
+section already documents. Fixed, and the Activity tab (which never even
+included the script or the anchor div before now) gained both.
+
+Kinds today: `status` (reachability), `facts`, `packages`, `services`,
+`updates`, and two added this round — `monitoring` (a fresh CPU/RAM/
+OpenCanary sample) and `activity` (new OpenCanary log activity, published
+from both the SSH-poll job and the push-ingest endpoint).
+
+**The Monitoring and Activity tabs** also gained a "Refresh now" button
+and one unified "Last checked" timestamp at the top of each, replacing a
+separate timestamp that used to sit under every individual graph
+(Availability's own "latest check," the OpenCanary panel's own, ...) —
+now those just show a plain status badge, with the *when* answered once,
+in one place. Each tab's actual content lives in its own partial
+(`partials/honeypot_monitoring_content.html`/`honeypot_activity_content.
+html`), shared by three routes: the first-paint page, a `-panel` GET the
+page's own auto-poll/live-update div re-fetches, and a `POST .../refresh`
+that forces a fresh sample (`sample_honeypot_monitoring`+
+`check_honeypot_reachability`, or `poll_honeypot_canary_log`) and waits
+for it synchronously before re-rendering — same "enqueue a Celery task,
+then block on its result" shape `refresh_facts_endpoint` already used for
+the Overview tab's own "Refresh facts" button.
+
 ## 🌐 The REST API: read and write, mirroring the web UI
 
 `app/web/routes/api_v1*.py` — authenticated with a per-user API token

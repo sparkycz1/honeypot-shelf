@@ -116,4 +116,17 @@
   }
 
   document.querySelectorAll("[data-chart]").forEach(setUp);
+
+  // The Monitoring tab's charts now live inside an auto-refreshing htmx
+  // panel (`#monitoring-content`, polling and listening for `live-
+  // monitoring`/`live-status` — see honeypots/monitoring.html) — every
+  // swap replaces the DOM nodes above entirely, so freshly inserted
+  // `[data-chart]` wrappers need `setUp` re-run on them or they'd render
+  // as static SVGs with no hover/touch-scrub. Delegated once at the
+  // document level rather than re-registered per swap.
+  document.body.addEventListener("htmx:afterSwap", (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    target.querySelectorAll("[data-chart]").forEach(setUp);
+  });
 })();
