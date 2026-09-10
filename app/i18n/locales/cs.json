@@ -361,7 +361,6 @@
     "honeypots.detail.ip_address": "IP adresa",
     "honeypots.detail.loading": "Načítání…",
     "honeypots.detail.notes": "Poznámky",
-    "honeypots.detail.operating_system": "Operační systém",
     "honeypots.detail.pinned_fingerprint": "Připnutý otisk:",
     "honeypots.detail.port": "Port",
     "honeypots.detail.readiness_missing": "Tomuto honeypotu chybí:",

@@ -361,7 +361,6 @@
     "honeypots.detail.ip_address": "IP address",
     "honeypots.detail.loading": "Loading…",
     "honeypots.detail.notes": "Notes",
-    "honeypots.detail.operating_system": "Operating system",
     "honeypots.detail.pinned_fingerprint": "Pinned fingerprint:",
     "honeypots.detail.port": "Port",
     "honeypots.detail.readiness_missing": "This honeypot is missing:",

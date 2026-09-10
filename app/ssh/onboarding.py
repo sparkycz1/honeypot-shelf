@@ -7,10 +7,12 @@ Raspbian honeypot for HoneyHive, run directly over SSH (see
    `authorized_keys` (idempotent — `grep -qxF` first, same convention as
    `app.tasks.jobs._push_pending_ssh_key`).
 3. Grant it passwordless sudo, scoped to exactly what HoneyHive needs
-   (`apt-get`, `shutdown`, `dmidecode`, `systemctl` — the last one for the
-   Honeypot Config tab's module editor, restarting `opencanary` and
-   toggling `smbd`/`nmbd` — and `flatpak`/`snap` if either is present) —
-   the exact sudoers line documented in wiki/Honeypot-Onboarding.md.
+   (`apt-get`, `shutdown`, `dmidecode`, `systemctl`, `raspi-config` — the
+   read-only-root toggle — and `bash /tmp/.honeyhive-*` — running this
+   app's own generated scripts, e.g. the Honeypot Config tab's module
+   editor restarting `opencanary` and toggling `smbd`/`nmbd` — and
+   `flatpak`/`snap` if either is present) — see
+   `build_sudoers_grant_command`'s own docstring for the full reasoning.
 4. Best-effort install `ncurses-term`, so the web Terminal tab gets colors
    and box-drawing without a separate manual step. Its failure (no
    network, offline apt cache) must never fail onboarding itself — only
@@ -45,14 +47,40 @@ ONBOARD_SUCCESS_MARKER = "HONEYHIVE_ONBOARD_OK"
 
 
 def build_sudoers_grant_command(username: str) -> str:
-    """The scoped, passwordless sudo grant `app.ssh.readiness` checks for
+    """The passwordless sudo grant `app.ssh.readiness` checks for
     (`apt-get`/`shutdown`/`dmidecode`/`systemctl`, plus `flatpak`/`snap` if
     either is present) — exactly what an operator would otherwise type by
-    hand from the readiness banner's own hint. Idempotent (each `cat >`
-    overwrites its own file, never appending/duplicating) and self-
-    validating (`visudo -cf` after every write — a syntax error here would
-    otherwise silently break sudo for the whole system on next use, not
-    just for this grant).
+    hand from the readiness banner's own hint — plus two more commands the
+    readiness check doesn't probe directly but real features still need:
+    `raspi-config` (the Honeypot Config tab's read-only-root toggle,
+    `app.ssh.readonly.build_toggle_command`) and running this app's own
+    generated scripts under `/tmp/.honeyhive-*` via `bash` (the OpenCanary
+    module editor's "Apply" — `app.ssh.opencanary_config.
+    build_write_command` writes `/tmp/.honeyhive-opencanary-apply.sh`,
+    restarting `opencanary` and toggling `smbd`/`nmbd` to match, and
+    `app.ssh.initialize` writes `/tmp/.honeyhive-initialize.sh` the same
+    way, all in one script for exactly the same one-round-trip reasoning
+    `app.ssh.updates.build_update_command` documents). Confirmed live that
+    omitting either of these breaks that feature outright (`sudo: a
+    password is required`, silently swallowed by the caller's own
+    `2>/dev/null` fallback into a useless "exited 1: (no output)" — see
+    `app.tasks.jobs._write_honeypot_opencanary_config`) — this grant
+    exists specifically so neither ever needs a human sudo password typed
+    in over the terminal tab instead.
+
+    The `bash` grant is restricted to the `/tmp/.honeyhive-*` prefix (a
+    sudoers command-argument glob, matched literally, not a shell glob)
+    every script this app writes there uses — not a blanket "run any
+    command as root" grant, even though in practice an account already
+    this trusted (it holds the very credential HoneyHive itself uses to
+    manage this honeypot) getting broader access wouldn't meaningfully
+    change what it could already do to the honeypot through the features
+    above alone.
+
+    Idempotent (each `cat >` overwrites its own file, never appending/
+    duplicating) and self-validating (`visudo -cf` after every write — a
+    syntax error here would otherwise silently break sudo for the whole
+    system on next use, not just for this grant).
 
     Shared by `build_onboarding_command` (the dedicated `honeyhive` user,
     granted once during onboarding) and `app.ssh.initialize.
@@ -66,7 +94,8 @@ def build_sudoers_grant_command(username: str) -> str:
     return (
         f"cat > /etc/sudoers.d/{user} <<'HONEYHIVE_SUDOERS_APT'\n"
         f"{username} ALL=(root) NOPASSWD: /usr/bin/apt-get, /usr/sbin/shutdown, "
-        "/usr/sbin/dmidecode, /usr/bin/systemctl\n"
+        "/usr/sbin/dmidecode, /usr/bin/systemctl, /usr/bin/raspi-config, "
+        "/usr/bin/bash /tmp/.honeyhive-*\n"
         "HONEYHIVE_SUDOERS_APT\n"
         f"chmod 440 /etc/sudoers.d/{user}; "
         f"visudo -cf /etc/sudoers.d/{user}; "
