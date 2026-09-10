@@ -294,6 +294,49 @@ stop`/`start` — nothing removed) with the same auto-detection, so there's
 one command regardless of which overlay file(s) a given deployment
 actually runs.
 
+**Ported from debcontrol's own recent releases** (that project is synced
+here periodically for fixes/features that apply to both — see its release
+history): `scripts/backup.sh`/`restore.sh` for full disaster-recovery
+backups — a live `pg_dump` plus `.env` (holding `ENCRYPTION_KEY`, without
+which every stored secret is unrecoverable ciphertext), with automatic
+retention pruning; unlike debcontrol, there's no separate shared SSH
+identity volume to back up here, since a honeypot's own credential
+already lives in the database. "Roll back this update"
+(`HoneypotUpdateRun.package_snapshot`/`rollback_of_run_id`,
+`app.ssh.updates.capture_package_snapshot`/`build_rollback_command`/
+`run_rollback`, `app.tasks.jobs._rollback_honeypot_update`) — every real
+update run now snapshots installed dpkg versions just before the upgrade
+step; rolling back diffs a fresh snapshot against that stored one and
+re-installs, pinned to exact `package=version`, only whatever actually
+changed since (never a blind full replay), as a brand new run in the same
+history rather than an edit to the original. Both the web UI (update-run
+detail page) and the REST API (`POST /honeypots/{id}/updates/{run_id}/
+rollback`) expose it, gated by the same write access as running an update
+in the first place. FIPS-aligned crypto defaults
+(`app.core.security`/`app.auth.sessions`/`app.ssh.client`) — secrets at
+rest moved from Fernet (AES-128) to **AES-256-GCM**, with
+`decrypt_secret` still transparently reading the legacy format forever
+and `scripts/reencrypt_secrets.py` available to proactively upgrade every
+remaining one; the pending-TOTP/WebAuthn `itsdangerous` tickets now sign
+with `digest_method=hashlib.sha256` instead of the library's own
+HMAC-SHA1 default; every honeypot SSH connection now restricts key
+exchange/encryption/MAC negotiation to a FIPS-approved subset (NIST-curve
+ECDH or ≥2048-bit DH with SHA-2, AES-GCM/CTR, HMAC-SHA-2), deliberately
+left unrestricted only for the unauthenticated host-key-fingerprint probe
+and the accepted server host-key algorithm itself (this app pins by exact
+fingerprint, not algorithm). Argon2id password hashing was deliberately
+**not** swapped for FIPS-approved PBKDF2 — a documented trade-off, not a
+gap, since Argon2id is meaningfully more GPU/ASIC-resistant. See
+[wiki/Architecture.md](wiki/Architecture.md)'s "FIPS alignment" and
+"Rolling back a honeypot update" sections for the full reasoning, and
+[wiki/Installation.md](wiki/Installation.md) for the backup/restore and
+`reencrypt_secrets.py` usage. New migration `c8d9e0f1a2b3` (two nullable
+columns on `honeypot_update_runs` — safe on an existing deployment, no
+data backfill). Alongside this: `uv`/dependency versions synced to
+current (`uv` 0.12.7 → 0.12.12 in the Dockerfile, `uv lock` re-run against
+latest compatible releases) — `python:3.14.7-slim`, `postgres:18.6`, and
+`redis:8.10.1` were already current, nothing to bump there.
+
 Settled product decisions (see [wiki/Home.md](wiki/Home.md) for the full
 list): only a superadmin creates companies/honeypots/users — a company's
 own `READ_WRITE` user manages honeypots *within* their own company (via

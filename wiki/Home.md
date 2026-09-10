@@ -59,11 +59,18 @@ Activity tab has, plus a CSV/JSON export of that honeypot's own event
 history; the REST API mirroring all of the above, including `GET
 /api/v1/events` (+ `/export`) for scripting against the same event data;
 Users and Settings (LDAP/OIDC/syslog forwarding, SSH key rotation,
-retention policies); full **English and
-Czech i18n** across every page, not just the site chrome. A 205-test
-suite covers the RBAC/scoping-sensitive paths; `ruff check .` and `mypy
-app alembic tests` are both fully clean. See [CLAUDE.md](../CLAUDE.md)'s
-"Current state" section for what's left (mainly: no CI workflow file).
+retention policies); "Roll back this update" on a honeypot's own update
+history, re-installing exactly the pre-upgrade package versions for
+whatever's changed since; `scripts/backup.sh`/`restore.sh` for full
+disaster-recovery backups (`pg_dump` + `.env`, retention pruning); FIPS-
+aligned crypto defaults (AES-256-GCM secrets at rest, SHA-2-signed
+tickets, a restricted SSH algorithm set — see
+[Architecture](Architecture.md#fips-alignment)); full **English and
+Czech i18n** across every page, not just the site chrome. A growing test
+suite (see `uv run pytest` for the current count) covers the
+RBAC/scoping-sensitive paths; `ruff check .` and `mypy app alembic tests`
+are both fully clean. See [CLAUDE.md](../CLAUDE.md)'s "Current state"
+section for what's left (mainly: no CI workflow file).
 
 ### Product decisions (settled)
 

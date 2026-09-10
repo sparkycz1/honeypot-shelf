@@ -24,6 +24,7 @@ keep pointing at the parent's connection pool.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import shlex
 import time
@@ -85,7 +86,13 @@ from app.ssh.readiness import DIRECT_FIX_COMMAND, missing_requirements
 from app.ssh.readiness import check_honeypot_readiness as run_readiness_probes
 from app.ssh.readonly import ReadonlyToggleError, check_readonly_status, set_readonly
 from app.ssh.services import gather_services
-from app.ssh.updates import check_updates, preview_update, run_system_update
+from app.ssh.updates import (
+    capture_package_snapshot,
+    check_updates,
+    preview_update,
+    run_rollback,
+    run_system_update,
+)
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -1405,6 +1412,25 @@ async def _run_honeypot_update(run_id: str) -> None:
 
         secret = await resolve_honeypot_credential(honeypot, session)
 
+        # Captured before the upgrade itself starts — the "before" picture
+        # "Roll back this update" (`_rollback_honeypot_update` below) later
+        # diffs against. A failure here (unreachable honeypot, timeout) is
+        # logged and never fails the update run itself — it only means
+        # rollback won't be offered for this particular run, same as a run
+        # from before this feature existed.
+        try:
+            snapshot = await capture_package_snapshot(
+                honeypot, secret, settings.ssh_connect_timeout
+            )
+            run.package_snapshot = json.dumps(snapshot)
+        except (SSHConnectionError, TimeoutError) as exc:
+            logger.warning(
+                "Package snapshot capture failed for %s before update run %s: %s",
+                honeypot.name,
+                run.id,
+                exc,
+            )
+
         # Persists apt's output as it arrives, so the update-run page (which
         # polls `partials/update_run_status.html` every 3s) shows it live
         # instead of only once the whole run has finished. Throttled to at
@@ -1455,6 +1481,96 @@ async def _run_honeypot_update(run_id: str) -> None:
 )
 def run_honeypot_update(run_id: str) -> None:
     asyncio.run(_run_honeypot_update(run_id))
+
+
+async def _rollback_honeypot_update(run_id: str) -> None:
+    """Execute one rollback `HoneypotUpdateRun` (`rollback_of_run_id` set) —
+    re-install every package whose version changed since the source run's
+    `package_snapshot`, back to exactly what it was. See
+    `app.ssh.updates.build_rollback_command` for the caveat this depends
+    on (the old `.deb` still being resolvable from a configured apt
+    source) and `app/web/routes/honeypots.py`'s
+    `rollback_honeypot_update_endpoint` for how this run gets created.
+
+    Diffs against a **freshly captured** current snapshot rather than
+    blindly replaying every package in the source snapshot — only
+    packages whose version actually differs are touched, so a rollback
+    run days later doesn't also revert something *else* that was updated
+    in the meantime for unrelated reasons, and a rollback with nothing
+    left to undo (e.g. run twice) is a fast no-op instead of a full apt
+    invocation."""
+    settings = get_settings()
+
+    async with db_session.AsyncSessionLocal() as session:
+        run = await session.get(HoneypotUpdateRun, uuid.UUID(run_id))
+        if run is None:
+            return
+
+        honeypot = await session.get(Honeypot, run.honeypot_id)
+        source_run = (
+            await session.get(HoneypotUpdateRun, run.rollback_of_run_id)
+            if run.rollback_of_run_id
+            else None
+        )
+        if honeypot is None or source_run is None or not source_run.package_snapshot:
+            run.status = UpdateRunStatus.FAILED
+            run.error = "The source update run's package snapshot is no longer available."
+            run.finished_at = datetime.now(UTC)
+            await session.commit()
+            return
+
+        run.status = UpdateRunStatus.RUNNING
+        run.started_at = datetime.now(UTC)
+        await session.commit()
+
+        secret = await resolve_honeypot_credential(honeypot, session)
+
+        try:
+            snapshot: dict[str, str] = json.loads(source_run.package_snapshot)
+            current = await capture_package_snapshot(honeypot, secret, settings.ssh_connect_timeout)
+            target_versions = {
+                package: version
+                for package, version in snapshot.items()
+                if package in current and current[package] != version
+            }
+            if not target_versions:
+                run.output = (
+                    "Nothing to roll back — every snapshotted package's installed version "
+                    "already matches the pre-update snapshot."
+                )
+                run.status = UpdateRunStatus.SUCCEEDED
+            else:
+                result = await run_rollback(
+                    honeypot,
+                    secret,
+                    target_versions,
+                    settings.ssh_connect_timeout,
+                    settings.update_timeout_seconds,
+                )
+                run.output = _truncate_output(result.output)
+                if result.exit_status == 0:
+                    run.status = UpdateRunStatus.SUCCEEDED
+                else:
+                    run.status = UpdateRunStatus.FAILED
+                    run.error = f"apt exited with status {result.exit_status}."
+        except (SSHConnectionError, TimeoutError) as exc:
+            logger.warning("rollback_honeypot_update failed for %s: %s", honeypot.name, exc)
+            run.status = UpdateRunStatus.FAILED
+            run.error = str(exc)
+
+        run.finished_at = datetime.now(UTC)
+        await session.commit()
+
+    refresh_honeypot_packages.delay(str(run.honeypot_id))
+    check_honeypot_updates.delay(str(run.honeypot_id))
+
+
+@celery_app.task(
+    name="app.tasks.jobs.rollback_honeypot_update",
+    time_limit=get_settings().update_timeout_seconds,
+)
+def rollback_honeypot_update(run_id: str) -> None:
+    asyncio.run(_rollback_honeypot_update(run_id))
 
 
 async def _check_honeypot_updates(honeypot_id: str) -> dict[str, Any]:

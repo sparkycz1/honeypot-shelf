@@ -95,7 +95,12 @@ from app.ssh.exceptions import SSHConnectionError
 from app.ssh.packages import PackageSource
 from app.ssh.power import PowerAction
 from app.tasks import jobs as tasks
-from app.tasks.jobs import preview_honeypot_update, run_honeypot_update, send_honeypot_power_command
+from app.tasks.jobs import (
+    preview_honeypot_update,
+    rollback_honeypot_update,
+    run_honeypot_update,
+    send_honeypot_power_command,
+)
 from app.web.honeypot_search import apply_tag_filter
 
 router = APIRouter(prefix="/api/v1")
@@ -209,6 +214,11 @@ def _update_run_to_dict(run: HoneypotUpdateRun) -> dict[str, object]:
         "status": run.status.value,
         "output": run.output,
         "error": run.error,
+        # Not the raw snapshot (a full package list per run is a lot to hand
+        # back for something most callers only need as a yes/no) — just
+        # whether "Roll back this update" is available for this run.
+        "has_package_snapshot": run.package_snapshot is not None,
+        "rollback_of_run_id": str(run.rollback_of_run_id) if run.rollback_of_run_id else None,
         "started_at": _isoformat(run.started_at),
         "finished_at": _isoformat(run.finished_at),
         "created_at": _isoformat(run.created_at),
@@ -1254,6 +1264,52 @@ async def trigger_honeypot_update_api(
         details={"strategy": payload.strategy.value, "run_id": str(run.id)},
     )
     return _update_run_to_dict(run)
+
+
+@router.post("/honeypots/{honeypot_id}/updates/{run_id}/rollback", dependencies=[_action_updates])
+async def rollback_honeypot_update_api(
+    request: Request,
+    honeypot_id: uuid.UUID,
+    run_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_token_user),
+) -> dict[str, object]:
+    """The API equivalent of `POST /honeypots/{id}/updates/{run_id}/rollback`
+    — see `app/web/routes/honeypots.py`'s `rollback_honeypot_update_endpoint`
+    and `app.tasks.jobs._rollback_honeypot_update`."""
+    honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
+    source_run = await db.get(HoneypotUpdateRun, run_id)
+    if source_run is None or source_run.honeypot_id != honeypot.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Update run not found.")
+    if source_run.status != UpdateRunStatus.SUCCEEDED or not source_run.package_snapshot:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This update run has no captured package snapshot to roll back to.",
+        )
+    if source_run.rollback_of_run_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Can't roll back a rollback."
+        )
+
+    rollback_run = HoneypotUpdateRun(
+        honeypot_id=honeypot.id, strategy=source_run.strategy, rollback_of_run_id=source_run.id
+    )
+    db.add(rollback_run)
+    await db.commit()
+    await db.refresh(rollback_run)
+    rollback_honeypot_update.delay(str(rollback_run.id))
+
+    await log_event(
+        db,
+        request=request,
+        action="honeypot.updates.rollback",
+        summary=f'Triggered rollback of update run {source_run.id} on "{honeypot.name}"',
+        target_type="honeypot",
+        target_id=honeypot.id,
+        target_label=honeypot.name,
+        details={"source_run_id": str(source_run.id), "rollback_run_id": str(rollback_run.id)},
+    )
+    return _update_run_to_dict(rollback_run)
 
 
 @router.post("/honeypots/{honeypot_id}/check-updates", dependencies=[_action_updates])
