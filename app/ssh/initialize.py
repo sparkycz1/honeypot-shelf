@@ -401,7 +401,15 @@ def build_initialize_command(
         lines.append(_step("Installing NetBird"))
         lines.append(
             "curl -sSL https://pkgs.netbird.io/debian/public.key | "
-            "gpg --dearmor -o /usr/share/keyrings/netbird-archive-keyring.gpg"
+            # --yes: without it, gpg silently prompts "overwrite existing
+            # file?" on a re-run against a device that already has this
+            # keyring from an earlier attempt — and since this runs over a
+            # plain SSH exec with no pty, gpg can't read that prompt from
+            # /dev/tty at all, failing with "cannot open '/dev/tty'"
+            # (exit 2) instead. Confirmed live: this crashed a real re-run
+            # exactly this way. `--batch` suppresses every other
+            # interactive behavior gpg might otherwise fall back to.
+            "gpg --batch --yes --dearmor -o /usr/share/keyrings/netbird-archive-keyring.gpg"
         )
         lines.append(
             "echo 'deb [signed-by=/usr/share/keyrings/netbird-archive-keyring.gpg] "
