@@ -5,6 +5,7 @@
 {% block content %}
   <h1>{{ t(request, "initialize.title") }}: {{ device_name }}</h1>
   <p class="hint">{{ ip_address }}</p>
+  <p class="hint">{{ t(request, "initialize.new_ssh_port_note", port=new_ssh_port) }}</p>
 
   <div id="initialize-step" class="alert alert-warn" data-initialize-step>
     <p>{{ t(request, "initialize.connecting") }}</p>

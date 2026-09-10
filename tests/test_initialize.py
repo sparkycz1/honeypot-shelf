@@ -45,6 +45,14 @@ async def test_get_initialize_form_has_expected_fields(client):
         assert f'name="{field}"' in response.text
 
 
+async def test_get_initialize_form_mentions_the_new_ssh_port(client):
+    from app.ssh.initialize import NEW_SSH_PORT
+
+    response = await client.get("/initialize")
+    assert response.status_code == 200
+    assert str(NEW_SSH_PORT) in response.text
+
+
 async def test_read_only_user_cannot_reach_initialize(client, login_as, db_session_factory):
     company = await create_company(db_session_factory)
     await login_as(client, company_id=company.id, access_level=AccessLevel.READ)
@@ -324,6 +332,32 @@ def test_build_initialize_command_prepares_samba_with_service_disabled():
     # deliberate manual step.
     assert '"smb.enabled": true' not in script
     assert '"portscan.enabled": true' not in script
+
+
+def test_build_initialize_command_does_not_install_mlocate():
+    """Regression guard: mlocate was dropped from the Debian archive as of
+    trixie (13, what Raspberry Pi OS 13 is based on) — `apt-get install
+    mlocate` fails outright there. `plocate` is its drop-in replacement."""
+    script = build_initialize_command(device_name="acme-honey1", service_user="pi")
+    assert "mlocate" not in script
+    assert "plocate" in script
+
+
+def test_build_initialize_command_moves_ssh_to_the_new_port_last():
+    from app.ssh.initialize import INITIALIZE_SUCCESS_MARKER, NEW_SSH_PORT
+
+    script = build_initialize_command(device_name="acme-honey1", service_user="pi")
+    assert f"echo 'Port {NEW_SSH_PORT}' > /etc/ssh/sshd_config.d/honeyhive-ssh-port.conf" in script
+    assert "sshd -t" in script
+    assert "systemctl restart ssh" in script
+    # Validated (and, if invalid, `set -e` aborts) before ever restarting —
+    # a broken generated config must never take down the running daemon.
+    assert script.index("sshd -t") < script.index("systemctl restart ssh")
+    # Last of all real work, right before the success marker — every other
+    # step must already have succeeded before this one ever runs.
+    assert script.index("systemctl restart ssh") < script.index(INITIALIZE_SUCCESS_MARKER)
+    apt_install_index = script.index("apt-get install -y ")
+    assert apt_install_index < script.index("systemctl restart ssh")
 
 
 def test_build_initialize_command_emits_step_markers():

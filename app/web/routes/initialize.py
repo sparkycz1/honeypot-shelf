@@ -59,6 +59,7 @@ from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie, verify_csrf
 from app.db.models.honeypot import AuthMethod
 from app.db.models.initialize_run import InitializeRun
 from app.db.session import get_db
+from app.ssh.initialize import NEW_SSH_PORT
 from app.web.templating import templates
 
 # How many past runs the history list shows — a debugging aid, not an
@@ -124,6 +125,7 @@ async def _render_form(
     context: dict[str, object] = {
         "errors": errors or [],
         "csrf_token": csrf_token,
+        "new_ssh_port": NEW_SSH_PORT,
         **extra,
     }
     response = templates.TemplateResponse(request, "initialize/index.html", context)
@@ -240,6 +242,7 @@ async def initialize_run_page(request: Request, run_id: str) -> Response:
             "device_name": run.device_name,
             "ip_address": run.ip_address,
             "csrf_token": csrf_token,
+            "new_ssh_port": NEW_SSH_PORT,
         },
     )
     if new_cookie:

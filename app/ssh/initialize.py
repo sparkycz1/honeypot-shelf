@@ -43,6 +43,13 @@ isn't in HoneyHive's database at all yet — see
 `app.web.routes.initialize` for how the connection itself is authenticated
 and host-key-trusted for that case.
 
+The very last step moves sshd off the default port 22 to `NEW_SSH_PORT`
+(22222) via a drop-in under `/etc/ssh/sshd_config.d/` — see that
+constant's own comment for why this is last, and why it can't lock an
+operator out. The device only answers on the new port from then on; the
+operator must use it (not 22) when adding the device as a `Honeypot`
+afterward.
+
 Idempotent throughout (every step guards against "already done") — safe to
 re-run Initialize against the same device after a partial failure. Each
 step is preceded by an `echo` of `STEP_MARKER_PREFIX` + a human label —
@@ -67,6 +74,18 @@ INITIALIZE_SUCCESS_MARKER = "HONEYHIVE_INITIALIZE_OK"
 # output itself. Distinctive enough that nothing legitimate a package
 # manager/systemd/etc. prints could collide with it by accident.
 STEP_MARKER_PREFIX = "##HH-STEP## "
+
+# The port sshd is moved to at the very end of a successful run — off the
+# default 22, since that's the first thing an internet-wide scanner tries
+# against a device that's about to spend its life pretending to be an
+# unrelated set of fake services. Applied last, after every other step has
+# already succeeded, and gated on `sshd -t` passing first (see
+# `build_initialize_command`) — a config an operator's own connection is
+# still open on is never restarted into a state that could lock them out.
+# The operator must use this port (not 22) when adding the device as a
+# `Honeypot` afterward — `app.web.routes.initialize`'s docstring covers why
+# that's a separate, manual step this function doesn't automate.
+NEW_SSH_PORT = 22222
 
 # apt's `full-upgrade` plus compiling pcapy-ng/scapy from source can
 # genuinely take the better part of an hour on slower Pi models — this is
@@ -123,7 +142,12 @@ _APT_PACKAGES = [
     "net-tools",
     "sudo",
     "iperf3",
-    "mlocate",
+    # mlocate was dropped from the Debian archive as of trixie (13) —
+    # plocate is its actively maintained, drop-in replacement (same
+    # `locate`/`updatedb` commands). Verified against a real
+    # `debian:trixie-slim` image: `apt-get install mlocate` fails with
+    # "Unable to locate package", `plocate` installs cleanly.
+    "plocate",
     "dnsutils",
     "bash-completion",
     "man",
@@ -491,6 +515,29 @@ def build_initialize_command(
         "with open(path, \"w\") as f:\n"
         "    json.dump(cfg, f, indent=4)\n"
         "HONEYHIVE_INITIALIZE_CFG"
+    )
+
+    # --- Move sshd off the default port, last of all — everything else
+    # above must already have succeeded (this app's own connection is what
+    # ran all of it, over the *old* port, and stays open regardless of
+    # what the listening port config now says). A drop-in file under
+    # sshd_config.d/ (Debian's own default sshd_config Include's that
+    # directory before its own commented-out "#Port 22") rather than
+    # editing sshd_config directly — simpler to make idempotent (just
+    # overwrite the file) and leaves the distro-maintained file untouched.
+    # `sshd -t` validates the merged config *before* restarting; `set -e`
+    # means a bad config aborts here without ever restarting the running
+    # daemon, so this can never lock an operator out mid-run. ---
+    lines.append(_step(f"Moving SSH to port {NEW_SSH_PORT}"))
+    lines.append("mkdir -p /etc/ssh/sshd_config.d")
+    lines.append(
+        f"echo 'Port {NEW_SSH_PORT}' > /etc/ssh/sshd_config.d/honeyhive-ssh-port.conf"
+    )
+    lines.append("sshd -t")
+    lines.append("systemctl restart ssh")
+    lines.append(
+        f'echo "SSH now listens on port {NEW_SSH_PORT} — use that port (not 22) when '
+        f'adding this device as a honeypot in HoneyHive."'
     )
 
     lines.append(f"echo {INITIALIZE_SUCCESS_MARKER}")

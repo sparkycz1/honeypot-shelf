@@ -34,6 +34,7 @@
 
     <label for="port">{{ t(request, "initialize.field.port") }}</label>
     <input type="number" id="port" name="port" min="1" max="65535" value="{{ port or 22 }}">
+    <p class="hint">{{ t(request, "initialize.field.port_hint", port=new_ssh_port) }}</p>
 
     <label for="auth_method">{{ t(request, "initialize.field.auth_method") }}</label>
     <select id="auth_method" name="auth_method">
