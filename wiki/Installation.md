@@ -202,6 +202,106 @@ For a one-off restart of just one service instead of the whole stack
 still works as usual — these two scripts are for stopping/starting
 *everything* together.
 
+## Backups
+
+```bash
+./scripts/backup.sh
+```
+
+Writes one timestamped directory under `./backups/` (override with
+`BACKUP_DIR` in `.env`) holding everything needed to rebuild this instance
+from nothing on a fresh host:
+
+- `db.sql.gz` — a `pg_dump` of the whole database, taken live via
+  Postgres's own MVCC snapshot (the stack does **not** need to be stopped
+  for this).
+- `env.backup` — a copy of `.env`. In particular `ENCRYPTION_KEY`: every
+  encrypted secret in the database (honeypot passwords/private keys,
+  LDAP/OIDC client secrets, NetBird/WireGuard config, TOTP secrets — see
+  [Architecture](Architecture.md#secrets-at-rest)) is encrypted with it,
+  so a database restored under a *different* `ENCRYPTION_KEY` turns those
+  into permanently unreadable ciphertext — there is no way to recover them
+  after the fact, not even by hand. (Unlike debcontrol, HoneyHive keeps no
+  separate shared SSH identity volume to back up — every honeypot's own
+  credential already lives in the database, covered by `db.sql.gz`.)
+
+Old backup directories are pruned automatically — anything older than
+`BACKUP_RETENTION_DAYS` (default 14, override in `.env`) is deleted at the
+end of every run, so this is safe to leave running unattended forever
+without slowly filling the disk.
+
+**The backup directory holds secrets in the clear** (`env.backup`, and
+every value the database dump can decrypt once combined with it) — it's
+created `chmod 600`-ish (group/other access stripped) but that only
+protects against other local accounts on the same host. Copy it somewhere
+access-controlled and ideally off this host (object storage, another
+server's own backup job pulling over `rsync`/`scp`, ...) rather than
+trusting a local disk alone; losing the host and its `./backups/`
+directory together is the same as never having backed up at all.
+
+### Automating it with cron
+
+Run it daily at, say, 03:15 server time — as the same user that normally
+runs `docker compose` here (needs Docker socket access), with output
+mailed/logged rather than silently discarded so a failure doesn't go
+unnoticed:
+
+```bash
+crontab -e
+```
+
+```cron
+15 3 * * * cd /path/to/honeyhive && ./scripts/backup.sh >> /var/log/honeyhive-backup.log 2>&1
+```
+
+Adjust `/path/to/honeyhive` to the actual checkout path (`pwd` from
+inside it), and make sure `/var/log/` (or wherever you point the log) is
+writable by that user — `touch /var/log/honeyhive-backup.log && chown
+that-user /var/log/honeyhive-backup.log` if it isn't yet. Check the log
+after the first scheduled run to confirm it actually succeeded, and
+periodically after that — a cron job that silently stopped working is
+worse than no backup job, since it looks like there's one until the day
+you need it.
+
+If you'd rather ship backups straight off the host instead of relying on
+someone to sync `./backups/` separately, append a second line to the same
+cron entry (or a follow-up cron job a few minutes later) that
+`rsync`/`scp`/`aws s3 sync`s the freshly-created directory (or the whole
+`BACKUP_DIR`) to wherever your off-host storage is.
+
+### Restoring
+
+```bash
+./scripts/restore.sh backups/20260909T031500Z
+```
+
+**Destructive** — replaces the current database and `.env` outright (the
+current `.env` is saved as `.env.pre-restore` first, never silently
+discarded). Requires typing `restore` to confirm (`--yes` skips that, for
+a scripted DR runbook). Stops `web`/`worker`/`beat`, drops and recreates
+the database from `db.sql.gz`, replaces `.env`, then starts the stack back
+up. Restore onto a checkout already on the version the backup was taken
+from — run `upgrade.sh` afterward if you need to move it forward.
+
+## Upgrading stored secrets to AES-256-GCM
+
+Every secret this app stores (honeypot passwords/private keys, LDAP/OIDC
+client secrets, NetBird/WireGuard config, TOTP secrets) has used
+AES-256-GCM since v0.17.0 — see
+[Architecture → FIPS alignment](Architecture.md#fips-alignment). A value
+encrypted by an older version is still read transparently forever
+(nothing breaks by doing nothing), but a deployment that would rather not
+carry any of the older AES-128 (Fernet) ciphertext going forward can
+upgrade every remaining one in a single optional pass:
+
+```bash
+docker compose exec web python scripts/reencrypt_secrets.py --dry-run  # see what would change
+docker compose exec web python scripts/reencrypt_secrets.py            # actually upgrade it
+```
+
+Re-encrypts under the same `ENCRYPTION_KEY` — this is a format upgrade,
+not a key rotation, and it's safe to run repeatedly (idempotent).
+
 ## Locked out?
 
 `scripts/reset_account.py` (console-only, same idea as debcontrol's) resets

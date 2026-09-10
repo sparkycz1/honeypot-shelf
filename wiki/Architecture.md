@@ -527,14 +527,106 @@ shape again, scoped to one honeypot instead of a whole company/fleet.
 
 CSRF, CSP (strict, no inline scripts/styles, no CDN — htmx and Swagger UI
 vendored locally), security headers, secrets-at-rest encryption
-(`ENCRYPTION_KEY`, Fernet — used for LDAP/OIDC secrets, SSH credentials,
-and per-honeypot ingest tokens), SSH host-key pinning (no trust-on-first-
-use — identical to debcontrol's `Machine`), and the hash-chained audit log
-are all unchanged from debcontrol. See that project's
-`wiki/Architecture.md` "Security model" section for the exhaustive
-version — it applies here without modification for everything under
-`app/ssh/`.
+(`ENCRYPTION_KEY`, AES-256-GCM — used for LDAP/OIDC secrets, honeypot SSH
+credentials, per-honeypot ingest tokens, NetBird/WireGuard config, and TOTP
+secrets), SSH host-key pinning (no trust-on-first-use — identical to
+debcontrol's `Machine`), and the hash-chained audit log are all unchanged
+from debcontrol in spirit. See that project's `wiki/Architecture.md`
+"Security model" section for the exhaustive version — it applies here
+without modification for everything under `app/ssh/`.
 
 **Deliberately out of scope** (unlike debcontrol): no AI assistant, no
 user-definable roles (see "Authentication & RBAC" above for what replaces
 them).
+
+### Secrets at rest
+
+`app.core.security` encrypts every `LargeBinary` `*_encrypted` column
+across `app/db/models/` with **AES-256-GCM** — a fresh random nonce per
+value, keyed by the full 32 raw bytes behind `ENCRYPTION_KEY`.
+`decrypt_secret` also still transparently reads a value stored in the
+older **Fernet** (AES-128-CBC + HMAC-SHA256) format this app used before
+v0.17.0, so nothing already in the database needs an immediate migration
+— `scripts/reencrypt_secrets.py` optionally upgrades every remaining
+legacy value in one idempotent pass (see
+[Installation](Installation.md#upgrading-stored-secrets-to-aes-256-gcm)).
+`ENCRYPTION_KEY` itself is unchanged (still `Fernet.generate_key()`'s
+output from `scripts/generate_secrets.py`) — just now decoded straight to
+32 raw bytes for AES-256 rather than handed to `Fernet()` as-is.
+
+### FIPS alignment
+
+HoneyHive does not claim FIPS 140-2/140-3 **certification** — that means
+running against a NIST-validated cryptographic module (a CMVP
+certificate), a build/deployment decision (which OpenSSL build, which
+base image) no amount of application code can grant on its own. The stock
+`python:3.14-slim` base image and the `cryptography` package's own
+vendored (Rust-built) OpenSSL are **not** FIPS-validated modules as
+shipped.
+
+What the app *can* control — and does — is never relying on an algorithm
+FIPS wouldn't approve, so a deployment that needs the real certification
+only has to swap the underlying crypto module, not rewrite anything here:
+
+- **Secrets at rest**: AES-256-GCM (above), not Fernet's AES-128 — both
+  are FIPS-approved ciphers, this is "prefer the stronger modern default"
+  rather than fixing a real weakness.
+- **Signed tickets** (`app.auth.sessions`'s pending-TOTP and WebAuthn
+  challenge tickets, `itsdangerous`) — explicit
+  `digest_method=hashlib.sha256` rather than `itsdangerous`'s own
+  HMAC-SHA1 default. HMAC-SHA1 is itself still FIPS-approved for a MAC, so
+  again not a real weakness fixed, just one non-approved-*looking* default
+  removed from an otherwise SHA-2-only app.
+- **Session tokens and the SSH host-key fingerprint** already used
+  SHA-256 from the start (`app.auth.sessions`,
+  `app.ssh.client.FINGERPRINT_HASH`) — nothing to change there.
+- **SSH connections to a honeypot** (`app.ssh.client.open_connection`)
+  restrict key exchange, encryption, and MAC algorithms to an approved
+  subset — NIST-curve ECDH (P-256/384/521) or ≥2048-bit finite-field DH
+  with SHA-2, AES-GCM/AES-CTR, and HMAC-SHA-2 — excluding AsyncSSH's own
+  broader defaults (`curve25519`/`curve448` key exchange,
+  `chacha20-poly1305`, legacy ciphers, SHA-1/MD5 MACs). Deliberately
+  **not** applied to `discover_host_key_fingerprint` (the unauthenticated
+  probe that exists to *learn* whatever host key type a honeypot has — it
+  must stay unrestricted) or to the server host-key algorithm a connection
+  will accept (this app pins a host key by its exact fingerprint, not its
+  algorithm; narrowing that list could lock out a honeypot already pinned
+  on an Ed25519 key, whose signature algorithm isn't FIPS-approved but
+  whose key fingerprint is verified out-of-band regardless).
+- **TOTP** (HMAC-SHA1 per RFC 6238) and **WebAuthn/passkeys**
+  (ECDSA P-256 / RSA) already only use approved algorithms — nothing
+  changed for either.
+
+**The one deliberate exception: Argon2id for password hashing**
+(`argon2-cffi`, `app.auth.security`). FIPS/SP 800-132 only approves
+PBKDF2 for password-based key derivation — Argon2id isn't on that list at
+all. This app keeps Argon2id anyway: it's memory-hard, meaningfully more
+resistant to GPU/ASIC cracking than PBKDF2, and that resistance is exactly
+what protects an account if the password hash table itself ever leaks.
+Swapping it for PBKDF2 would trade a real security property for a
+checkbox, so treat this as a considered trade-off, not an oversight, in
+any FIPS gap assessment of this app.
+
+### Rolling back a honeypot update
+
+Every real `HoneypotUpdateRun` (not a rollback of one) now captures a
+`dpkg-query` package-version snapshot right before the upgrade step runs
+(`app.ssh.updates.capture_package_snapshot`) — a failure here (unreachable
+honeypot, timeout) is logged and never fails the update run itself, it
+just means "Roll back this update" isn't offered for that particular run.
+"Roll back this update" (the update-run detail page, and `POST
+/honeypots/{id}/updates/{run_id}/rollback` on both the web UI and REST
+API) diffs a **freshly captured** current snapshot against that stored
+one and re-installs, pinned by exact `package=version`, only whatever
+actually changed since — never a blind replay of the whole snapshot, so a
+rollback days later doesn't also revert something else updated in the
+meantime for unrelated reasons, and running it twice is a fast no-op the
+second time. Requires the old `.deb` to still be resolvable from a
+configured apt source (the local cache, an unchanged mirror, or a
+snapshot/pinning repo) — if it's gone, apt reports it can't locate that
+version, surfaced in the run's output like any other apt failure. Creates
+a brand new `HoneypotUpdateRun` row (`rollback_of_run_id` pointing at the
+source run) rather than mutating the original, so both stay in the
+history exactly as they happened; a rollback run itself can't be rolled
+back further. Same write scope as running an update in the first place —
+undoing an update isn't a higher trust level than running one.

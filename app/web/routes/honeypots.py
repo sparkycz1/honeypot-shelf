@@ -2310,6 +2310,64 @@ async def trigger_honeypot_update(
     )
 
 
+@router.post(
+    "/{honeypot_id}/updates/{run_id}/rollback", dependencies=[_updates, Depends(verify_csrf)]
+)
+async def rollback_honeypot_update_endpoint(
+    request: Request,
+    honeypot_id: uuid.UUID,
+    run_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Re-install exactly the package versions `run_id` snapshotted right
+    before it ran, for whatever's since changed — see
+    `app.tasks.jobs._rollback_honeypot_update`. Same `action.updates`-
+    equivalent write scope as running an update itself (not a separate
+    permission — undoing an update isn't a higher trust level than running
+    one), and creates a brand new `HoneypotUpdateRun` row rather than
+    mutating the source run, so both stay in the history exactly as they
+    happened."""
+    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    source_run = await _get_update_run_or_404(run_id, db)
+    if source_run.honeypot_id != honeypot.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Update run not found.")
+    if source_run.status != UpdateRunStatus.SUCCEEDED or not source_run.package_snapshot:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This update run has no captured package snapshot to roll back to.",
+        )
+    if source_run.rollback_of_run_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Can't roll back a rollback."
+        )
+
+    rollback_run = HoneypotUpdateRun(
+        honeypot_id=honeypot.id, strategy=source_run.strategy, rollback_of_run_id=source_run.id
+    )
+    db.add(rollback_run)
+    await db.commit()
+    await db.refresh(rollback_run)
+
+    tasks.rollback_honeypot_update.delay(str(rollback_run.id))
+
+    await log_event(
+        db,
+        request=request,
+        action="honeypot.updates.rollback",
+        summary=f'Triggered rollback of update run {source_run.id} on "{honeypot.name}"',
+        target_type="honeypot",
+        target_id=honeypot.id,
+        target_label=honeypot.name,
+        details={"source_run_id": str(source_run.id), "rollback_run_id": str(rollback_run.id)},
+    )
+
+    return RedirectResponse(
+        url=f"/honeypots/{honeypot.id}/updates/{rollback_run.id}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
 @router.get("/{honeypot_id}/updates")
 async def honeypot_update_history(
     request: Request,
