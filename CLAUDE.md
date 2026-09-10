@@ -520,6 +520,31 @@ at a time, from that honeypot's own Settings tab.
   `.env.example`, and this local deployment's own `.env`) — the
   wiki/Home.md "still-open question" about it is now a settled decision.
 
+**One more round, same day**: deleting a `Company` that still had users
+on it raised an uncaught `IntegrityError` (a 500) — `User.company_id`'s
+FK is `ondelete=RESTRICT`, deliberately, so an *accidental* delete with
+users still on it fails loudly at the DB level rather than silently
+orphaning them, but `app/web/routes/companies.py`'s `delete_company`
+never actually deleted those users itself before deleting the company.
+Fixed: every user scoped to that company is now deleted right alongside
+it (there's no "unassign" fallback for a company-scoped user any more
+than there is for a honeypot — `User.company_id` is required by that
+model's own `CheckConstraint`), audit-logged together with the honeypot
+count in one `company.delete` entry. The confirmation prompt
+(`companies/detail.html`) was also stale — it claimed honeypots would be
+*unassigned*, not deleted, which was never true even before this fix
+(cascade-delete, see that route's own comment) — now accurately
+describes both the honeypots and the users being deleted, permanently.
+Also: `AppSettings.audit_log_retention_days` now defaults to 90 (was
+`None`/"keep forever") — same reasoning as `EVENT_RETENTION_DAYS`'s
+default above, a deliberate settled decision now, not an open one; still
+settable back to blank from Settings → Security if audit history
+shouldn't be pruned automatically. (For the record: deleting a
+`Honeypot` already cascade-deletes every bit of its history — events,
+monitoring samples, update runs, packages, services, tags — every one of
+those FKs is `ondelete=CASCADE`; nothing needed fixing there, it already
+worked exactly as expected.)
+
 Settled product decisions (see [wiki/Home.md](wiki/Home.md) for the full
 list): only a superadmin creates companies/honeypots/users — a company's
 own `READ_WRITE` user manages honeypots *within* their own company (via

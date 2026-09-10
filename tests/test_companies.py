@@ -51,6 +51,44 @@ async def test_deleting_a_company_deletes_its_honeypots(client, db_session_facto
         assert result.scalars().all() == []
 
 
+async def test_deleting_a_company_deletes_its_users_too(client, db_session_factory):
+    """Regression guard for a real bug: `User.company_id`'s FK is
+    `ondelete=RESTRICT` (deliberately — see app/web/routes/companies.py's
+    own comment), so deleting a company that still has users on it used
+    to raise an uncaught IntegrityError (a 500) instead of deleting them
+    along with it — every company-scoped user requires a company
+    (`User`'s own CheckConstraint), so there's no "unassign" option to
+    fall back to, the same way a honeypot has none either."""
+    from app.db.models.user import AccessLevel, AuthProvider, User
+
+    async with db_session_factory() as db:
+        company = Company(name="Acme")
+        db.add(company)
+        await db.flush()
+        db.add(
+            User(
+                username="acme-user",
+                company_id=company.id,
+                access_level=AccessLevel.READ,
+                auth_provider=AuthProvider.LOCAL,
+            )
+        )
+        await db.commit()
+        await db.refresh(company)
+        company_id = company.id
+
+    detail = await client.get(f"/companies/{company_id}")
+    response = await client.post(
+        f"/companies/{company_id}/delete", data={"csrf_token": _csrf_from(detail)}
+    )
+    assert response.status_code == 303
+
+    async with db_session_factory() as db:
+        assert await db.get(Company, company_id) is None
+        result = await db.execute(select(User).where(User.company_id == company_id))
+        assert result.scalars().all() == []
+
+
 async def test_company_detail_shows_users_and_stats(client, db_session_factory):
     """The company page's own users list (with an "Add user" link) and the
     honeypot/user stat cards — see the "Company page simplified" change."""

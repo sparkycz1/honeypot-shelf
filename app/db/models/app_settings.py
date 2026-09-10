@@ -75,10 +75,14 @@ class AppSettings(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
 
     # How many days of audit_log_entries to keep before the daily purge job
-    # (app.tasks.jobs.purge_old_audit_log_entries) deletes them. NULL means
-    # "keep forever" — the default, since silently discarding audit history
-    # is a much worse surprise than an unbounded table.
-    audit_log_retention_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # (app.tasks.jobs.purge_old_audit_log_entries) deletes them. Defaults to
+    # 90 (explicit product decision, matching every other retention setting
+    # in this app — see EVENT_RETENTION_DAYS's own default). NULL still
+    # means "keep forever" — still available, just not the default; set it
+    # from Settings if audit history should never be pruned automatically.
+    audit_log_retention_days: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=90
+    )
 
     # Same idea, for the daily per-company event-count snapshot row used by
     # the Dashboard's trend chart (app.tasks.jobs.record_company_snapshot /

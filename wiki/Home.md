@@ -99,6 +99,10 @@ section for what's left (mainly: no CI workflow file).
   for anyone who wants alerting via their own tooling instead.)
 - **Audit log / Settings visibility**: superadmin-only.
 - **Event retention**: `EVENT_RETENTION_DAYS` defaults to 90 days.
+- **Audit log retention**: `AppSettings.audit_log_retention_days` also
+  defaults to 90 days (Settings → Security) — still settable back to
+  blank ("keep forever") if audit history shouldn't be pruned
+  automatically.
 
 ### Still-open questions
 
