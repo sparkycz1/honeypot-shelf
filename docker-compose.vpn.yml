@@ -90,11 +90,26 @@ services:
     # `wait -n` exits (and so restarts the whole container, `restart:
     # unless-stopped`) if either backend dies, rather than silently
     # running on with just one of the two.
+    #
+    # The `touch`+`chmod` before `netbird service run` matters: `netbird`
+    # creates `--log-file` itself at mode 0640, owned by this container's
+    # `root` — fine for `vpn` (also root), but `web`/`worker` read the same
+    # path over the read-only `netbird_log` volume as their own
+    # unprivileged `app` user (see the Dockerfile's `USER app`), which
+    # isn't in `root`'s group. Left alone, `app.services.netbird.tail_log`
+    # silently got `PermissionError` (caught, logged, returned as an empty
+    # string) and the Settings -> NetBird log panel showed nothing at
+    # all — confirmed live. Pre-creating the file world-readable works
+    # because `netbird` opens it for append, not O_TRUNC|O_CREAT with its
+    # own mode, the same "pre-create it looser before the real writer
+    # touches it" trick `app.ssh.initialize`'s portscan-prep step already
+    # uses for rsyslog's `kern.log`.
     command:
       - bash
       - -c
       - >-
         mkdir -p /var/run/netbird /var/log/netbird /var/log/vpn &&
+        touch /var/log/netbird/client.log && chmod 644 /var/log/netbird/client.log &&
         netbird service run
         --daemon-addr unix:///var/run/netbird/sock
         --log-file /var/log/netbird/client.log &

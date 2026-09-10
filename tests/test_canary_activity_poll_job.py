@@ -70,13 +70,19 @@ async def test_poll_skips_internal_logtypes_but_keeps_real_alerts(db_session_fac
         assert refreshed.last_seen_at is not None
 
 
-async def test_poll_advances_offset_without_setting_last_seen_when_only_internal(
+async def test_poll_still_marks_the_honeypot_seen_when_only_internal_lines_found(
     db_session_factory, monkeypatch
 ):
-    """A poll that only found OpenCanary's own internal log lines still
-    must not count as "the honeypot was seen" — that's reserved for
-    actual alert activity, same distinction the Dashboard/Activity tab
-    already draw between reachability and event-based liveness."""
+    """A poll that only found OpenCanary's own internal log lines stores no
+    `HoneypotEvent` (that's reserved for real alert activity), but it DOES
+    still count as "the honeypot was seen" — reaching and reading the log
+    at all is itself proof OpenCanary is up, exactly like a push to the
+    ingest endpoint counts as "seen" regardless of that event's own
+    logtype. A quiet, healthy honeypot with no attacker traffic yet must
+    not sit stuck "offline" on the Dashboard just because it has nothing
+    to alert about — see `app.tasks.jobs._poll_honeypot_canary_log`'s own
+    comment for the full reasoning; this replaces a real bug where exactly
+    that used to happen."""
     monkeypatch.setattr("app.db.session.AsyncSessionLocal", db_session_factory)
     company = await create_company(db_session_factory)
     async with db_session_factory() as db:
@@ -110,4 +116,43 @@ async def test_poll_advances_offset_without_setting_last_seen_when_only_internal
         refreshed = await db.get(Honeypot, honeypot_id)
         assert refreshed is not None
         assert refreshed.opencanary_log_offset == 55
+        assert refreshed.last_seen_at is not None
+
+
+async def test_poll_does_not_mark_seen_when_the_read_itself_failed(
+    db_session_factory, monkeypatch
+):
+    """`new_offset == -1` means the read didn't even produce the expected
+    marker (e.g. the log file is missing, or the connection dropped
+    mid-read) — that must not be reported as "seen" the way a genuinely
+    successful-but-empty poll is."""
+    monkeypatch.setattr("app.db.session.AsyncSessionLocal", db_session_factory)
+    company = await create_company(db_session_factory)
+    async with db_session_factory() as db:
+        honeypot = Honeypot(
+            company_id=company.id,
+            name="acme-honey3",
+            host_key_fingerprint="SHA256:fakefingerprint",
+        )
+        db.add(honeypot)
+        await db.commit()
+        await db.refresh(honeypot)
+        honeypot_id = honeypot.id
+
+    fake_result = LogPollResult(events=[], new_offset=-1)
+
+    async def fake_poll_log(
+        honeypot: object, secret: object, timeout_seconds: int
+    ) -> LogPollResult:
+        return fake_result
+
+    monkeypatch.setattr("app.tasks.jobs.poll_log", fake_poll_log)
+
+    result = await _poll_honeypot_canary_log(str(honeypot_id))
+
+    assert result == {"ok": True, "new_events": 0}
+    async with db_session_factory() as db:
+        refreshed = await db.get(Honeypot, honeypot_id)
+        assert refreshed is not None
+        assert refreshed.opencanary_log_offset == 0
         assert refreshed.last_seen_at is None

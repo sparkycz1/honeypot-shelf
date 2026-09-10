@@ -1178,6 +1178,7 @@ async def _sample_honeypot_monitoring(honeypot_id: str) -> dict[str, Any]:
                 disk_io=sample["disk_io"],
                 filesystems=sample["filesystems"],
                 failed_services_count=sample["failed_services_count"],
+                opencanary_active=sample["opencanary_active"],
             )
         )
         honeypot.monitoring_updated_at = now
@@ -1250,8 +1251,6 @@ async def _poll_honeypot_canary_log(honeypot_id: str) -> dict[str, Any]:
 
         now = datetime.now(UTC)
         honeypot.opencanary_log_polled_at = now
-        if result.new_offset >= 0:
-            honeypot.opencanary_log_offset = result.new_offset
         # Skip OpenCanary's own internal/operational log lines ("General
         # message", "Debug message", a crash-loop's repeated startup
         # banner, ...) — never a real alert, and storing them flooded the
@@ -1266,7 +1265,19 @@ async def _poll_honeypot_canary_log(honeypot_id: str) -> dict[str, Any]:
         ]
         for payload in alert_events:
             session.add(build_event(honeypot, payload, source=EventSource.SSH_POLL))
-        if alert_events:
+        if result.new_offset >= 0:
+            honeypot.opencanary_log_offset = result.new_offset
+            # A successful poll — the log file was reached and read,
+            # whether or not it held any new *alert* lines this time — is
+            # itself proof OpenCanary is up, exactly like a push to the
+            # ingest endpoint counts as "seen" regardless of that event's
+            # own logtype (`app.web.routes.ingest.ingest_event`). Gating
+            # this on alert_events instead (the original shape) meant a
+            # quiet, healthy honeypot with no attacker traffic could sit
+            # marked "offline" on the Dashboard indefinitely once internal
+            # log noise stopped propping last_seen_at up by accident — see
+            # app.services.honeypot_status's module docstring on why this
+            # signal exists independently of SSH reachability at all.
             honeypot.last_seen_at = now
             # No "connecting client" to read an IP from for a pull, unlike
             # the push endpoint — the honeypot's own configured address is

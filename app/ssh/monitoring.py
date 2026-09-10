@@ -26,7 +26,16 @@ from typing import Any, TypedDict
 from app.db.models.honeypot import Honeypot
 from app.ssh.client import open_connection
 
-_SECTION_MARKERS = ("CPU", "LOAD", "RAM_KB", "NET", "DISKIO", "FILESYSTEMS", "FAILED_SERVICES")
+_SECTION_MARKERS = (
+    "CPU",
+    "LOAD",
+    "RAM_KB",
+    "NET",
+    "DISKIO",
+    "FILESYSTEMS",
+    "FAILED_SERVICES",
+    "OPENCANARY",
+)
 
 # CPU percent needs two samples of /proc/stat a moment apart — computed
 # entirely in the one round trip (a 1-second `sleep`) rather than as two
@@ -84,6 +93,10 @@ MONITORING_COMMAND = (
     "echo ===FAILED_SERVICES===; "
     "if command -v systemctl >/dev/null 2>&1; then "
     "systemctl --failed --plain --no-legend --no-pager 2>/dev/null | wc -l; "
+    "fi; "
+    "echo ===OPENCANARY===; "
+    "if command -v systemctl >/dev/null 2>&1; then "
+    "systemctl is-active opencanary 2>/dev/null || true; "
     "fi"
 )
 
@@ -110,6 +123,9 @@ class MonitoringSample(TypedDict):
     filesystems: list[dict[str, Any]]
     # None = couldn't tell (no systemd), not "zero failed".
     failed_services_count: int | None
+    # `systemctl is-active opencanary`'s own verdict — True only for
+    # exactly "active"; None = couldn't tell (no systemd), not "inactive".
+    opencanary_active: bool | None
 
 
 def _split_sections(raw: str) -> dict[str, str]:
@@ -191,6 +207,13 @@ def parse_monitoring_output(raw: str) -> MonitoringSample:
     if failed_line.isdigit():
         failed_services_count = int(failed_line)
 
+    # Empty output = no systemd at all (the `command -v systemctl` guard
+    # never ran the check) — stays None, distinct from a real "inactive"/
+    # "failed"/"unknown" verdict, same "couldn't tell" convention
+    # `failed_services_count` above already uses.
+    opencanary_line = sections.get("OPENCANARY", "")
+    opencanary_active: bool | None = None if not opencanary_line else opencanary_line == "active"
+
     return MonitoringSample(
         cpu_percent=cpu_percent,
         load1=load1,
@@ -202,6 +225,7 @@ def parse_monitoring_output(raw: str) -> MonitoringSample:
         disk_io=disk_io,
         filesystems=filesystems,
         failed_services_count=failed_services_count,
+        opencanary_active=opencanary_active,
     )
 
 

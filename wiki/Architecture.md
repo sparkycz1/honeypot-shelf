@@ -507,6 +507,32 @@ reachability check every honeypot also gets (same as debcontrol's
 `Machine`) — see `app/db/models/honeypot.py`'s module docstring for why
 the two signals are kept apart.
 
+**A poll bumps `last_seen_at` on any successful contact with the log
+file, not only when it found a real alert.** Confirmed live as a real
+bug: once `app.services.opencanary_logtypes.is_internal_logtype` started
+filtering OpenCanary's own internal/operational lines out of storage (see
+above), a quiet honeypot with no attacker traffic yet stopped getting
+`last_seen_at` bumped at all — a poll with zero *alert* events used to
+count as "not seen", so a perfectly healthy, reachable honeypot sat
+"offline" on the Dashboard indefinitely. `_poll_honeypot_canary_log` now
+bumps `last_seen_at` whenever `poll_log` itself succeeded (reached the
+honeypot, read the log, got a well-formed response — `new_offset >= 0`),
+exactly like a push to the ingest endpoint counts as "seen" regardless of
+that event's own logtype. Storing an actual `HoneypotEvent` row is still
+reserved for real alerts either way — this only changes what counts as
+"alive".
+
+The Monitoring tab's own **"OpenCanary service"** panel is a third,
+separate signal from either of the two above — `systemctl is-active
+opencanary`, piggybacked onto the same round trip the CPU/RAM/network
+monitoring sample already makes (`app.ssh.monitoring.MONITORING_COMMAND`,
+`HoneypotMonitoringSample.opencanary_active`), charted the same
+uptime-style way `AvailabilityHistory.uptime_percent` is. It answers "was
+the systemd unit itself reported active" — distinct from both SSH
+reachability and from OpenCanary having emitted any events recently, and
+useful specifically for catching an OpenCanary process that's dead while
+the honeypot itself is still perfectly SSH-reachable.
+
 ## 🌐 The REST API: read and write, mirroring the web UI
 
 `app/web/routes/api_v1*.py` — authenticated with a per-user API token
