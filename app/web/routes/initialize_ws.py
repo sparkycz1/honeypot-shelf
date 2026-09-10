@@ -231,6 +231,7 @@ async def initialize_websocket(websocket: WebSocket, run_id: str) -> None:
             netbird_setup_key=run.netbird_setup_key,
             netbird_management_url=run.netbird_management_url,
             wireguard_config=run.wireguard_config,
+            new_ssh_port=run.new_ssh_port,
         )
         script = wrap_for_sudo(
             script,

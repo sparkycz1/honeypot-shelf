@@ -103,6 +103,10 @@ class PendingInitializeRun:
     netbird_setup_key: str | None
     netbird_management_url: str | None
     wireguard_config: str | None
+    # The port sshd is moved to as the very last step of a successful run
+    # — see app.ssh.initialize.NEW_SSH_PORT (this field's own default) for
+    # why that happens at all.
+    new_ssh_port: int
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
@@ -135,8 +139,35 @@ async def _render_form(
 
 
 @router.get("")
-async def initialize_form(request: Request) -> Response:
-    return await _render_form(request)
+async def initialize_form(
+    request: Request,
+    ip_address: str = "",
+    device_name: str = "",
+    username: str = "",
+    port: int = 22,
+    auth_method: str = AuthMethod.SSH_KEY.value,
+    vpn_provider: str = "none",
+    new_ssh_port: int = NEW_SSH_PORT,
+) -> Response:
+    """Also accepts the same (non-secret) fields a failed `POST` re-renders
+    with, as query params — used by the run page's "Back to Initialize"
+    link (`initialize/run.html`) so a failed run's fields don't have to be
+    retyped to retry. Never the password/NetBird-key/WireGuard-config
+    fields, matching the POST failure path's own long-standing choice not
+    to re-populate those either — see `initialize_submit`. Defaulting
+    every param means a plain `GET /initialize` (no query string at all)
+    renders identically to before this existed — every template value
+    below already falls back the same way (`{{ ip_address or '' }}` etc.)."""
+    return await _render_form(
+        request,
+        ip_address=ip_address,
+        device_name=device_name,
+        username=username,
+        port=port,
+        auth_method=auth_method,
+        vpn_provider=vpn_provider,
+        new_ssh_port=new_ssh_port,
+    )
 
 
 @router.post("", dependencies=[Depends(verify_csrf)])
@@ -152,6 +183,7 @@ async def initialize_submit(
     netbird_setup_key: str = Form(""),
     netbird_management_url: str = Form(""),
     wireguard_config: str = Form(""),
+    new_ssh_port: int = Form(NEW_SSH_PORT),
 ) -> Response:
     ip_address = ip_address.strip()
     device_name = device_name.strip()
@@ -171,6 +203,8 @@ async def initialize_submit(
         errors.append("User is required.")
     if not (1 <= port <= 65535):
         errors.append("SSH port must be between 1 and 65535.")
+    if not (1 <= new_ssh_port <= 65535):
+        errors.append("The new SSH port must be between 1 and 65535.")
     if auth_method not in (AuthMethod.SSH_KEY.value, AuthMethod.PASSWORD.value):
         errors.append("Unknown authentication method.")
     if auth_method == AuthMethod.PASSWORD.value and not password:
@@ -195,6 +229,7 @@ async def initialize_submit(
             port=port,
             auth_method=auth_method,
             vpn_provider=vpn_provider,
+            new_ssh_port=new_ssh_port,
         )
 
     _purge_stale_runs()
@@ -210,6 +245,7 @@ async def initialize_submit(
         netbird_setup_key=netbird_setup_key.strip() or None,
         netbird_management_url=netbird_management_url or None,
         wireguard_config=wireguard_config or None,
+        new_ssh_port=new_ssh_port,
     )
     return RedirectResponse(
         url=f"/initialize/run/{run_id}", status_code=status.HTTP_303_SEE_OTHER
@@ -241,8 +277,12 @@ async def initialize_run_page(request: Request, run_id: str) -> Response:
             "run_id": run_id,
             "device_name": run.device_name,
             "ip_address": run.ip_address,
+            "username": run.username,
+            "port": run.port,
+            "auth_method": run.auth_method,
+            "vpn_provider": run.vpn_provider,
             "csrf_token": csrf_token,
-            "new_ssh_port": NEW_SSH_PORT,
+            "new_ssh_port": run.new_ssh_port,
         },
     )
     if new_cookie:

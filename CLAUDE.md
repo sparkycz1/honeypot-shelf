@@ -356,6 +356,37 @@ restart on a failure), so this can't lock an operator out mid-run; see
 moves to a new port on success" section for the full reasoning. Both the
 Initialize form and the run page now call out the new port explicitly.
 
+**Found live on real hardware, same round**: `chown syslog:adm
+/var/log/samba-audit.log` (the smb-module prep step) crashed the whole
+run with `chown: invalid user: 'syslog'` — Debian trixie's `rsyslog`
+package no longer creates that dedicated system user in its postinst
+(confirmed against a real `debian:trixie-slim` install: `getent passwd
+syslog` finds nothing after a plain `apt-get install rsyslog`; modern
+rsyslogd instead runs as root via systemd `CAP_*` capabilities). Fixed by
+dropping the chown and relying on a plain `chmod 644` — rsyslogd (root)
+can write regardless of file ownership, and opencanaryd's `smb` module,
+which tails the file as the unprivileged `nobody:nogroup` its unit drops
+to, only needs world-read. Auditing the adjacent portscan prep for the
+same class of bug turned up a real (if not yet reported) one: rsyslog's
+own default `$FileCreateMode`/`$FileOwner`/`$FileGroup` (`0640 root:adm`
+— see a fresh install's own `/etc/rsyslog.conf`) would make a freshly
+created `kern.log` unreadable by that same unprivileged `nobody`, since
+`nobody` isn't in the `adm` group either — fixed by pre-creating the file
+`chmod 644` before rsyslog ever restarts (confirmed empirically that
+rsyslogd only applies its own create-mode when it *creates* a file, never
+when appending to one that already exists — an already-644 file it opens
+for append stays 644). `NEW_SSH_PORT` (22222) is now just
+`build_initialize_command`'s default — a "New SSH port" field on the
+Initialize form (and round-tripped through the run page, `PendingInitializeRun`,
+and `initialize_ws`) lets an operator override it per run, e.g. setting it
+equal to the connect port to leave a device's SSH port unchanged on a
+re-run. The run page's "Back to Initialize" link also now carries every
+non-secret field (IP, device name, user, port, auth method, VPN provider,
+new SSH port) back as query params the form pre-fills from — a failed run
+no longer means retyping everything to retry, matching the POST-failure
+re-render path's own long-standing "prefill non-secrets, never
+passwords/keys" convention.
+
 Settled product decisions (see [wiki/Home.md](wiki/Home.md) for the full
 list): only a superadmin creates companies/honeypots/users — a company's
 own `READ_WRITE` user manages honeypots *within* their own company (via

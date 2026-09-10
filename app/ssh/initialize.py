@@ -43,12 +43,14 @@ isn't in HoneyHive's database at all yet — see
 `app.web.routes.initialize` for how the connection itself is authenticated
 and host-key-trusted for that case.
 
-The very last step moves sshd off the default port 22 to `NEW_SSH_PORT`
-(22222) via a drop-in under `/etc/ssh/sshd_config.d/` — see that
-constant's own comment for why this is last, and why it can't lock an
-operator out. The device only answers on the new port from then on; the
-operator must use it (not 22) when adding the device as a `Honeypot`
-afterward.
+The very last step moves sshd off the default port 22 to
+`build_initialize_command`'s `new_ssh_port` argument (`NEW_SSH_PORT`,
+22222, by default — an operator-editable field on the Initialize form,
+see `app.web.routes.initialize`) via a drop-in under
+`/etc/ssh/sshd_config.d/` — see `NEW_SSH_PORT`'s own comment for why this
+step is last, and why it can't lock an operator out. The device only
+answers on the new port from then on; the operator must use it (not 22)
+when adding the device as a `Honeypot` afterward.
 
 Idempotent throughout (every step guards against "already done") — safe to
 re-run Initialize against the same device after a partial failure. Each
@@ -75,16 +77,19 @@ INITIALIZE_SUCCESS_MARKER = "HONEYHIVE_INITIALIZE_OK"
 # manager/systemd/etc. prints could collide with it by accident.
 STEP_MARKER_PREFIX = "##HH-STEP## "
 
-# The port sshd is moved to at the very end of a successful run — off the
-# default 22, since that's the first thing an internet-wide scanner tries
-# against a device that's about to spend its life pretending to be an
-# unrelated set of fake services. Applied last, after every other step has
-# already succeeded, and gated on `sshd -t` passing first (see
-# `build_initialize_command`) — a config an operator's own connection is
-# still open on is never restarted into a state that could lock them out.
-# The operator must use this port (not 22) when adding the device as a
-# `Honeypot` afterward — `app.web.routes.initialize`'s docstring covers why
-# that's a separate, manual step this function doesn't automate.
+# The default port sshd is moved to at the very end of a successful run —
+# off the default 22, since that's the first thing an internet-wide
+# scanner tries against a device that's about to spend its life
+# pretending to be an unrelated set of fake services. Just the default:
+# `build_initialize_command`'s `new_ssh_port` parameter (an editable field
+# on the Initialize form, see `app.web.routes.initialize`) can override it
+# per run. Applied last, after every other step has already succeeded,
+# and gated on `sshd -t` passing first (see `build_initialize_command`) —
+# a config an operator's own connection is still open on is never
+# restarted into a state that could lock them out. The operator must use
+# whichever port was actually used (not 22) when adding the device as a
+# `Honeypot` afterward — `app.web.routes.initialize`'s docstring covers
+# why that's a separate, manual step this function doesn't automate.
 NEW_SSH_PORT = 22222
 
 # apt's `full-upgrade` plus compiling pcapy-ng/scapy from source can
@@ -304,6 +309,7 @@ def build_initialize_command(
     netbird_setup_key: str | None = None,
     netbird_management_url: str | None = None,
     wireguard_config: str | None = None,
+    new_ssh_port: int = NEW_SSH_PORT,
 ) -> str:
     """Returns one `set -e` shell script provisioning a fresh device end to
     end: base packages, timezone/locale, a full `apt` upgrade, the
@@ -469,6 +475,15 @@ def build_initialize_command(
         "! update-alternatives --list iptables 2>/dev/null | grep -q iptables-legacy || "
         "update-alternatives --set iptables /usr/sbin/iptables-legacy"
     )
+    # rsyslog's own default $FileCreateMode/$FileOwner/$FileGroup (0640
+    # root:adm — see /etc/rsyslog.conf) would otherwise make a freshly
+    # created kern.log unreadable by opencanaryd's unprivileged
+    # `nobody:nogroup` (not a member of `adm`) once the portscan module
+    # is enabled and tries to tail it — rsyslogd only sets those
+    # permissions when it *creates* a file, so pre-creating it here,
+    # world-readable, before rsyslog is ever restarted (below) sticks.
+    lines.append("touch /var/log/kern.log")
+    lines.append("chmod 644 /var/log/kern.log")
 
     # --- smb: Samba config + full_audit -> syslog -> plain log file, but
     # the systemd services themselves stay disabled — see module
@@ -488,7 +503,17 @@ def build_initialize_command(
         "echo 'local7.*        /var/log/samba-audit.log' >> /etc/rsyslog.conf"
     )
     lines.append("touch /var/log/samba-audit.log")
-    lines.append("chown syslog:adm /var/log/samba-audit.log")
+    # No dedicated `syslog` system user to chown this to (as of Debian
+    # trixie's rsyslog package, its postinst no longer creates one —
+    # confirmed against a real debian:trixie-slim install; the systemd
+    # unit runs rsyslogd as root via CAP_* capabilities instead, same
+    # reasoning modern systemd services widely moved to). `chmod 644`
+    # (root-owned, world-readable) is all this actually needs: rsyslogd
+    # itself runs as root regardless of file ownership, and
+    # opencanaryd's `smb` module — which tails this file as the
+    # unprivileged `nobody:nogroup` its systemd unit drops to — only
+    # needs read access, which the world-readable bit already grants.
+    lines.append("chmod 644 /var/log/samba-audit.log")
     lines.append("systemctl restart rsyslog || true")
     lines.append("systemctl disable --now smbd || true")
     lines.append("systemctl disable --now nmbd || true")
@@ -528,15 +553,15 @@ def build_initialize_command(
     # `sshd -t` validates the merged config *before* restarting; `set -e`
     # means a bad config aborts here without ever restarting the running
     # daemon, so this can never lock an operator out mid-run. ---
-    lines.append(_step(f"Moving SSH to port {NEW_SSH_PORT}"))
+    lines.append(_step(f"Moving SSH to port {new_ssh_port}"))
     lines.append("mkdir -p /etc/ssh/sshd_config.d")
     lines.append(
-        f"echo 'Port {NEW_SSH_PORT}' > /etc/ssh/sshd_config.d/honeyhive-ssh-port.conf"
+        f"echo 'Port {new_ssh_port}' > /etc/ssh/sshd_config.d/honeyhive-ssh-port.conf"
     )
     lines.append("sshd -t")
     lines.append("systemctl restart ssh")
     lines.append(
-        f'echo "SSH now listens on port {NEW_SSH_PORT} — use that port (not 22) when '
+        f'echo "SSH now listens on port {new_ssh_port} — use that port (not 22) when '
         f'adding this device as a honeypot in HoneyHive."'
     )
 

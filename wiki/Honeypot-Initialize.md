@@ -54,7 +54,8 @@ pins its host key the usual, non-TOFU way, then (optionally) run its own
 | IP address | The device's current IP — no DNS lookup, no discovery. |
 | Device name | Set as the device's hostname and `/etc/hosts` entry. Must be a valid hostname (letters/digits/hyphens). |
 | User | `root`, or any other account already reachable over SSH. Anything other than `root` runs the whole script via `sudo`. |
-| SSH port | Defaults to 22 — the port used for *this run only*. On success, the very last step moves the device's own sshd to a different port (see "SSH moves to a new port on success" below); use that one, not this one, when adding the device as a honeypot afterward. |
+| SSH port | Defaults to 22 — the port used for *this run only*, to reach the device as it is right now. |
+| New SSH port | Defaults to **22222**. As the very last step, on success, the device's own sshd is moved to this port (see "SSH moves to a new port on success" below); use it, not the port above, when adding the device as a honeypot afterward. Editable per run — e.g. set it to the same value as "SSH port" above to leave a device's SSH port unchanged on a re-run. |
 | Authentication | HoneyHive's own shared identity key (assumed already authorized on the device — e.g. preseeded via RPi Imager; see Settings for the public key) or a one-time password. Neither the password nor any of the VPN fields below is ever stored — all of them are used for this one run only. |
 | VPN | None (default), NetBird, or WireGuard — the device's own connection, independent of HoneyHive's own VPN choice in Settings → VPN (see [Architecture](Architecture.md)). Picking one reveals its own fields below; picking neither installs neither package. |
 | NetBird setup key | Optional (shown when VPN = NetBird). NetBird installs either way; a setup key also joins the device to your network right away (`netbird up --setup-key ...`). Get one from your NetBird management console. |
@@ -76,17 +77,19 @@ this one.
 ## SSH moves to a new port on success
 
 The very last step of a run moves the device's own sshd off the default
-port 22 to **22222** (`app.ssh.initialize.NEW_SSH_PORT`), via a drop-in
-file (`/etc/ssh/sshd_config.d/honeyhive-ssh-port.conf`) rather than
-editing the distro's own `sshd_config` — idempotent (re-running Initialize
-just overwrites the same file) and leaves the maintained file untouched.
-It's last of all for a reason: every earlier step (packages, the venv,
+port 22 to the "New SSH port" field above (**22222** by default,
+`app.ssh.initialize.NEW_SSH_PORT`), via a drop-in file
+(`/etc/ssh/sshd_config.d/honeyhive-ssh-port.conf`) rather than editing the
+distro's own `sshd_config` — idempotent (re-running Initialize just
+overwrites the same file) and leaves the maintained file untouched. It's
+last of all for a reason: every earlier step (packages, the venv,
 OpenCanary's config, ...) has already fully succeeded by the time this
-runs, all still over the *original* connection on port 22 — restarting
-sshd doesn't drop that already-open session, only new connections see the
-new port. `sshd -t` validates the merged config first; since the whole
-script is `set -e`, a config problem aborts here *before* sshd is ever
-restarted, so this can never lock an operator out of a device mid-run.
+runs, all still over the *original* connection on the "SSH port" field's
+own port — restarting sshd doesn't drop that already-open session, only
+new connections see the new port. `sshd -t` validates the merged config
+first; since the whole script is `set -e`, a config problem aborts here
+*before* sshd is ever restarted, so this can never lock an operator out
+of a device mid-run.
 
 **Use the new port, not 22, when adding the device as a honeypot**
 afterward (`/honeypots/new`'s own "Port" field) — the form and run page
