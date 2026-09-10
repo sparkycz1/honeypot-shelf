@@ -215,6 +215,15 @@ same constraint `app.services.live_updates` already has for a related
 reason, and the same fix (move it to Redis) would apply if that ever
 changes.
 
+**Second-to-last step: installs `authorized_keys`.** HoneyHive's own
+shared identity public key, plus every current superadmin's personal
+key(s) (My account → SSH public keys, see "Superadmin personal SSH keys"
+under "Security model" below), are appended — idempotently, additively,
+home-dir-aware (`app.ssh.authorized_keys`) — to the account Initialize
+connected as, so both HoneyHive and every superadmin can reach the device
+directly afterward without the one-time password/key this run itself
+used. Skipped (not fatal) if there's nothing to install.
+
 ## 🔌 VPN connectivity: NetBird or WireGuard
 
 **The problem**: every SSH-management-plane feature (terminal, facts,
@@ -630,3 +639,41 @@ source run) rather than mutating the original, so both stay in the
 history exactly as they happened; a rollback run itself can't be rolled
 back further. Same write scope as running an update in the first place —
 undoing an update isn't a higher trust level than running one.
+
+### Superadmin personal SSH keys
+
+`User.ssh_public_keys` (My account → SSH public keys) lets a superadmin
+paste their own personal SSH public key(s) — one `authorized_keys`-ready
+line each, validated on save (`app.auth.ssh_keys.parse_ssh_public_keys`,
+via `asyncssh.import_public_key` — the whole submission is rejected, not
+partially saved, if any line doesn't parse) — for logging into a honeypot
+directly, alongside HoneyHive's own management access. **Superadmin-only
+by design**: the field, and the "Push to every honeypot" button next to
+it, only appear for a superadmin account, and both the field's stored
+value and the button's route are only ever *read* for a superadmin (a
+company-scoped user can technically still have a row in the same column
+via direct DB access, but nothing in the app surfaces it or reads it) —
+granting host-level SSH into the whole fleet is a superadmin-tier
+capability the way superadmin itself is, not something company scoping
+should ever widen. Two things read it:
+
+- **Initialize** (see above) installs every current superadmin's key(s),
+  plus HoneyHive's own shared identity key, onto a freshly provisioned
+  device.
+- **"Push to every honeypot"** (`/account/ssh-keys/push`,
+  `app.tasks.jobs.push_superadmin_ssh_keys`) does the same for the
+  *existing* fleet — every honeypot with a pinned host key, regardless of
+  its own `auth_method` (unlike Settings → SSH identity's own "Push
+  pending key" button, which only ever targets an `AuthMethod.SSH_KEY`
+  honeypot, since that one's specifically about rotating the app's own
+  connection credential — a personal key grants independent access, not
+  tied to whatever the app itself currently authenticates with).
+
+Both paths, and Settings' own SSH-identity push, share the same
+`app.ssh.authorized_keys.build_authorized_keys_append_command` — home-dir
+aware (`getent passwd`, not a literal `~`, since the caller may be running
+wrapped under one `sudo` for the whole script, where `~` would resolve to
+the *escalated* account's home rather than the target's) and, critically,
+**strictly additive**: every key is `grep -qxF`-checked before being
+appended, so a key added by hand — or by an earlier push — is never
+overwritten, duplicated, or at risk from a later one.

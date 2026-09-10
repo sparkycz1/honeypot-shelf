@@ -14,10 +14,12 @@ this calls into.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
 from urllib.parse import quote
 
+from celery.exceptions import TimeoutError as CeleryTimeoutError
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy import delete, select
@@ -57,6 +59,7 @@ from app.auth.sessions import (
     set_session_cookie,
     set_webauthn_challenge_cookie,
 )
+from app.auth.ssh_keys import InvalidSshPublicKeyError, parse_ssh_public_keys
 from app.auth.webauthn import WebAuthnError
 from app.core.app_settings import get_or_create_app_settings
 from app.core.csrf import verify_csrf
@@ -64,12 +67,15 @@ from app.core.security import decrypt_secret, encrypt_secret
 from app.db.models.api_token import ApiToken
 from app.db.models.app_settings import AppSettings
 from app.db.models.audit_log import AuditOutcome
+from app.db.models.honeypot import Honeypot
 from app.db.models.totp_recovery_code import TotpRecoveryCode
 from app.db.models.user import AuthProvider, User
 from app.db.models.webauthn_credential import WebAuthnCredential
 from app.db.session import get_db
 from app.i18n import available_locales, get_locale
 from app.schemas.user import MIN_PASSWORD_LENGTH
+from app.ssh.identity import get_or_create_identity
+from app.tasks.jobs import push_superadmin_ssh_keys
 from app.web.templating import templates
 
 router = APIRouter()
@@ -1213,3 +1219,127 @@ async def revoke_own_api_token(
             target_label=current_user.username,
         )
     return RedirectResponse(url="/account", status_code=status.HTTP_303_SEE_OTHER)
+
+
+# --- My account -> SSH public keys (superadmin only) -----------------------
+#
+# A superadmin's own personal key(s), self-service — see
+# `app.db.models.user.User.ssh_public_keys`'s own comment for why this is
+# superadmin-only by design (host-level SSH into the whole fleet is a
+# superadmin-tier capability, not something company scoping should widen).
+# Read by Initialize (`app.web.routes.initialize_ws`, a freshly provisioned
+# device) and, via the "push to every honeypot" button below, deployed to
+# the existing fleet too.
+
+_SSH_KEYS_PUSH_WAIT_SECONDS = 60
+
+
+@router.post("/account/ssh-keys", dependencies=[Depends(verify_csrf)])
+async def update_own_ssh_keys(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    ssh_public_keys: str = Form(""),
+) -> Response:
+    user = await db.get(User, current_user.id)
+    assert user is not None
+    try:
+        keys = parse_ssh_public_keys(ssh_public_keys)
+    except InvalidSshPublicKeyError as exc:
+        return await _render_account(request, db, user, errors=[str(exc)])
+
+    user.ssh_public_keys = "\n".join(keys) or None
+    await db.commit()
+    await log_event(
+        db,
+        request=request,
+        action="user.ssh_keys.update",
+        summary=f'"{user.username}" updated their SSH public key(s) ({len(keys)} key(s))',
+        target_type="user",
+        target_id=user.id,
+        target_label=user.username,
+    )
+    return RedirectResponse(url="/account", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/account/ssh-keys/push", dependencies=[Depends(verify_csrf)])
+async def push_own_ssh_keys(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Push every current superadmin's personal key(s), plus HoneyHive's
+    own shared identity key, onto every honeypot with a pinned host key —
+    the existing-fleet equivalent of what Initialize does for a brand new
+    device (`app.web.routes.initialize_ws`). Same idempotent, strictly
+    additive mechanism either way (`app.ssh.authorized_keys`) — a key
+    added by hand is never at risk from this. Mirrors Settings -> SSH
+    identity's own "Push to every honeypot" button
+    (`app/web/routes/settings.py`'s `push_ssh_key`)."""
+    user = await db.get(User, current_user.id)
+    assert user is not None
+    if not user.is_superadmin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only a superadmin's SSH key(s) are ever deployed fleet-wide.",
+        )
+
+    identity = await get_or_create_identity(db)
+    keys = [identity.public_key]
+    superadmins = await db.execute(
+        select(User).where(User.is_superadmin, User.ssh_public_keys.is_not(None))
+    )
+    for superadmin in superadmins.scalars().all():
+        assert superadmin.ssh_public_keys is not None  # filtered by the query above
+        try:
+            keys.extend(parse_ssh_public_keys(superadmin.ssh_public_keys))
+        except InvalidSshPublicKeyError:
+            pass  # shouldn't happen — validated on save; never fatal to the push either way
+
+    result = await db.execute(select(Honeypot).where(Honeypot.host_key_fingerprint.is_not(None)))
+    honeypots = list(result.scalars().all())
+    if not honeypots:
+        return await _render_account(
+            request, db, user, errors=["No honeypots have a pinned host key yet."]
+        )
+
+    dispatched = [(h, push_superadmin_ssh_keys.delay(str(h.id), keys)) for h in honeypots]
+
+    async def _await_one(honeypot: Honeypot, async_result: object) -> tuple[str, str | None]:
+        try:
+            outcome = await asyncio.to_thread(
+                async_result.get, timeout=_SSH_KEYS_PUSH_WAIT_SECONDS  # type: ignore[attr-defined]
+            )
+        except CeleryTimeoutError:
+            return honeypot.name, "Timed out."
+        except Exception as exc:  # noqa: BLE001 - reported, not swallowed
+            return honeypot.name, str(exc)
+        if isinstance(outcome, dict) and outcome.get("ok"):
+            return honeypot.name, None
+        reason = str(outcome.get("error")) if isinstance(outcome, dict) else "Unknown error."
+        return honeypot.name, reason
+
+    outcomes = await asyncio.gather(
+        *(_await_one(honeypot, async_result) for honeypot, async_result in dispatched)
+    )
+    failed = [(name, reason) for name, reason in outcomes if reason is not None]
+    succeeded_count = len(outcomes) - len(failed)
+
+    await log_event(
+        db,
+        request=request,
+        action="user.ssh_keys.push",
+        summary=f"Pushed superadmin SSH key(s) to {succeeded_count}/{len(outcomes)} honeypot(s)",
+        outcome=AuditOutcome.FAILURE if failed else AuditOutcome.SUCCESS,
+        details={
+            "key_count": len(keys),
+            "succeeded": [name for name, reason in outcomes if reason is None],
+            "failed": dict(failed),
+        },
+    )
+    return await _render_account(
+        request,
+        db,
+        user,
+        ssh_keys_push_result={"succeeded": succeeded_count, "total": len(outcomes)},
+    )

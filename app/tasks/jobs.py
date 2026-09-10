@@ -60,6 +60,7 @@ from app.services.live_updates import (
     KIND_UPDATES,
     publish_honeypot_event,
 )
+from app.ssh.authorized_keys import build_authorized_keys_append_command
 from app.ssh.canary_activity import poll_log
 from app.ssh.client import open_connection, test_connection
 from app.ssh.credentials import resolve_honeypot_credential
@@ -567,6 +568,66 @@ async def _push_pending_ssh_key(honeypot_id: str) -> dict[str, Any]:
 )
 def push_pending_ssh_key(honeypot_id: str) -> dict[str, Any]:
     return asyncio.run(_push_pending_ssh_key(honeypot_id))
+
+
+async def _push_superadmin_ssh_keys(honeypot_id: str, keys: list[str]) -> dict[str, Any]:
+    """Append every key in `keys` to one honeypot's `authorized_keys`, for
+    whichever account `Honeypot.username` already is — the "Push to every
+    honeypot" button on My account → SSH public keys
+    (`app/web/routes/auth.py`'s `push_own_ssh_keys`). `keys` is the caller's
+    already-parsed, already-validated set (every superadmin's personal
+    key(s) plus the app's own shared identity key) — this function just
+    deploys it.
+
+    Unlike `_push_pending_ssh_key` (which only ever targets an
+    `AuthMethod.SSH_KEY` honeypot, since its whole point is rotating the
+    app's *own* connection credential), this runs against any honeypot
+    with a pinned host key regardless of auth method — a personal SSH key
+    grants direct, independent access; it isn't tied to whatever the app
+    itself currently authenticates with.
+
+    Idempotent and strictly additive — `build_authorized_keys_append_command`
+    only ever appends a key that isn't already present, never removing or
+    rewriting a line, so a key added by hand is never at risk from this."""
+    async with db_session.AsyncSessionLocal() as session:
+        honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
+        if honeypot is None:
+            return {"ok": False, "error": "Honeypot not found."}
+        if not honeypot.host_key_fingerprint:
+            return {"ok": False, "error": "No pinned host key fingerprint yet."}
+        if not honeypot.username:
+            return {"ok": False, "error": "Honeypot has no configured username."}
+
+        secret = await resolve_honeypot_credential(honeypot, session)
+        settings = get_settings()
+        command = build_authorized_keys_append_command(honeypot.username, keys)
+
+        try:
+            result = await run_command(
+                honeypot,
+                secret,
+                command,
+                settings.ssh_connect_timeout,
+                settings.ssh_connect_timeout + _SSH_COMMAND_EXTRA_SECONDS,
+            )
+        except SSHConnectionError as exc:
+            logger.warning("push_superadmin_ssh_keys failed for %s: %s", honeypot.name, exc)
+            return {"ok": False, "error": str(exc)}
+
+        if result.exit_status != 0:
+            return {
+                "ok": False,
+                "error": f"Command exited {result.exit_status}: {result.output or '(no output)'}",
+            }
+        return {"ok": True, "honeypot": honeypot.name}
+
+
+@celery_app.task(
+    name="app.tasks.jobs.push_superadmin_ssh_keys",
+    time_limit=get_settings().ssh_connect_timeout + _SSH_COMMAND_EXTRA_SECONDS + 10,
+)
+def push_superadmin_ssh_keys(honeypot_id: str, keys: list[str]) -> dict[str, Any]:
+    return asyncio.run(_push_superadmin_ssh_keys(honeypot_id, keys))
 
 
 # The onboarding script does a handful of local operations (useradd, a few

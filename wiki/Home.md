@@ -65,8 +65,13 @@ whatever's changed since; `scripts/backup.sh`/`restore.sh` for full
 disaster-recovery backups (`pg_dump` + `.env`, retention pruning); FIPS-
 aligned crypto defaults (AES-256-GCM secrets at rest, SHA-2-signed
 tickets, a restricted SSH algorithm set — see
-[Architecture](Architecture.md#fips-alignment)); full **English and
-Czech i18n** across every page, not just the site chrome. A growing test
+[Architecture](Architecture.md#fips-alignment)); superadmin personal SSH
+public keys (My account), installed onto both a freshly Initialized
+device and, on demand, the existing fleet, alongside HoneyHive's own
+shared identity key (see
+[Architecture](Architecture.md#superadmin-personal-ssh-keys)); full
+**English and Czech i18n** across every page, not just the site chrome. A
+growing test
 suite (see `uv run pytest` for the current count) covers the
 RBAC/scoping-sensitive paths; `ruff check .` and `mypy app alembic tests`
 are both fully clean. See [CLAUDE.md](../CLAUDE.md)'s "Current state"

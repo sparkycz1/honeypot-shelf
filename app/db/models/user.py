@@ -45,7 +45,16 @@ import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Integer, LargeBinary, String, func
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    ForeignKey,
+    Integer,
+    LargeBinary,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -147,6 +156,22 @@ class User(Base):
     locked_until: Mapped[datetime | None] = mapped_column(nullable=True)
 
     last_login_at: Mapped[datetime | None] = mapped_column(nullable=True)
+
+    # A superadmin's own personal SSH public key(s), self-service (My
+    # account → SSH public keys) — one `authorized_keys`-ready line per
+    # entry, newline-separated, never encrypted (these are public keys, not
+    # secrets). Only ever read for a superadmin: Initialize
+    # (`app.web.routes.initialize_ws`) pushes every superadmin's keys onto
+    # a freshly provisioned device, and "Push to every honeypot" on the
+    # account page (`app.tasks.jobs.push_superadmin_ssh_keys`) does the
+    # same for the existing fleet — a company-scoped user can fill this in
+    # too (nothing stops them), but nothing reads it for one, matching
+    # `NEW_SSH_PORT`'s "superadmin-only, by design" reasoning: granting
+    # host-level SSH into every honeypot fleet-wide is a superadmin-tier
+    # capability, not something company scoping should ever widen.
+    # `app.auth.ssh_keys.parse_ssh_public_keys` is what validates/parses
+    # this at write time — never stored un-parsed.
+    ssh_public_keys: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     sessions: Mapped[list[UserSession]] = relationship(
         back_populates="user", cascade="all, delete-orphan"

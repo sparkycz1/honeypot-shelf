@@ -16,7 +16,7 @@ _KEY_ALGORITHM = "ssh-ed25519"
 
 def _generate_keypair() -> tuple[str, bytes, str]:
     """Returns (public_line, encrypted_private_pem, fingerprint)."""
-    key = asyncssh.generate_private_key(_KEY_ALGORITHM, comment="debcontrol")
+    key = asyncssh.generate_private_key(_KEY_ALGORITHM, comment="honeyhive")
     private_pem = key.export_private_key().decode("ascii")
     public_line = key.export_public_key().decode("ascii").strip()
     fingerprint = key.get_fingerprint("sha256")

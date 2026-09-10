@@ -26,14 +26,17 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 from datetime import UTC, datetime
 
 import asyncssh
 from fastapi import APIRouter, WebSocket, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.audit import log_event
 from app.auth.sessions import SESSION_COOKIE_NAME, get_valid_session
+from app.auth.ssh_keys import parse_ssh_public_keys
 from app.core.config import get_settings
 from app.core.security import decrypt_secret
 from app.db.models.audit_log import AuditOutcome
@@ -54,6 +57,7 @@ from app.ssh.initialize import (
 from app.web.routes.initialize import PENDING_RUNS, PendingInitializeRun
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 _POLICY_VIOLATION = status.WS_1008_POLICY_VIOLATION
 
@@ -216,13 +220,37 @@ async def initialize_websocket(websocket: WebSocket, run_id: str) -> None:
             host_key_fingerprint=fingerprint,
         )
         async with db_session_factory() as db:
+            identity = await get_or_create_identity(db)
             if run.auth_method == AuthMethod.PASSWORD.value:
                 device.auth_method = AuthMethod.PASSWORD
                 secret = run.password
             else:
                 device.auth_method = AuthMethod.SSH_KEY
-                identity = await get_or_create_identity(db)
                 secret = decrypt_secret(identity.private_key_encrypted)
+
+            # HoneyHive's own shared identity key, plus every current
+            # superadmin's personal key(s) — installed onto the connecting
+            # account so both can reach this device directly afterward,
+            # without needing the one-time password/key this run itself
+            # used. See app.ssh.initialize's module docstring for why this
+            # is last-but-one, and app.ssh.authorized_keys for why it's
+            # safe to re-run. A malformed stored key (shouldn't happen —
+            # app.auth.ssh_keys.parse_ssh_public_keys already validates on
+            # save, never stored otherwise — but this must never fail the
+            # whole Initialize run over one bad row) is skipped, not fatal.
+            authorized_keys = [identity.public_key]
+            superadmins = await db.execute(
+                select(User).where(User.is_superadmin, User.ssh_public_keys.is_not(None))
+            )
+            for superadmin in superadmins.scalars().all():
+                assert superadmin.ssh_public_keys is not None  # filtered by the query above
+                try:
+                    authorized_keys.extend(parse_ssh_public_keys(superadmin.ssh_public_keys))
+                except ValueError:
+                    logger.warning(
+                        "Skipping unparseable stored SSH key(s) for %s during Initialize",
+                        superadmin.username,
+                    )
 
         script = build_initialize_command(
             device_name=run.device_name,
@@ -232,6 +260,8 @@ async def initialize_websocket(websocket: WebSocket, run_id: str) -> None:
             netbird_management_url=run.netbird_management_url,
             wireguard_config=run.wireguard_config,
             new_ssh_port=run.new_ssh_port,
+            ssh_username=run.username,
+            authorized_keys=authorized_keys,
         )
         script = wrap_for_sudo(
             script,

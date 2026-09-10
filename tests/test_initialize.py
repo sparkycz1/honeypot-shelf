@@ -463,6 +463,26 @@ def test_build_initialize_command_honors_a_custom_new_ssh_port():
     assert "Port 22222" not in script
 
 
+def test_build_initialize_command_installs_authorized_keys_when_given():
+    key = "ssh-ed25519 AAAAfake honeyhive"
+    script = build_initialize_command(
+        device_name="acme-honey1",
+        service_user="pi",
+        ssh_username="pi",
+        authorized_keys=[key],
+    )
+    assert "getent passwd" in script
+    assert key in script
+    # Installed before the port change, never after — see the module
+    # docstring for why the port change stays strictly last.
+    assert script.index(key) < script.index("systemctl restart ssh")
+
+
+def test_build_initialize_command_skips_authorized_keys_step_when_none_given():
+    script = build_initialize_command(device_name="acme-honey1", service_user="pi")
+    assert "getent passwd" not in script
+
+
 def test_build_initialize_command_emits_step_markers():
     from app.ssh.initialize import STEP_MARKER_PREFIX
 

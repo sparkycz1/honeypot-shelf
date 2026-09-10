@@ -400,6 +400,37 @@ directly in a `debian:trixie-slim` container (`gpg --dearmor -o
 fixing. Fixed with `gpg --batch --yes --dearmor`, which is genuinely
 idempotent instead of just documented as such.
 
+**Superadmin personal SSH keys**: `User.ssh_public_keys` (My account →
+SSH public keys, superadmin-only — see `app.db.models.user.User.
+ssh_public_keys`'s own comment for why) lets a superadmin paste their own
+public key(s), validated on save via `app.auth.ssh_keys.
+parse_ssh_public_keys` (never a partial save — one bad line rejects the
+whole submission). Two things read it: Initialize now installs every
+superadmin's key(s) plus HoneyHive's own shared identity key onto a
+freshly provisioned device (second-to-last step, right before the port
+change), and a new "Push to every honeypot" button on the account page
+(`app.tasks.jobs.push_superadmin_ssh_keys`) does the same for the
+existing fleet — every pinned honeypot, regardless of its own
+`auth_method` (unlike Settings' own SSH-identity push, which only ever
+targets an `AuthMethod.SSH_KEY` honeypot, since that one's about rotating
+the app's own connection credential specifically). Both share a new
+`app.ssh.authorized_keys.build_authorized_keys_append_command` — home-dir
+aware (`getent passwd`, not `~`, since the whole Initialize script may run
+wrapped under one `sudo` where `~` resolves to the escalated account's
+home rather than the target's) and, per explicit instruction this round,
+**strictly additive**: every key is `grep -qxF`-checked before being
+appended, so nothing this feature does — Initialize, the push button, or
+a re-run of either — can ever remove or overwrite a key already there, by
+hand or otherwise. See wiki/Architecture.md's new "Superadmin personal
+SSH keys" section for the full design.
+
+Also fixed, same round: `app.ssh.identity`'s generated keypair comment
+was still `"debcontrol"` (a leftover from the port) — now `"honeyhive"`.
+Only affects newly generated keys; an existing deployment's already-
+generated identity keeps its old comment until rotated (Settings → SSH
+identity → Generate/Push/Activate, already a supported flow — nothing new
+needed for that).
+
 Settled product decisions (see [wiki/Home.md](wiki/Home.md) for the full
 list): only a superadmin creates companies/honeypots/users — a company's
 own `READ_WRITE` user manages honeypots *within* their own company (via
