@@ -98,11 +98,10 @@ section for what's left (mainly: no CI workflow file).
   such as Wazuh, copied from debcontrol, still exists as an escape hatch
   for anyone who wants alerting via their own tooling instead.)
 - **Audit log / Settings visibility**: superadmin-only.
+- **Event retention**: `EVENT_RETENTION_DAYS` defaults to 90 days.
 
 ### Still-open questions
 
-- **Event retention & volume.** `EVENT_RETENTION_DAYS` defaults to 180 —
-  right for the expected event volume per honeypot?
 - **A map/geo view** — doesn't exist yet; worth asking whether it matters
   for v1. (CSV export of events and per-event-type dashboards are done —
   see the Activity tab, the Dashboard's "activity by alert type", and

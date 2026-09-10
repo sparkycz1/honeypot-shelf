@@ -60,6 +60,7 @@ from app.services.live_updates import (
     KIND_UPDATES,
     publish_honeypot_event,
 )
+from app.services.opencanary_logtypes import is_internal_logtype
 from app.ssh.authorized_keys import build_authorized_keys_append_command
 from app.ssh.canary_activity import poll_log
 from app.ssh.client import open_connection, test_connection
@@ -1249,9 +1250,21 @@ async def _poll_honeypot_canary_log(honeypot_id: str) -> dict[str, Any]:
         honeypot.opencanary_log_polled_at = now
         if result.new_offset >= 0:
             honeypot.opencanary_log_offset = result.new_offset
-        for payload in result.events:
+        # Skip OpenCanary's own internal/operational log lines ("General
+        # message", "Debug message", a crash-loop's repeated startup
+        # banner, ...) — never a real alert, and storing them flooded the
+        # Activity tab/Dashboard with noise unrelated to actual attacker
+        # activity (found live: a crash-looping opencanaryd logged its own
+        # startup sequence every few seconds). See
+        # app.services.opencanary_logtypes.is_internal_logtype.
+        alert_events = [
+            payload
+            for payload in result.events
+            if not is_internal_logtype(payload.get("logtype"))
+        ]
+        for payload in alert_events:
             session.add(build_event(honeypot, payload, source=EventSource.SSH_POLL))
-        if result.events:
+        if alert_events:
             honeypot.last_seen_at = now
             # No "connecting client" to read an IP from for a pull, unlike
             # the push endpoint — the honeypot's own configured address is
@@ -1259,7 +1272,7 @@ async def _poll_honeypot_canary_log(honeypot_id: str) -> dict[str, Any]:
             honeypot.last_seen_ip = honeypot.ip_address
         await session.commit()
 
-        return {"ok": True, "new_events": len(result.events)}
+        return {"ok": True, "new_events": len(alert_events)}
 
 
 @celery_app.task(

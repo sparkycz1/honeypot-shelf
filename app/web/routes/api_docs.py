@@ -34,13 +34,14 @@ account's own API tokens (see `/account`) for actually trying requests.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Depends, Request, Response
 
+from app.auth.dependencies import require_write
 from app.web.templating import templates
 
 router = APIRouter()
 
 
-@router.get("/api", include_in_schema=False)
+@router.get("/api", include_in_schema=False, dependencies=[Depends(require_write)])
 async def api_docs(request: Request) -> Response:
     return templates.TemplateResponse(request, "api_docs.html", {})

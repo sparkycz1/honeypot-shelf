@@ -230,36 +230,6 @@ visudo -cf /etc/sudoers.d/{{ honeypot.username }}</code></pre>
   {% endif %}
 
   <section class="panel">
-    <h2>{{ t(request, 'honeypots.edit.ingest_token_heading') }}</h2>
-    <p class="hint">{{ t(request, 'honeypots.edit.ingest_token_hint') }}</p>
-    {% if new_ingest_token %}
-      <div class="alert alert-ok">
-        <p>{{ t(request, 'honeypots.edit.ingest_token_shown_once') }}</p>
-        <pre><code>{{ new_ingest_token }}</code></pre>
-      </div>
-    {% endif %}
-    <p>
-      {% if honeypot.ingest_token_hash %}
-        <span class="badge badge-ok">{{ t(request, 'honeypots.edit.ingest_token_set') }}</span>
-      {% else %}
-        <span class="badge badge-warn">{{ t(request, 'honeypots.edit.ingest_token_unset') }}</span>
-      {% endif %}
-    </p>
-    <form method="post" action="/honeypots/{{ honeypot.id }}/ingest-token/rotate" class="inline-form"
-          data-confirm="{{ t(request, 'honeypots.edit.confirm_ingest_token_rotate') }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button type="submit" class="button button-secondary">{{ t(request, 'honeypots.edit.ingest_token_rotate') }}</button>
-    </form>
-    {% if honeypot.ingest_token_hash %}
-      <form method="post" action="/honeypots/{{ honeypot.id }}/ingest-token/revoke" class="inline-form"
-            data-confirm="{{ t(request, 'honeypots.edit.confirm_ingest_token_revoke') }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <button type="submit" class="button button-secondary">{{ t(request, 'honeypots.edit.ingest_token_revoke') }}</button>
-      </form>
-    {% endif %}
-  </section>
-
-  <section class="panel">
     <h2>{{ t(request, 'honeypots.edit.delete_heading') }}</h2>
     <p class="hint">{{ t(request, 'honeypots.edit.delete_hint') }}</p>
     <form method="post" action="/honeypots/{{ honeypot.id }}/delete"

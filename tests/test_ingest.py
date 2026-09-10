@@ -82,3 +82,31 @@ async def test_ingest_requires_a_bearer_token(anonymous_client, db_session_facto
         f"/api/ingest/{honeypot.id}/events", json={"logtype": "PORTSCAN"}
     )
     assert response.status_code == 401
+
+
+async def test_ingest_accepts_but_does_not_store_an_internal_logtype(
+    anonymous_client, db_session_factory
+):
+    """Regression guard: OpenCanary's own internal/operational log lines
+    (e.g. 1001 "General message" — a module-registration or startup-banner
+    line, not a real alert) still prove the forwarder is alive
+    (last_seen_* updates) but must not be stored as a HoneypotEvent —
+    found live flooding the Activity tab with noise during a crash-loop.
+    See app.services.opencanary_logtypes.is_internal_logtype."""
+    honeypot = await _make_honeypot(db_session_factory)
+    response = await anonymous_client.post(
+        f"/api/ingest/{honeypot.id}/events",
+        headers={"Authorization": "Bearer test-only-ingest-token-not-for-real-use-0000000"},
+        json={"logtype": 1001, "local_time": "2026-01-01 12:00:00.000000"},
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["status"] == "accepted"
+    assert body["event_id"] is None
+
+    async with db_session_factory() as db:
+        result = await db.execute(select(HoneypotEvent))
+        assert result.scalars().all() == []
+
+        refreshed = await db.get(Honeypot, honeypot.id)
+        assert refreshed.last_seen_at is not None

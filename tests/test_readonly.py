@@ -80,7 +80,7 @@ async def test_config_tab_shows_readonly_toggle_for_a_write_user(
     assert "writable" in response.text
 
 
-async def test_status_and_config_tabs_are_hidden_and_forbidden_for_read_only_user(
+async def test_config_tab_is_hidden_and_forbidden_for_read_only_user(
     client, login_as, db_session_factory
 ):
     company = await create_company(db_session_factory)
@@ -88,11 +88,26 @@ async def test_status_and_config_tabs_are_hidden_and_forbidden_for_read_only_use
     await login_as(client, company_id=company.id, access_level=AccessLevel.READ)
 
     overview = await client.get(f"/honeypots/{honeypot.id}")
-    assert 'href="/honeypots/' + str(honeypot.id) + '/status"' not in overview.text
     assert 'href="/honeypots/' + str(honeypot.id) + '/config"' not in overview.text
 
-    assert (await client.get(f"/honeypots/{honeypot.id}/status")).status_code == 403
     assert (await client.get(f"/honeypots/{honeypot.id}/config")).status_code == 403
+
+
+async def test_status_activity_tab_is_visible_for_read_only_user(
+    client, login_as, db_session_factory
+):
+    """Unlike Config/Terminal/Logs/Updates/Settings, the Activity tab is
+    read-only-visible — a read-only account can already see what
+    OpenCanary has actually caught without being able to manage the
+    honeypot."""
+    company = await create_company(db_session_factory)
+    honeypot = await _create_pinned_honeypot(db_session_factory, company.id)
+    await login_as(client, company_id=company.id, access_level=AccessLevel.READ)
+
+    overview = await client.get(f"/honeypots/{honeypot.id}")
+    assert 'href="/honeypots/' + str(honeypot.id) + '/status"' in overview.text
+
+    assert (await client.get(f"/honeypots/{honeypot.id}/status")).status_code == 200
 
 
 async def test_enable_readonly_dispatches_task_and_redirects(
