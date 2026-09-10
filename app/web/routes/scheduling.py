@@ -112,7 +112,7 @@ def _resolve_owner_company_id(
     return user.company_id
 
 
-@router.get("")
+@router.get("", dependencies=[_write])
 async def list_scheduled_tasks(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -427,7 +427,7 @@ async def run_scheduled_task_now(
 _HISTORY_PAGE_SIZE = 50
 
 
-@router.get("/{task_id}/history")
+@router.get("/{task_id}/history", dependencies=[_write])
 async def scheduled_task_history(
     request: Request,
     task_id: uuid.UUID,

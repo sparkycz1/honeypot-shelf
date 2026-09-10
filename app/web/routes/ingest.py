@@ -1,9 +1,11 @@
 """Event ingestion from a honeypot — the one endpoint an OpenCanary host
 itself ever talks to. Not a session-authenticated page: `/api/ingest/...`
 sits under `app.auth.middleware`'s `/api/` public prefix, bearer-token
-authenticated instead (either the shared `INGEST_TOKEN`, or a per-honeypot
-token — see `Honeypot.ingest_token_hash`), mirroring the shared-token/
-per-resource-token shape of debcontrol's `POST /api/inform`.
+authenticated instead (the shared `INGEST_TOKEN`), mirroring the
+shared-token shape of debcontrol's `POST /api/inform`. (An earlier version
+also supported a per-honeypot token, alongside the shared one — removed:
+the Activity tab's own SSH log poll already covers every honeypot without
+needing push-based ingestion configured on each one individually.)
 
 **How events actually get here** (see wiki/Honeypot-Onboarding.md): OpenCanary
 itself only writes to a local log file/syslog/its own handlers — it has no
@@ -16,7 +18,6 @@ forwarder can stay a thin, close-to-`curl` shim.
 
 from __future__ import annotations
 
-import hashlib
 import hmac
 import uuid
 from datetime import UTC, datetime
@@ -29,6 +30,7 @@ from app.core.config import get_settings
 from app.db.models.honeypot import Honeypot
 from app.db.session import get_db
 from app.services.honeypot_events import EventSource, build_event
+from app.services.opencanary_logtypes import is_internal_logtype
 
 router = APIRouter(prefix="/api/ingest", tags=["ingest"])
 
@@ -45,17 +47,10 @@ async def _authenticate_honeypot(
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Unknown honeypot id.")
 
     settings = get_settings()
-    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
-    # Constant-time comparisons — a naive `==` leaks how many leading bytes
+    # Constant-time comparison — a naive `==` leaks how many leading bytes
     # matched through response timing, same reasoning as every other
     # secret comparison in this app (session/API tokens, CSRF).
-    is_shared_token = hmac.compare_digest(
-        raw_token, settings.ingest_token.get_secret_value()
-    )
-    is_per_honeypot_token = honeypot.ingest_token_hash is not None and hmac.compare_digest(
-        honeypot.ingest_token_hash, token_hash
-    )
-    if not (is_shared_token or is_per_honeypot_token):
+    if not hmac.compare_digest(raw_token, settings.ingest_token.get_secret_value()):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Invalid ingest token.")
     return honeypot
 
@@ -67,16 +62,24 @@ async def ingest_event(
     payload: Annotated[dict[str, Any], Body(...)],
     authorization: Annotated[str | None, Header()] = None,
     db: AsyncSession = Depends(get_db),
-) -> dict[str, str]:
+) -> dict[str, str | None]:
     honeypot = await _authenticate_honeypot(db, honeypot_id, authorization)
-
-    event = build_event(honeypot, payload, source=EventSource.PUSH)
-    db.add(event)
 
     honeypot.last_seen_at = datetime.now(UTC)
     client_ip = request.client.host if request.client else None
     if client_ip:
         honeypot.last_seen_ip = client_ip
 
+    # OpenCanary's own internal/operational log lines ("General message",
+    # a crash-loop's repeated startup banner, ...) still prove the
+    # forwarder is alive (last_seen_* above already reflects that) but
+    # aren't a real alert — skip storing a HoneypotEvent for one, same as
+    # the SSH-poll path (app.tasks.jobs._poll_honeypot_canary_log).
+    event_id: str | None = None
+    if not is_internal_logtype(payload.get("logtype")):
+        event = build_event(honeypot, payload, source=EventSource.PUSH)
+        db.add(event)
+        event_id = str(event.id)
+
     await db.commit()
-    return {"status": "accepted", "event_id": str(event.id)}
+    return {"status": "accepted", "event_id": event_id}

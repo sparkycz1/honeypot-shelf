@@ -25,7 +25,6 @@ from sqlalchemy.orm import aliased, selectinload
 
 from app.audit import log_event
 from app.auth.dependencies import get_current_user, require_write
-from app.auth.ingest_tokens import generate_ingest_token, revoke_ingest_token
 from app.auth.scope import (
     companies_visible_to,
     has_company_access,
@@ -134,23 +133,27 @@ def _honeypot_tabs(request: Request, honeypot: Honeypot, user: User) -> list[tup
     tabs = [
         ("overview", t(request, "honeypots.tabs.overview"), base),
         ("monitoring", t(request, "honeypots.tabs.monitoring"), f"{base}/monitoring"),
-        ("updates", t(request, "honeypots.tabs.updates"), f"{base}/updates"),
+        # Read-only too, unlike the write-gated tabs below — a read-only
+        # account can already see what OpenCanary has actually caught on
+        # this honeypot without being able to manage it.
+        ("status", t(request, "honeypots.tabs.activity"), f"{base}/status"),
     ]
     if user.can_write():
+        tabs.append(("updates", t(request, "honeypots.tabs.updates"), f"{base}/updates"))
         tabs.append(("terminal", t(request, "honeypots.tabs.terminal"), f"{base}/terminal"))
-        # Logs/Status/Config all share Terminal's write gate rather than
+        # Logs/Config/Settings all share Terminal's write gate rather than
         # being available to a read-only account — see the "Logs" route's
         # own docstring for why.
         tabs.append(("logs", t(request, "honeypots.tabs.logs"), f"{base}/logs"))
-        tabs.append(("status", t(request, "honeypots.tabs.activity"), f"{base}/status"))
         tabs.append(("config", t(request, "honeypots.tabs.config"), f"{base}/config"))
-    # No separate "Power" tab any more — reboot/shut down live directly on
-    # Overview now (see `honeypot_detail`'s own template), the same one-page
-    # placement this honeypot's other one-off actions (test connection,
-    # discover host key) already have, rather than a whole tab for two
-    # buttons. `GET /{id}/power` itself still redirects there for anyone
-    # with the old URL bookmarked/linked — see `power_tab`.
-    tabs.append(("settings", t(request, "honeypots.tabs.settings"), f"{base}/edit"))
+        # No separate "Power" tab any more — reboot/shut down live directly
+        # on Overview now (see `honeypot_detail`'s own template), the same
+        # one-page placement this honeypot's other one-off actions (test
+        # connection, discover host key) already have, rather than a whole
+        # tab for two buttons. `GET /{id}/power` itself still redirects
+        # there for anyone with the old URL bookmarked/linked — see
+        # `power_tab`.
+        tabs.append(("settings", t(request, "honeypots.tabs.settings"), f"{base}/edit"))
     return tabs
 
 
@@ -1384,7 +1387,7 @@ async def honeypot_services_panel(
     return response
 
 
-@router.get("/{honeypot_id}/edit")
+@router.get("/{honeypot_id}/edit", dependencies=[_manage])
 async def edit_honeypot_form(
     request: Request, honeypot_id: uuid.UUID, db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -1405,78 +1408,11 @@ async def edit_honeypot_form(
             "csrf_token": csrf_token,
             "global_settings": get_settings(),
             "app_settings": await get_or_create_app_settings(db),
-            "new_ingest_token": None,
         },
     )
     if new_cookie:
         set_csrf_cookie(response, new_cookie)
     return response
-
-
-@router.post("/{honeypot_id}/ingest-token/rotate", dependencies=[_manage, Depends(verify_csrf)])
-async def rotate_ingest_token_endpoint(
-    request: Request, honeypot_id: uuid.UUID, db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> Response:
-    """Generates a fresh per-honeypot ingest token, overwriting any
-    previous one. Rendered inline (not a redirect) — the raw value only
-    ever exists for this one response, same reasoning as a freshly
-    generated API token or SSH key."""
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    raw_token = generate_ingest_token(honeypot)
-    await db.commit()
-    await log_event(
-        db,
-        request=request,
-        action="honeypot.ingest_token.rotate",
-        summary=f'Rotated the ingest token for honeypot "{honeypot.name}"',
-        target_type="honeypot",
-        target_id=honeypot.id,
-        target_label=honeypot.name,
-    )
-    csrf_token, new_cookie = get_or_create_csrf_token(request)
-    response = templates.TemplateResponse(
-        request,
-        "honeypots/edit.html",
-        {
-            "honeypot": honeypot,
-            "tabs": _honeypot_tabs(request, honeypot, current_user),
-            "active_tab": "settings",
-            "auth_methods": list(AuthMethod),
-            "companies": await _get_companies(db, current_user),
-            "all_tags": await _get_all_tags(db),
-            "errors": [],
-            "csrf_token": csrf_token,
-            "global_settings": get_settings(),
-            "app_settings": await get_or_create_app_settings(db),
-            "new_ingest_token": raw_token,
-        },
-    )
-    if new_cookie:
-        set_csrf_cookie(response, new_cookie)
-    return response
-
-
-@router.post("/{honeypot_id}/ingest-token/revoke", dependencies=[_manage, Depends(verify_csrf)])
-async def revoke_ingest_token_endpoint(
-    request: Request, honeypot_id: uuid.UUID, db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> Response:
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    revoke_ingest_token(honeypot)
-    await db.commit()
-    await log_event(
-        db,
-        request=request,
-        action="honeypot.ingest_token.revoke",
-        summary=f'Revoked the ingest token for honeypot "{honeypot.name}"',
-        target_type="honeypot",
-        target_id=honeypot.id,
-        target_label=honeypot.name,
-    )
-    return RedirectResponse(
-        url=f"/honeypots/{honeypot_id}/edit", status_code=status.HTTP_303_SEE_OTHER
-    )
 
 
 @router.post("/{honeypot_id}/run-onboarding", dependencies=[_manage, Depends(verify_csrf)])
@@ -2403,7 +2339,7 @@ async def rollback_honeypot_update_endpoint(
     )
 
 
-@router.get("/{honeypot_id}/updates")
+@router.get("/{honeypot_id}/updates", dependencies=[_updates])
 async def honeypot_update_history(
     request: Request,
     honeypot_id: uuid.UUID,
@@ -2470,7 +2406,7 @@ async def honeypot_update_availability_panel(
     )
 
 
-@router.get("/{honeypot_id}/updates/{run_id}")
+@router.get("/{honeypot_id}/updates/{run_id}", dependencies=[_updates])
 async def honeypot_update_run_detail(
     request: Request,
     honeypot_id: uuid.UUID,
@@ -2487,7 +2423,7 @@ async def honeypot_update_run_detail(
     )
 
 
-@router.get("/{honeypot_id}/updates/{run_id}/status")
+@router.get("/{honeypot_id}/updates/{run_id}/status", dependencies=[_updates])
 async def honeypot_update_run_status(
     request: Request,
     honeypot_id: uuid.UUID,
@@ -2675,7 +2611,7 @@ async def honeypot_logs(
     return response
 
 
-@router.get("/{honeypot_id}/status", dependencies=[_terminal])
+@router.get("/{honeypot_id}/status")
 async def honeypot_status_tab(
     request: Request,
     honeypot_id: uuid.UUID,
@@ -2752,7 +2688,7 @@ _ACTIVITY_EXPORT_FIELDS = (
 )
 
 
-@router.get("/{honeypot_id}/status/export", dependencies=[_terminal])
+@router.get("/{honeypot_id}/status/export")
 async def export_honeypot_activity(
     request: Request,
     honeypot_id: uuid.UUID,

@@ -75,12 +75,22 @@ async def test_company_user_only_sees_own_companys_schedules(
         await db.commit()
 
     await login_as(
-        client, is_superadmin=False, company_id=company_a.id, access_level=AccessLevel.READ
+        client, is_superadmin=False, company_id=company_a.id, access_level=AccessLevel.READ_WRITE
     )
     response = await client.get("/scheduling")
     assert response.status_code == 200
     assert "Acme sweep" in response.text
     assert "Beta sweep" not in response.text
+
+
+async def test_read_only_user_cannot_reach_scheduling(client, db_session_factory, login_as):
+    """Scheduling is a write-tier feature end to end now — a read-only
+    account gets 403, not a read-only view of it (the nav link is hidden
+    for the same reason)."""
+    company = await create_company(db_session_factory)
+    await login_as(client, company_id=company.id, access_level=AccessLevel.READ)
+    response = await client.get("/scheduling")
+    assert response.status_code == 403
 
 
 async def test_run_records_history_and_history_page_offers_retry(

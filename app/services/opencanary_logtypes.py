@@ -116,6 +116,29 @@ _MODULE_OF: dict[int, str] = {
 }
 
 
+# OpenCanary's own internal/operational logging (`Logger.log()` calls it
+# makes about itself — process startup, a raised exception, a config
+# save, ...), not a honeypot "someone touched a fake service" alert. A
+# real live instance emits these constantly (every module registration on
+# every start, and — found live — every crash-loop restart), which would
+# otherwise flood the Activity tab/Dashboard with "General message"/
+# "Debug message" noise having nothing to do with actual attacker
+# activity. `app.ssh.canary_activity`/`app.web.routes.ingest` both skip
+# storing a `HoneypotEvent` for one of these — see `is_internal_logtype`.
+_INTERNAL_LOGTYPES = frozenset({1000, 1001, 1002, 1003, 1004, 1005, 1006})
+
+
+def is_internal_logtype(logtype: object) -> bool:
+    """True for one of OpenCanary's own internal/operational log lines
+    (see `_INTERNAL_LOGTYPES`'s own comment) — never a real alert, so a
+    caller building `HoneypotEvent` rows from raw log lines should skip
+    it. A `logtype` this module doesn't recognize at all (missing, not
+    numeric, or a real alert id) is never treated as internal — only the
+    known, deliberately-enumerated internal ids are."""
+    as_int = _as_int(logtype)
+    return as_int is not None and as_int in _INTERNAL_LOGTYPES
+
+
 def _as_int(logtype: object) -> int | None:
     if isinstance(logtype, bool):
         return None

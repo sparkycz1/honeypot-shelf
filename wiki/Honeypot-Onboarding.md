@@ -30,11 +30,9 @@ HoneyHive doesn't otherwise manage over SSH.
 
 ## `POST /api/ingest/{honeypot_id}/events`
 
-- **Auth**: `Authorization: Bearer <token>` — either the shared
-  `INGEST_TOKEN` (from this HoneyHive instance's `.env`; simplest to start
-  with, revoke/rotate it for every honeypot at once if it ever leaks), or
-  a token scoped to one `Honeypot` row (`Honeypot.ingest_token_hash` —
-  rotate/revoke it from that honeypot's own Settings tab).
+- **Auth**: `Authorization: Bearer <token>` — the shared `INGEST_TOKEN`
+  (from this HoneyHive instance's `.env`; revoke/rotate it for every
+  honeypot at once if it ever leaks).
 - **`honeypot_id`**: this honeypot's HoneyHive-assigned UUID (from the
   `Honeypot` row created for it — see [Installation](Installation.md) for
   how to create one today).

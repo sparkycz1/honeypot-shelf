@@ -165,7 +165,7 @@ class Settings(BaseSettings):
     # How long (days) raw honeypot events are kept before the daily
     # housekeeping job purges them. Daily/company summary rollups are kept
     # indefinitely (see wiki/Architecture.md).
-    event_retention_days: int = Field(default=180, alias="EVENT_RETENTION_DAYS")
+    event_retention_days: int = Field(default=90, alias="EVENT_RETENTION_DAYS")
 
     # A honeypot with no ingested event for this many seconds is shown as
     # "offline" on the dashboard/honeypot list.

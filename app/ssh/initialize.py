@@ -304,16 +304,51 @@ def _smb_conf(device_name: str) -> str:
 """
 
 
-def _opencanary_service_unit(service_user: str) -> str:
-    return f"""\
+def _opencanary_service_unit() -> str:
+    # Two fixes here, both confirmed live against a real crash-looping
+    # honeypot before landing:
+    #
+    # 1. No `User=` line — this unit runs as root (systemd's own default
+    #    when none is given). Several OpenCanary modules listen on ports
+    #    below 1024 (ftp 21, http 80, https 443, smtp 25, ...), which only
+    #    root can bind. `opencanaryd` itself handles this two ways
+    #    depending on who's already running it: as root, it binds
+    #    directly and drops to `--uid=nobody --gid=nogroup` itself
+    #    afterward (the "bind privileged, then drop" pattern nginx/sshd
+    #    use); as a non-root account it instead re-execs itself via `sudo`
+    #    — which only works at all if that account already has usable
+    #    passwordless sudo for it (true for Raspberry Pi OS's default `pi`
+    #    account out of the box, not guaranteed for any other). Running
+    #    the unit as root sidesteps needing that assumption to hold.
+    # 2. `Type=forking` + `PIDFile=` — without this, systemd treats
+    #    `opencanaryd --start` itself as "the service": that command
+    #    launches the real long-running daemon (`twistd`, a *separate*
+    #    process — see `PIDFile` below) and then exits 0 itself, since
+    #    it's a launch-and-detach wrapper, not the daemon in the
+    #    foreground. Under the default `Type=simple`, systemd sees its
+    #    own tracked "main" process exit almost immediately after every
+    #    start and (with `Restart=always`) restarts the unit — forever,
+    #    even though the real daemon underneath was actually up and
+    #    working for the brief window each cycle got. Confirmed live:
+    #    `systemctl status` showed `Result: start-limit-hit` after 11
+    #    rapid restarts, each one logging OpenCanary's own startup banner
+    #    again — exactly the noise `app.services.opencanary_logtypes.
+    #    is_internal_logtype` now also has to filter back out of the
+    #    Activity tab. `Type=forking` tells systemd the ExecStart process
+    #    exiting is expected; `PIDFile` (the same path `opencanaryd`
+    #    already writes to and passes to its own `twistd` child) is what
+    #    lets it find and track the real daemon process instead.
+    return """\
 [Unit]
 Description=OpenCanary honeypot
 After=syslog.target
 After=network.target
 
 [Service]
-User={service_user}
+Type=forking
+PIDFile=/var/run/opencanaryd.pid
 Restart=always
+RestartSec=3
 Environment=VIRTUAL_ENV=/opt/myenv
 Environment=PATH=$VIRTUAL_ENV/bin:/usr/bin:$PATH
 WorkingDirectory=/opt/myenv/bin
@@ -325,12 +360,15 @@ WantedBy=multi-user.target
 
 
 def service_user_for(ssh_username: str) -> str:
-    """The account opencanaryd's unit runs as: the SSH login account
-    itself when it's a real, non-root user (the common case — a device
-    imaged with a normal account, e.g. via RPi Imager), or the source
-    playbook's own `pi` default when connecting as root, since root
-    itself already isn't the right account to run a network-facing
-    daemon as."""
+    """The account used for anything *other* than the opencanary.service
+    unit itself (which now always runs as root — see
+    `_opencanary_service_unit`'s own comment for why) — currently just the
+    Samba share's ownership (`app.ssh.initialize.build_initialize_command`'s
+    smb-prep step). The SSH login account itself when it's a real,
+    non-root user (the common case — a device imaged with a normal
+    account, e.g. via RPi Imager), or the source playbook's own `pi`
+    default when connecting as root, since root itself isn't the right
+    account to own a share directory served to guests."""
     return ssh_username if ssh_username != "root" else _DEFAULT_SERVICE_USER
 
 
@@ -398,7 +436,7 @@ def build_initialize_command(
     lines.append(
         _heredoc(
             "/etc/systemd/system/opencanary.service",
-            _opencanary_service_unit(service_user),
+            _opencanary_service_unit(),
             "HONEYHIVE_OPENCANARY_UNIT",
         ).rstrip()
     )

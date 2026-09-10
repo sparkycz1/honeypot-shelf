@@ -465,6 +465,61 @@ gained a "Delete" bulk action (`POST /honeypots/bulk/delete`, same
 route here follows) — deleting a honeypot used to only be reachable one
 at a time, from that honeypot's own Settings tab.
 
+**Same round, one more real device-testing session, several more fixes**:
+
+- **`READ` access tightened, and one gap widened.** Scheduling and `/api`
+  (Swagger UI) — previously reachable read-only by any logged-in user,
+  nav link included, with no `require_write` on the actual routes at
+  all — are now write-tier end to end (nav hidden, `GET /scheduling` and
+  `GET /api` both 403 for a `READ` account). Same for a honeypot's own
+  Updates and Settings tabs (`GET /{id}/updates*`, `GET /{id}/edit` had
+  no write gate either — now do). The Activity tab moved the *other*
+  direction — it used to share Terminal/Logs/Config's write gate for no
+  real reason (nothing about reading OpenCanary's own event history needs
+  write access) — now visible read-only, alongside Overview/Monitoring.
+  `_manage`/`_updates`/`_terminal` were always just aliases for the same
+  `require_write` dependency; this is only about which routes/tabs use
+  which one, not a new permission tier.
+- **Per-honeypot ingest tokens removed entirely** (`Honeypot.
+  ingest_token_hash`, `app.auth.ingest_tokens`, the rotate/revoke routes
+  and Settings-tab UI) — per explicit instruction: the Activity tab's own
+  SSH log poll already covers every honeypot without needing push
+  configured per-device. The shared `INGEST_TOKEN` push path
+  (`POST /api/ingest/{id}/events`) is unchanged.
+- **`opencanaryd` never survived a reboot — two separate, confirmed-live
+  root causes**, found running an actual Initialize'd Pi through its
+  paces: (1) `Type=simple` (the systemd default) on a unit whose
+  `ExecStart` (`opencanaryd --start`) launches the real long-running
+  daemon as a *separate* process and exits itself immediately — systemd
+  saw the tracked "main" process gone right after every start and
+  restarted the whole unit forever (`systemctl status` showed
+  `start-limit-hit` after 11 rapid restarts within a few seconds, each
+  one re-logging OpenCanary's own startup banner). Fixed with
+  `Type=forking` + `PIDFile=/var/run/opencanaryd.pid` (the same path
+  `opencanaryd` already writes). (2) The unit's `User=<login account>`
+  meant binding privileged ports (ftp 21, http 80, ...) only worked via
+  `opencanaryd`'s own internal `sudo` re-exec, itself only reliable
+  because Raspberry Pi OS's default `pi` account happens to have
+  passwordless sudo out of the box — not guaranteed for any other
+  account. Now runs as root directly (no `User=` line), sidestepping that
+  assumption. Confirmed live end to end: `systemctl status` went from
+  `failed (start-limit-hit)` to `active (running)`, `NRestarts=0`, after
+  applying both fixes to the actual device.
+- **The crash-loop above was also flooding the Activity tab/Dashboard**:
+  every restart re-logged OpenCanary's own internal/operational lines
+  (`logtype` 1000-1006 — "General message", "Debug message", a module
+  registered, ...), which were being stored as real `HoneypotEvent` rows
+  indistinguishable from actual alerts. New `app.services.
+  opencanary_logtypes.is_internal_logtype` filters these out at both
+  ingestion paths (`app.tasks.jobs._poll_honeypot_canary_log`,
+  `app.web.routes.ingest.ingest_event`) — a push of one still updates
+  `last_seen_*` (proves the forwarder's alive) but no longer creates a
+  row; a poll that found only internal lines no longer counts as
+  "the honeypot was seen" either.
+- **`EVENT_RETENTION_DAYS` default changed 180 → 90** (`app.core.config`,
+  `.env.example`, and this local deployment's own `.env`) — the
+  wiki/Home.md "still-open question" about it is now a settled decision.
+
 Settled product decisions (see [wiki/Home.md](wiki/Home.md) for the full
 list): only a superadmin creates companies/honeypots/users — a company's
 own `READ_WRITE` user manages honeypots *within* their own company (via

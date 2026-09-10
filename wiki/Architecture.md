@@ -115,6 +115,18 @@ why this is deliberately much flatter than debcontrol's `Role`/
 `Permission` matrix, and [Home.md](Home.md)'s open questions for what's
 still unsettled about who's allowed to do what.
 
+**What a `READ` company user actually sees today**: Dashboard, the
+Honeypots list, and — per honeypot — Overview, Monitoring, and Activity
+(read-only: what OpenCanary has actually caught, no management implied).
+Scheduling, `/api` (Swagger UI), and a honeypot's Updates/Terminal/Logs/
+Config/Settings tabs are all write-tier — hidden from the nav/tab list
+and `403` if reached directly. `READ_WRITE` gets all of it. Two of these
+(Scheduling, `/api`) used to be reachable read-only by any logged-in
+user — the nav link showed for everyone and neither route had a
+`require_write` dependency at all; found and closed live. The honeypot
+Activity tab moved the other direction: it used to share Terminal/Logs/
+Config's write gate for no real reason and is now `READ`-visible.
+
 ### Sessions, TOTP, WebAuthn, API tokens, OIDC, rate limiting
 
 All unchanged in mechanism from debcontrol — `UserSession` rows (not
@@ -459,11 +471,12 @@ looks identical either way):
 
 1. **Push** (`source="push"`) — `POST /api/ingest/{honeypot_id}/events`
    (`app/web/routes/ingest.py`) is what a small forwarder on the Pi calls,
-   authenticated with either the shared `INGEST_TOKEN` (bootstrap, same
-   shape as debcontrol's `INFORM_TOKEN`) or a per-honeypot token
-   (`Honeypot.ingest_token_hash`, rotate/revoke from that honeypot's
-   Settings tab). Needs a forwarder set up on the honeypot side — see
-   [Honeypot Onboarding](Honeypot-Onboarding.md).
+   authenticated with the shared `INGEST_TOKEN` (bootstrap, same shape as
+   debcontrol's `INFORM_TOKEN`). Needs a forwarder set up on the honeypot
+   side — see [Honeypot Onboarding](Honeypot-Onboarding.md). (An earlier
+   version also supported a per-honeypot token as an alternative to the
+   shared one — removed: the SSH-poll path below already covers every
+   honeypot without needing push configured per-device.)
 2. **SSH poll** (`source="ssh_poll"`) — every
    `OPENCANARY_LOG_POLL_INTERVAL_SECONDS` (default 120, overridable per
    honeypot), HoneyHive itself connects over the same SSH management
@@ -537,8 +550,8 @@ shape again, scoped to one honeypot instead of a whole company/fleet.
 CSRF, CSP (strict, no inline scripts/styles, no CDN — htmx and Swagger UI
 vendored locally), security headers, secrets-at-rest encryption
 (`ENCRYPTION_KEY`, AES-256-GCM — used for LDAP/OIDC secrets, honeypot SSH
-credentials, per-honeypot ingest tokens, NetBird/WireGuard config, and TOTP
-secrets), SSH host-key pinning (no trust-on-first-use — identical to
+credentials, NetBird/WireGuard config, and TOTP secrets), SSH host-key
+pinning (no trust-on-first-use — identical to
 debcontrol's `Machine`), and the hash-chained audit log are all unchanged
 from debcontrol in spirit. See that project's `wiki/Architecture.md`
 "Security model" section for the exhaustive version — it applies here

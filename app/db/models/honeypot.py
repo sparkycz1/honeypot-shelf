@@ -172,10 +172,6 @@ class Honeypot(Base):
     # app/web/routes/ingest.py and app.services.honeypot_status) ---
     last_seen_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
     last_seen_at: Mapped[datetime | None] = mapped_column(nullable=True, index=True)
-    # Per-honeypot bearer credential for POST /api/ingest/{id}/events,
-    # alternative to the shared INGEST_TOKEN. Only the SHA-256 hash is
-    # stored.
-    ingest_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
 
     # --- Activity tab: SSH-polling OpenCanary's own log (see
     # app.ssh.canary_activity, app.tasks.jobs.poll_all_honeypot_canary_logs)

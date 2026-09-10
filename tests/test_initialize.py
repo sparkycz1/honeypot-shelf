@@ -288,7 +288,34 @@ def test_build_initialize_command_includes_hostname_and_installs_no_vpn_by_defau
     assert "acme-honey1" in script  # /etc/hosts line
     assert "netbird" not in script
     assert "wireguard" not in script.lower()
-    assert "User=pi" in script
+
+
+def test_build_initialize_command_runs_opencanary_service_as_root():
+    """Regression guard for a real bug found live: `User=<login account>`
+    on the systemd unit meant opencanaryd could only bind privileged ports
+    (ftp/http/https/...) by re-exec'ing itself via `sudo`, which only
+    works when that account already has usable passwordless sudo (true
+    for Raspberry Pi OS's default `pi` account, not guaranteed for any
+    other). Running the unit as root (no `User=` line) sidesteps that
+    assumption entirely."""
+    script = build_initialize_command(device_name="acme-honey1", service_user="pi")
+    assert "User=" not in script
+    assert "ExecStart=/opt/myenv/bin/opencanaryd --start --uid=nobody --gid=nogroup" in script
+
+
+def test_build_initialize_command_opencanary_service_is_type_forking():
+    """Regression guard for a real crash-loop found live: `opencanaryd
+    --start` launches the actual long-running daemon (`twistd`) as a
+    separate process and exits itself almost immediately — under the
+    default `Type=simple`, systemd saw its tracked "main" process exit
+    right after every start and restarted the whole unit forever
+    (`systemctl status` showed `Result: start-limit-hit` after 11 rapid
+    restarts). `Type=forking` + the same `PIDFile` opencanaryd already
+    writes fixes it — confirmed live against the actual crash-looping
+    device before landing."""
+    script = build_initialize_command(device_name="acme-honey1", service_user="pi")
+    assert "Type=forking" in script
+    assert "PIDFile=/var/run/opencanaryd.pid" in script
 
 
 def test_build_initialize_command_installs_netbird_without_joining_when_no_key():

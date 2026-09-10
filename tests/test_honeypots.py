@@ -116,51 +116,6 @@ async def test_list_select_all_checkbox_names_the_honeypot_checkboxes(client, db
     assert 'data-select-all="honeypot_ids"' in response.text
 
 
-async def test_ingest_token_rotate_and_revoke(client, db_session_factory):
-    """Generating a token shows the raw value exactly once and stores only
-    its hash; revoking clears it. See `app.auth.ingest_tokens`."""
-    company = await create_company(db_session_factory)
-    async with db_session_factory() as db:
-        honeypot = Honeypot(company_id=company.id, name="acme-honey1")
-        db.add(honeypot)
-        await db.commit()
-        await db.refresh(honeypot)
-        honeypot_id = honeypot.id
-
-    edit_page = await client.get(f"/honeypots/{honeypot_id}/edit")
-    assert 'name="csrf_token"' in edit_page.text
-
-    rotate = await client.post(
-        f"/honeypots/{honeypot_id}/ingest-token/rotate",
-        data={"csrf_token": _csrf_from(edit_page)},
-    )
-    assert rotate.status_code == 200
-    assert "hhit_" in rotate.text
-
-    async with db_session_factory() as db:
-        honeypot = await db.get(Honeypot, honeypot_id)
-        assert honeypot.ingest_token_hash is not None
-        first_hash = honeypot.ingest_token_hash
-
-    # Rotating again overwrites the previous hash.
-    rotate_again = await client.post(
-        f"/honeypots/{honeypot_id}/ingest-token/rotate",
-        data={"csrf_token": _csrf_from(edit_page)},
-    )
-    assert rotate_again.status_code == 200
-    async with db_session_factory() as db:
-        honeypot = await db.get(Honeypot, honeypot_id)
-        assert honeypot.ingest_token_hash != first_hash
-
-    revoke = await client.post(
-        f"/honeypots/{honeypot_id}/ingest-token/revoke",
-        data={"csrf_token": _csrf_from(edit_page)},
-        follow_redirects=False,
-    )
-    assert revoke.status_code == 303
-    async with db_session_factory() as db:
-        honeypot = await db.get(Honeypot, honeypot_id)
-        assert honeypot.ingest_token_hash is None
 
 
 async def test_bulk_delete_honeypots(client, db_session_factory):
@@ -198,3 +153,45 @@ async def test_bulk_delete_honeypots_with_no_selection_shows_an_error(client):
     )
     assert response.status_code == 303
     assert "bulk_error" in response.headers["location"]
+
+
+async def test_updates_and_settings_tabs_are_hidden_and_forbidden_for_read_only_user(
+    client, login_as, db_session_factory
+):
+    company = await create_company(db_session_factory)
+    async with db_session_factory() as db:
+        honeypot = Honeypot(company_id=company.id, name="acme-honey1")
+        db.add(honeypot)
+        await db.commit()
+        await db.refresh(honeypot)
+        honeypot_id = honeypot.id
+
+    await login_as(client, company_id=company.id, access_level=AccessLevel.READ)
+
+    overview = await client.get(f"/honeypots/{honeypot_id}")
+    assert f'href="/honeypots/{honeypot_id}/updates"' not in overview.text
+    assert f'href="/honeypots/{honeypot_id}/edit"' not in overview.text
+
+    assert (await client.get(f"/honeypots/{honeypot_id}/updates")).status_code == 403
+    assert (await client.get(f"/honeypots/{honeypot_id}/edit")).status_code == 403
+
+
+async def test_updates_and_settings_tabs_are_visible_for_read_write_user(
+    client, login_as, db_session_factory
+):
+    company = await create_company(db_session_factory)
+    async with db_session_factory() as db:
+        honeypot = Honeypot(company_id=company.id, name="acme-honey1")
+        db.add(honeypot)
+        await db.commit()
+        await db.refresh(honeypot)
+        honeypot_id = honeypot.id
+
+    await login_as(client, company_id=company.id, access_level=AccessLevel.READ_WRITE)
+
+    overview = await client.get(f"/honeypots/{honeypot_id}")
+    assert f'href="/honeypots/{honeypot_id}/updates"' in overview.text
+    assert f'href="/honeypots/{honeypot_id}/edit"' in overview.text
+
+    assert (await client.get(f"/honeypots/{honeypot_id}/updates")).status_code == 200
+    assert (await client.get(f"/honeypots/{honeypot_id}/edit")).status_code == 200

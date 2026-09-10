@@ -31,14 +31,18 @@
       {% if current_user.can_write() %}
         <a href="/initialize" {% if current_path.startswith('/initialize') %}class="active" aria-current="page"{% endif %}>{{ t(request, "nav.initialize") }}</a>
       {% endif %}
-      <a href="/scheduling" {% if current_path.startswith('/scheduling') %}class="active" aria-current="page"{% endif %}>{{ t(request, "nav.scheduling") }}</a>
+      {% if current_user.can_write() %}
+        <a href="/scheduling" {% if current_path.startswith('/scheduling') %}class="active" aria-current="page"{% endif %}>{{ t(request, "nav.scheduling") }}</a>
+      {% endif %}
       {% if current_user.is_superadmin %}
         <a href="/companies" {% if current_path.startswith('/companies') %}class="active" aria-current="page"{% endif %}>{{ t(request, "nav.companies") }}</a>
         <a href="/audit" {% if current_path.startswith('/audit') %}class="active" aria-current="page"{% endif %}>{{ t(request, "nav.audit") }}</a>
         <a href="/users" {% if current_path.startswith('/users') %}class="active" aria-current="page"{% endif %}>{{ t(request, "nav.users") }}</a>
         <a href="/settings" {% if current_path.startswith('/settings') %}class="active" aria-current="page"{% endif %}>{{ t(request, "nav.settings") }}</a>
       {% endif %}
-      <a href="/api" {% if current_path == '/api' %}class="active" aria-current="page"{% endif %}>{{ t(request, "nav.api_docs") }}</a>
+      {% if current_user.can_write() %}
+        <a href="/api" {% if current_path == '/api' %}class="active" aria-current="page"{% endif %}>{{ t(request, "nav.api_docs") }}</a>
+      {% endif %}
     </nav>
     <div class="site-header-user">
       {% set current_theme = 'light' if request.cookies.get('theme') == 'light' else 'dark' %}
