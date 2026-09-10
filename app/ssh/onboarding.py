@@ -44,6 +44,42 @@ ONBOARD_USERNAME = "honeyhive"
 ONBOARD_SUCCESS_MARKER = "HONEYHIVE_ONBOARD_OK"
 
 
+def build_sudoers_grant_command(username: str) -> str:
+    """The scoped, passwordless sudo grant `app.ssh.readiness` checks for
+    (`apt-get`/`shutdown`/`dmidecode`/`systemctl`, plus `flatpak`/`snap` if
+    either is present) — exactly what an operator would otherwise type by
+    hand from the readiness banner's own hint. Idempotent (each `cat >`
+    overwrites its own file, never appending/duplicating) and self-
+    validating (`visudo -cf` after every write — a syntax error here would
+    otherwise silently break sudo for the whole system on next use, not
+    just for this grant).
+
+    Shared by `build_onboarding_command` (the dedicated `honeyhive` user,
+    granted once during onboarding) and `app.ssh.initialize.
+    build_initialize_command` (whichever account Initialize connects as,
+    granted during initial provisioning — see that module for why this
+    exists there too: without it, every freshly Initialized device used to
+    show up in HoneyHive already missing every one of these, exactly the
+    gap `app.ssh.readiness`'s banner exists to catch).
+    """
+    user = shlex.quote(username)
+    return (
+        f"cat > /etc/sudoers.d/{user} <<'HONEYHIVE_SUDOERS_APT'\n"
+        f"{username} ALL=(root) NOPASSWD: /usr/bin/apt-get, /usr/sbin/shutdown, "
+        "/usr/sbin/dmidecode, /usr/bin/systemctl\n"
+        "HONEYHIVE_SUDOERS_APT\n"
+        f"chmod 440 /etc/sudoers.d/{user}; "
+        f"visudo -cf /etc/sudoers.d/{user}; "
+        "if command -v flatpak >/dev/null 2>&1 || command -v snap >/dev/null 2>&1; then "
+        f"cat > /etc/sudoers.d/{user}-flatpak-snap <<'HONEYHIVE_SUDOERS_FS'\n"
+        f"{username} ALL=(root) NOPASSWD: /usr/bin/flatpak, /usr/bin/snap\n"
+        "HONEYHIVE_SUDOERS_FS\n"
+        f"chmod 440 /etc/sudoers.d/{user}-flatpak-snap; "
+        f"visudo -cf /etc/sudoers.d/{user}-flatpak-snap; "
+        "fi"
+    )
+
+
 def build_onboarding_command(public_key: str) -> str:
     """Returns one `set -e` shell script — a single exec, not several round
     trips, same reasoning `app.ssh.updates.build_update_command` documents
@@ -63,19 +99,7 @@ def build_onboarding_command(public_key: str) -> str:
         f'echo {quoted_key} >> "$home/.ssh/authorized_keys"; '
         f'chmod 600 "$home/.ssh/authorized_keys"; '
         f'chown {user}:{user} "$home/.ssh/authorized_keys"; '
-        f"cat > /etc/sudoers.d/{user} <<'HONEYHIVE_SUDOERS_APT'\n"
-        f"{user} ALL=(root) NOPASSWD: /usr/bin/apt-get, /usr/sbin/shutdown, "
-        "/usr/sbin/dmidecode, /usr/bin/systemctl\n"
-        "HONEYHIVE_SUDOERS_APT\n"
-        f"chmod 440 /etc/sudoers.d/{user}; "
-        f"visudo -cf /etc/sudoers.d/{user}; "
-        "if command -v flatpak >/dev/null 2>&1 || command -v snap >/dev/null 2>&1; then "
-        f"cat > /etc/sudoers.d/{user}-flatpak-snap <<'HONEYHIVE_SUDOERS_FS'\n"
-        f"{user} ALL=(root) NOPASSWD: /usr/bin/flatpak, /usr/bin/snap\n"
-        "HONEYHIVE_SUDOERS_FS\n"
-        f"chmod 440 /etc/sudoers.d/{user}-flatpak-snap; "
-        f"visudo -cf /etc/sudoers.d/{user}-flatpak-snap; "
-        "fi; "
+        f"{build_sudoers_grant_command(user)}; "
         "(apt-get update -q >/dev/null 2>&1 && "
         "apt-get install -y ncurses-term >/dev/null 2>&1) || true; "
         f"echo {ONBOARD_SUCCESS_MARKER}"

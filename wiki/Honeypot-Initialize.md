@@ -89,6 +89,37 @@ Skipped (never fails the run) if there's nothing to install; safe to
 re-run — every key is added idempotently, never removing or overwriting
 one already there, by hand or otherwise.
 
+## Passwordless sudo is granted up front
+
+Right alongside the SSH keys above, Initialize also grants the connecting
+account the exact scoped, passwordless sudo `app.ssh.readiness`'s
+"missing requirements" banner otherwise asks an operator to fix by hand
+afterward: `apt-get` (checking/running updates), `shutdown` (reboot/power
+actions), `dmidecode` (the RAM speed fact), `systemctl` (the Honeypot
+Config tab's module editor) — plus `flatpak`/`snap` if either is present.
+Skipped for a `root` connection (root never needs sudo granted to
+itself). This is the same grant `app.ssh.onboarding` gives its own
+dedicated `honeyhive` user — a freshly Initialized device no longer shows
+up in HoneyHive already failing every readiness check (and, in turn,
+things that quietly depend on the same sudo, like the Honeypot Config
+tab's "Apply" button) the way one used to before this existed.
+
+## The device reboots, and Initialize waits for it to come back
+
+The very last step reboots the device — a full clean boot, rather than
+trusting everything the script just did is already in its final running
+state. Initialize doesn't just trigger the reboot and declare victory: it
+polls the device's new SSH port (over the same trust-on-first-use host-key
+probe the run started with, never a real login) until it answers again,
+for up to a few minutes, before reporting success — so "Initialize
+succeeded" means the device actually came back up, not just that the
+script ran to its last line. If it presents a *different* host key than
+before the reboot, that's reported as a problem rather than silently
+accepted (see [Architecture](Architecture.md) for the full timing this
+uses). If it simply never comes back within the wait window (a slow SD
+card, a first-boot fsck), the run is reported as failed with that
+explanation — check the device by hand.
+
 ## SSH moves to a new port on success
 
 The very last step of a run moves the device's own sshd off the default

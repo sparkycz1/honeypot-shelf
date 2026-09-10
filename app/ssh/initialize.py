@@ -43,23 +43,33 @@ isn't in HoneyHive's database at all yet — see
 `app.web.routes.initialize` for how the connection itself is authenticated
 and host-key-trusted for that case.
 
-Second-to-last, `authorized_keys` (HoneyHive's own shared identity public
+Also installed: `authorized_keys` (HoneyHive's own shared identity public
 key, plus every current superadmin's personal key(s) from My account →
-SSH public keys — see `app.web.routes.initialize_ws`'s caller) is
-installed onto the account Initialize connected as, via
+SSH public keys — see `app.web.routes.initialize_ws`'s caller) via
 `app.ssh.authorized_keys.build_authorized_keys_append_command` — the same
 idempotent, additive, home-dir-aware pattern `app.ssh.onboarding` and
-`app.tasks.jobs.push_superadmin_ssh_keys` use. Skipped entirely if the
-caller passes none.
+`app.tasks.jobs.push_superadmin_ssh_keys` use, skipped entirely if the
+caller passes none — and the exact scoped, passwordless sudo grant
+(`app.ssh.onboarding.build_sudoers_grant_command`) `app.ssh.readiness`
+checks for, so a freshly Initialized device never shows up in HoneyHive
+already failing every one of those checks the way one used to before this
+existed.
 
-The very last step moves sshd off the default port 22 to
+Second-to-last, sshd moves off the default port 22 to
 `build_initialize_command`'s `new_ssh_port` argument (`NEW_SSH_PORT`,
 22222, by default — an operator-editable field on the Initialize form,
 see `app.web.routes.initialize`) via a drop-in under
 `/etc/ssh/sshd_config.d/` — see `NEW_SSH_PORT`'s own comment for why this
-step is last, and why it can't lock an operator out. The device only
+step stays late, and why it can't lock an operator out. The device only
 answers on the new port from then on; the operator must use it (not 22)
 when adding the device as a `Honeypot` afterward.
+
+The very last step reboots the device — a full clean boot rather than
+trusting everything above is already in its final running state — and
+`app.web.routes.initialize_ws` waits for it to come back up (polling the
+new port, over the new port's own host-key fingerprint) before reporting
+success, so "Initialize succeeded" actually means "the device rebooted
+and came back," not just "the script ran to its last line."
 
 Idempotent throughout (every step guards against "already done") — safe to
 re-run Initialize against the same device after a partial failure. Each
@@ -77,6 +87,7 @@ from collections.abc import Sequence
 
 from app.ssh.authorized_keys import build_authorized_keys_append_command
 from app.ssh.logs import HONEYPOT_LOG_PATH
+from app.ssh.onboarding import build_sudoers_grant_command
 
 # Printed as the script's last line on success — same "did it actually run
 # to completion" reasoning as app.ssh.onboarding.ONBOARD_SUCCESS_MARKER.
@@ -109,6 +120,19 @@ NEW_SSH_PORT = 22222
 # `app.web.routes.initialize_ws` (same reasoning/shape as
 # `app.web.routes.terminal_ws.TERMINAL_SESSION_MAX_SECONDS`).
 INITIALIZE_RUN_MAX_SECONDS = 60 * 60
+
+# The post-reboot "did it actually come back" phase in
+# `app.web.routes.initialize_ws`, run after the script above triggers the
+# final reboot. `REBOOT_GRACE_SECONDS` is an unconditional wait before the
+# first reconnect attempt — long enough that a real device has actually
+# gone down by then, so an immediate successful probe can't be a stale
+# leftover of the pre-reboot state; `REBOOT_POLL_INTERVAL_SECONDS` between
+# each retry after that, for up to `REBOOT_WAIT_MAX_SECONDS` total —
+# generous for a Raspberry Pi's real boot time (typically well under a
+# minute) with real margin for a slower SD card or first-boot fsck.
+REBOOT_GRACE_SECONDS = 15
+REBOOT_POLL_INTERVAL_SECONDS = 5
+REBOOT_WAIT_MAX_SECONDS = 240
 
 # See app.ssh.readonly's module docstring for why this exists — a small
 # ramdisk OpenCanary's log can still write to once root itself is
@@ -176,6 +200,12 @@ _APT_PACKAGES = [
     # --- Needed to add the NetBird apt repo below ---
     "curl",
     "gnupg",
+    # --- Same requirement app.ssh.readiness checks for and
+    # app.ssh.onboarding installs — full-color output (box-drawing,
+    # 256-color) in the web Terminal tab. Installed here too so a freshly
+    # Initialized device passes every readiness check out of the box,
+    # never just the ones onboarding itself grants. ---
+    "ncurses-term",
 ]
 
 _LOCALES = ["en_US.UTF-8 UTF-8", "cs_CZ.UTF-8 UTF-8"]
@@ -578,6 +608,22 @@ def build_initialize_command(
         lines.append(_step("Installing SSH keys (HoneyHive + superadmins)"))
         lines.append(build_authorized_keys_append_command(ssh_username, list(authorized_keys)))
 
+    # --- Grant the same scoped, passwordless sudo app.ssh.onboarding
+    # grants its own dedicated `honeyhive` user — apt-get/shutdown/
+    # dmidecode/systemctl(+flatpak/snap) — to the account Initialize
+    # connected as. Without this, a freshly Initialized device used to
+    # show up in HoneyHive already failing every one of
+    # app.ssh.readiness's checks (and, in turn, things that quietly
+    # depend on the same sudo, like the Honeypot Config tab's "Apply"
+    # button) until an operator separately ran "Run initial setup" or the
+    # readiness banner's own "Fix it" flow — this closes that gap at
+    # Initialize time instead. Root never needs sudo granted to itself
+    # (see app.ssh.readiness's module docstring for the same reasoning),
+    # so this is skipped entirely for a root connection. ---
+    if ssh_username and ssh_username != "root":
+        lines.append(_step("Granting passwordless sudo (apt/shutdown/dmidecode/systemctl)"))
+        lines.append(build_sudoers_grant_command(ssh_username))
+
     # --- Move sshd off the default port, last of all — everything else
     # above must already have succeeded (this app's own connection is what
     # ran all of it, over the *old* port, and stays open regardless of
@@ -602,6 +648,19 @@ def build_initialize_command(
     )
 
     lines.append(f"echo {INITIALIZE_SUCCESS_MARKER}")
+
+    # --- Reboot, last of all — a full clean boot (fresh kernel state,
+    # every systemd unit started the normal way, including opencanary)
+    # rather than trusting everything this script just did to already be
+    # in its final running state. Backgrounded, disowned, and delayed by a
+    # couple of seconds so the `exec` channel this whole script runs over
+    # gets to return its exit status (and the success marker above) first
+    # — `app.web.routes.initialize_ws` waits for exactly that before
+    # moving on to its own "wait for the device to come back" phase,
+    # which is what actually confirms the reboot completed; this step
+    # only ever *triggers* it. ---
+    lines.append(_step("Rebooting"))
+    lines.append("(sleep 2; reboot) >/dev/null 2>&1 & disown")
 
     return "\n".join(lines) + "\n"
 

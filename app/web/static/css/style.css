@@ -851,13 +851,13 @@ img.brand-mark-lg { object-fit: contain; }
 }
 .machine-compact-name:hover { text-decoration: underline; }
 
-.machine-card-grid {
+.honeypot-card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: var(--space-4);
   margin-bottom: var(--space-4);
 }
-.machine-card {
+.honeypot-card {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -868,13 +868,13 @@ img.brand-mark-lg { object-fit: contain; }
   box-shadow: var(--shadow-sm);
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
-.machine-card:hover { border-color: var(--color-accent); box-shadow: var(--shadow-md); }
-.machine-card-header {
+.honeypot-card:hover { border-color: var(--color-accent); box-shadow: var(--shadow-md); }
+.honeypot-card-header {
   display: flex;
   align-items: center;
   gap: var(--space-2);
 }
-.machine-card-name {
+.honeypot-card-name {
   font-weight: 600;
   font-size: 1.05rem;
   text-decoration: none;
@@ -883,31 +883,31 @@ img.brand-mark-lg { object-fit: contain; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.machine-card-name:hover { text-decoration: underline; }
-.machine-card-details {
+.honeypot-card-name:hover { text-decoration: underline; }
+.honeypot-card-details {
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 0.2em var(--space-2);
   font-size: 0.88rem;
   margin: 0;
 }
-.machine-card-details dt { color: var(--color-muted); }
-.machine-card-details dd { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.machine-card-badges {
+.honeypot-card-details dt { color: var(--color-muted); }
+.honeypot-card-details dd { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.honeypot-card-badges {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1);
   align-items: center;
 }
-.machine-card-tags { display: flex; flex-wrap: wrap; }
-.machine-card-details-link { align-self: flex-start; margin-top: auto; }
+.honeypot-card-tags { display: flex; flex-wrap: wrap; }
+.honeypot-card-details-link { align-self: flex-start; margin-top: auto; }
 
-/* --- Cards view's CPU/RAM indicator (machines/list.html's `usage_bar`
+/* --- Cards view's CPU/RAM indicator (honeypots/list.html's `usage_bar`
    macro) — the latest monitoring sample only, not a historical sparkline;
-   see `_get_latest_monitoring_by_machine`'s own docstring for why. No
+   see `_get_latest_monitoring_by_honeypot`'s own docstring for why. No
    inline `style` (CSP): the fill width is one of the fixed `-N0` classes
    below, picked by rounding to the nearest 10. --- */
-.machine-card-usage { display: flex; flex-direction: column; gap: 0.2rem; }
+.honeypot-card-usage { display: flex; flex-direction: column; gap: 0.2rem; }
 .usage-bar { display: flex; align-items: center; gap: var(--space-2); font-size: 0.8rem; }
 .usage-bar-label { color: var(--color-muted); width: 2.2em; flex-shrink: 0; }
 .usage-bar-track {

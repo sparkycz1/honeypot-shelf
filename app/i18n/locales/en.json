@@ -255,6 +255,8 @@
     "honeypots.bulk.check_updates": "Check for updates",
     "honeypots.bulk.reboot": "Reboot",
     "honeypots.bulk.remove_tags": "Remove tags",
+    "honeypots.bulk.delete": "Delete",
+    "honeypots.bulk.confirm_delete": "Permanently delete every selected honeypot? This cannot be undone.",
     "honeypots.bulk.run_update": "Run update",
     "honeypots.bulk.shutdown": "Shut down",
     "honeypots.bulk.tags_placeholder": "tag1, tag2",

@@ -27,6 +27,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import time
 from datetime import UTC, datetime
 
 import asyncssh
@@ -49,6 +50,9 @@ from app.ssh.identity import get_or_create_identity
 from app.ssh.initialize import (
     INITIALIZE_RUN_MAX_SECONDS,
     INITIALIZE_SUCCESS_MARKER,
+    REBOOT_GRACE_SECONDS,
+    REBOOT_POLL_INTERVAL_SECONDS,
+    REBOOT_WAIT_MAX_SECONDS,
     STEP_MARKER_PREFIX,
     build_initialize_command,
     service_user_for,
@@ -117,6 +121,63 @@ async def _send_done(
         await websocket.send_text(
             json.dumps({"kind": "done", "ok": ok, "error": error, "fingerprint": fingerprint})
         )
+
+
+async def _wait_for_reboot(
+    websocket: WebSocket,
+    ip_address: str,
+    new_ssh_port: int,
+    expected_fingerprint: str | None,
+) -> str | None:
+    """After the script's own final step triggers a reboot, wait for the
+    device to actually come back up on `new_ssh_port` before reporting
+    Initialize as done — see `app.ssh.initialize`'s module docstring and
+    `REBOOT_GRACE_SECONDS`/`REBOOT_POLL_INTERVAL_SECONDS`/
+    `REBOOT_WAIT_MAX_SECONDS`'s own comment for the timing this uses.
+    Only ever probes the host-key exchange (`discover_host_key_
+    fingerprint`, the same trust-on-first-use-safe probe the run started
+    with) — never authenticates, so this needs no credential at all.
+
+    Returns `None` on success, or a human-readable error string — a
+    fingerprint mismatch (the presented key no longer matches the one this
+    same run discovered minutes ago) is reported immediately, without
+    exhausting the rest of the retry budget on what would just be the same
+    surprising answer every time.
+    """
+    await websocket.send_text(
+        json.dumps({"kind": "step", "label": "Rebooting — waiting for the device to come back"})
+    )
+    await asyncio.sleep(REBOOT_GRACE_SECONDS)
+
+    deadline = time.monotonic() + REBOOT_WAIT_MAX_SECONDS
+    while True:
+        try:
+            fingerprint = await discover_host_key_fingerprint(
+                ip_address, new_ssh_port, REBOOT_POLL_INTERVAL_SECONDS
+            )
+        except SSHConnectionError:
+            fingerprint = None
+
+        if fingerprint is not None:
+            if expected_fingerprint is not None and fingerprint != expected_fingerprint:
+                return (
+                    "The device came back, but presented a different SSH host key than "
+                    "before the reboot — treating this as a possible problem rather than "
+                    "assuming it's the same device. Verify it by hand before adding it as "
+                    "a honeypot."
+                )
+            await websocket.send_text(
+                json.dumps({"kind": "step", "label": "Back up after reboot"})
+            )
+            return None
+
+        if time.monotonic() >= deadline:
+            return (
+                f"The device didn't come back up on port {new_ssh_port} within "
+                f"{REBOOT_WAIT_MAX_SECONDS} seconds of rebooting — it may still be "
+                "booting (a slow SD card, a first-boot fsck, ...); check it manually."
+            )
+        await asyncio.sleep(REBOOT_POLL_INTERVAL_SECONDS)
 
 
 async def _log_initialize_event(
@@ -291,6 +352,19 @@ async def initialize_websocket(websocket: WebSocket, run_id: str) -> None:
             INITIALIZE_SUCCESS_MARKER in line for line in collected
         ):
             error = f"Setup script exited {exit_status.exit_status}."
+        else:
+            # The script's own last step triggered a reboot (see
+            # app.ssh.initialize's module docstring) — this connection is
+            # now on borrowed time regardless of what we do, so close it
+            # up front rather than let a reboot mid-`finally` race with
+            # our own cleanup.
+            with contextlib.suppress(Exception):
+                process.terminate()
+            with contextlib.suppress(Exception):
+                conn.close()
+            process = None
+            conn = None
+            error = await _wait_for_reboot(websocket, run.ip_address, run.new_ssh_port, fingerprint)
     except Exception as exc:  # noqa: BLE001 - reported to the client, not swallowed
         error = str(exc)
     finally:

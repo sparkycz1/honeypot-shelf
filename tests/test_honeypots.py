@@ -161,3 +161,40 @@ async def test_ingest_token_rotate_and_revoke(client, db_session_factory):
     async with db_session_factory() as db:
         honeypot = await db.get(Honeypot, honeypot_id)
         assert honeypot.ingest_token_hash is None
+
+
+async def test_bulk_delete_honeypots(client, db_session_factory):
+    company = await create_company(db_session_factory)
+    async with db_session_factory() as db:
+        honeypot_a = Honeypot(company_id=company.id, name="acme-honey1")
+        honeypot_b = Honeypot(company_id=company.id, name="acme-honey2")
+        db.add_all([honeypot_a, honeypot_b])
+        await db.commit()
+        await db.refresh(honeypot_a)
+        await db.refresh(honeypot_b)
+        honeypot_a_id, honeypot_b_id = honeypot_a.id, honeypot_b.id
+
+    list_page = await client.get("/honeypots")
+    response = await client.post(
+        "/honeypots/bulk/delete",
+        data={
+            "honeypot_ids": [str(honeypot_a_id), str(honeypot_b_id)],
+            "csrf_token": _csrf_from(list_page),
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    async with db_session_factory() as db:
+        assert await db.get(Honeypot, honeypot_a_id) is None
+        assert await db.get(Honeypot, honeypot_b_id) is None
+
+
+async def test_bulk_delete_honeypots_with_no_selection_shows_an_error(client):
+    list_page = await client.get("/honeypots")
+    response = await client.post(
+        "/honeypots/bulk/delete",
+        data={"csrf_token": _csrf_from(list_page)},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert "bulk_error" in response.headers["location"]

@@ -1112,6 +1112,41 @@ async def bulk_remove_tags(
     return RedirectResponse(url="/honeypots", status_code=status.HTTP_303_SEE_OTHER)
 
 
+@router.post("/bulk/delete", dependencies=[_manage, Depends(verify_csrf)])
+async def bulk_delete_honeypots(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    honeypot_ids: list[uuid.UUID] = Form(default=[]),
+) -> Response:
+    """The "Delete" bulk action on the Honeypots list — same permanent,
+    unrecoverable delete as a single honeypot's own Settings tab (`POST
+    /{honeypot_id}/delete`), just for an ad-hoc multi-selection at once.
+    Declared before `/{honeypot_id}/...` for the same routing-order
+    reason every other `/bulk/...` route here already is — see
+    `app/web/routes/users.py`'s own `/bulk/...` routes for the identical
+    convention and the bug it avoids."""
+    honeypots = await _get_honeypots_by_ids(honeypot_ids, db, current_user)
+    if not honeypots:
+        return RedirectResponse(
+            url="/honeypots?bulk_error=Select+at+least+one+honeypot.",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    names = [honeypot.name for honeypot in honeypots]
+    for honeypot in honeypots:
+        await db.delete(honeypot)
+    await db.commit()
+    await log_event(
+        db,
+        request=request,
+        action="honeypots.bulk.delete",
+        summary=f"Deleted {len(honeypots)} selected honeypot(s): {', '.join(names)}",
+        details={"honeypot_names": names},
+    )
+    return RedirectResponse(url="/honeypots", status_code=status.HTTP_303_SEE_OTHER)
+
+
 @router.get("/{honeypot_id}")
 async def honeypot_detail(
     request: Request,
