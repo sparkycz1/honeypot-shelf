@@ -337,6 +337,25 @@ current (`uv` 0.12.7 → 0.12.12 in the Dockerfile, `uv lock` re-run against
 latest compatible releases) — `python:3.14.7-slim`, `postgres:18.6`, and
 `redis:8.10.1` were already current, nothing to bump there.
 
+**Initialize package/port fixes**: `app.ssh.initialize._APT_PACKAGES` was
+installing `mlocate` — dropped from the Debian archive as of trixie (13,
+what Raspberry Pi OS 13 is based on), so `apt-get install mlocate` failed
+outright on every run; swapped for `plocate`, its actively maintained
+drop-in replacement. Verified the entire package list against a real
+`debian:trixie-slim` container (`apt-get install --dry-run`), not just
+`apt-cache show` (which reports success for virtual/transitional package
+names with no installable candidate at all, e.g. `man` → `man-db` — a
+false-positive trap worth remembering if re-checking this list later).
+Also, `build_initialize_command`'s very last step now moves the freshly
+provisioned device's own sshd from port 22 to `NEW_SSH_PORT` (22222) via
+an `/etc/ssh/sshd_config.d/` drop-in — `sshd -t` validates the config
+before ever restarting the daemon (and `set -e` aborts before that
+restart on a failure), so this can't lock an operator out mid-run; see
+`app.ssh.initialize`'s module docstring and
+[wiki/Honeypot-Initialize.md](wiki/Honeypot-Initialize.md)'s new "SSH
+moves to a new port on success" section for the full reasoning. Both the
+Initialize form and the run page now call out the new port explicitly.
+
 Settled product decisions (see [wiki/Home.md](wiki/Home.md) for the full
 list): only a superadmin creates companies/honeypots/users — a company's
 own `READ_WRITE` user manages honeypots *within* their own company (via
