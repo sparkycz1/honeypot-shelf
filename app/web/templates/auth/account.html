@@ -231,6 +231,34 @@
       <p class="hint">{{ t(request, "account.api_tokens.not_enabled_hint") }}</p>
     {% endif %}
   </section>
+
+  {% if user.is_superadmin %}
+    <section class="panel">
+      <h2>{{ t(request, "account.ssh_keys.heading") }}</h2>
+      <p class="hint">{{ t(request, "account.ssh_keys.hint") }}</p>
+
+      <form method="post" action="/account/ssh-keys" class="form" autocomplete="off">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label for="ssh_public_keys">{{ t(request, "account.ssh_keys.field_label") }}</label>
+        <textarea id="ssh_public_keys" name="ssh_public_keys" rows="4"
+                  placeholder="{{ t(request, 'account.ssh_keys.field_placeholder') }}">{{ user.ssh_public_keys or '' }}</textarea>
+        <button type="submit" class="button">{{ t(request, "common.save") }}</button>
+      </form>
+
+      {% if ssh_keys_push_result %}
+        <p class="hint">
+          {{ t(request, "account.ssh_keys.push_result", succeeded=ssh_keys_push_result.succeeded, total=ssh_keys_push_result.total) }}
+          {% if ssh_keys_push_result.succeeded < ssh_keys_push_result.total %}{{ t(request, "account.ssh_keys.push_result_errors") }}{% endif %}
+        </p>
+      {% endif %}
+
+      <form method="post" action="/account/ssh-keys/push" class="inline-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="button button-secondary">{{ t(request, "account.ssh_keys.push_button") }}</button>
+      </form>
+      <p class="hint">{{ t(request, "account.ssh_keys.push_hint") }}</p>
+    </section>
+  {% endif %}
 {% endblock %}
 
 {% block extra_scripts %}

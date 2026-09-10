@@ -74,6 +74,21 @@ they want to; nothing about it is stored anywhere. The normal "Add
 honeypot" flow that follows uses the real discover-then-confirm flow, not
 this one.
 
+## HoneyHive's and every superadmin's SSH keys are installed
+
+Second-to-last (right before the port change below), Initialize installs
+HoneyHive's own shared identity public key, plus every current
+superadmin's personal SSH public key(s) (My account → SSH public keys —
+see [Architecture](Architecture.md#superadmin-personal-ssh-keys)), onto
+the account it connected as. This means both HoneyHive and every
+superadmin can reach the freshly provisioned device directly afterward
+without needing the one-time password/key this run itself used —
+particularly useful when "Password" was the authentication method above,
+since that one-time password is never stored anywhere once the run ends.
+Skipped (never fails the run) if there's nothing to install; safe to
+re-run — every key is added idempotently, never removing or overwriting
+one already there, by hand or otherwise.
+
 ## SSH moves to a new port on success
 
 The very last step of a run moves the device's own sshd off the default

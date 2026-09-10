@@ -23,6 +23,7 @@ async def test_account_page_renders_in_czech(client, login_as):
     assert "Relace" in response.text
     assert "API tokeny" in response.text
     assert "Změnit heslo" in response.text
+    assert "SSH veřejné klíče" in response.text
 
 
 async def test_account_page_renders_in_english(client, login_as):
@@ -33,3 +34,4 @@ async def test_account_page_renders_in_english(client, login_as):
     assert response.status_code == 200
     assert "Change password" in response.text
     assert "API tokens" in response.text
+    assert "SSH public keys" in response.text

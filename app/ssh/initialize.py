@@ -43,6 +43,15 @@ isn't in HoneyHive's database at all yet — see
 `app.web.routes.initialize` for how the connection itself is authenticated
 and host-key-trusted for that case.
 
+Second-to-last, `authorized_keys` (HoneyHive's own shared identity public
+key, plus every current superadmin's personal key(s) from My account →
+SSH public keys — see `app.web.routes.initialize_ws`'s caller) is
+installed onto the account Initialize connected as, via
+`app.ssh.authorized_keys.build_authorized_keys_append_command` — the same
+idempotent, additive, home-dir-aware pattern `app.ssh.onboarding` and
+`app.tasks.jobs.push_superadmin_ssh_keys` use. Skipped entirely if the
+caller passes none.
+
 The very last step moves sshd off the default port 22 to
 `build_initialize_command`'s `new_ssh_port` argument (`NEW_SSH_PORT`,
 22222, by default — an operator-editable field on the Initialize form,
@@ -64,7 +73,9 @@ produced.
 from __future__ import annotations
 
 import shlex
+from collections.abc import Sequence
 
+from app.ssh.authorized_keys import build_authorized_keys_append_command
 from app.ssh.logs import HONEYPOT_LOG_PATH
 
 # Printed as the script's last line on success — same "did it actually run
@@ -310,6 +321,8 @@ def build_initialize_command(
     netbird_management_url: str | None = None,
     wireguard_config: str | None = None,
     new_ssh_port: int = NEW_SSH_PORT,
+    ssh_username: str = "",
+    authorized_keys: Sequence[str] = (),
 ) -> str:
     """Returns one `set -e` shell script provisioning a fresh device end to
     end: base packages, timezone/locale, a full `apt` upgrade, the
@@ -549,6 +562,21 @@ def build_initialize_command(
         "    json.dump(cfg, f, indent=4)\n"
         "HONEYHIVE_INITIALIZE_CFG"
     )
+
+    # --- Install every given authorized_keys entry (HoneyHive's own
+    # shared identity key, plus every current superadmin's personal
+    # key(s) — see app.web.routes.initialize_ws's caller) onto the
+    # account Initialize connected as, so both can reach the device
+    # directly afterward without needing the one-time password/key this
+    # run itself used. Skipped entirely if the caller passed none (e.g.
+    # no superadmin has a personal key configured yet, or the identity
+    # key was somehow unavailable) — never fails the run either way, this
+    # is convenience, not something later steps depend on. Idempotent and
+    # strictly additive — see app.ssh.authorized_keys's module docstring
+    # for why a key added by hand is never at risk from this. ---
+    if ssh_username and authorized_keys:
+        lines.append(_step("Installing SSH keys (HoneyHive + superadmins)"))
+        lines.append(build_authorized_keys_append_command(ssh_username, list(authorized_keys)))
 
     # --- Move sshd off the default port, last of all — everything else
     # above must already have succeeded (this app's own connection is what
