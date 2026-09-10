@@ -75,3 +75,15 @@ class HoneypotMonitoringSample(Base):
     # None = couldn't tell (no `systemctl` — see app.ssh.monitoring), not
     # "zero failed services".
     failed_services_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # `systemctl is-active opencanary` on this same round trip — None =
+    # couldn't tell (no `systemctl`), not "inactive". Drives the
+    # Monitoring tab's "OpenCanary service" panel, styled and computed
+    # the same way the Availability panel's own uptime graph is (see
+    # app.services.monitoring_history.MonitoringHistory.opencanary_active)
+    # — a dedicated, historized signal distinct from both
+    # `Honeypot.is_reachable` (SSH reachability) and `last_seen_at`
+    # (OpenCanary event flow): this one answers "was the systemd unit
+    # itself reported active", independent of whether it emitted any
+    # events during this sample or is even reachable by anything other
+    # than this app's own SSH connection.
+    opencanary_active: Mapped[bool | None] = mapped_column(nullable=True)

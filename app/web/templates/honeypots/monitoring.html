@@ -46,6 +46,26 @@
     <p class="hint">{{ t(request, 'honeypots.monitoring.hover_hint') }}</p>
 
     {% if honeypot.monitoring_updated_at %}
+      {% if history.opencanary_uptime_percent %}
+        <section class="panel">
+          <h2>{{ t(request, 'honeypots.monitoring.opencanary_service') }}</h2>
+          <p class="hint">{{ t(request, 'honeypots.monitoring.opencanary_service_hint') }}</p>
+          <h3>{{ t(request, 'honeypots.monitoring.uptime') }}</h3>
+          {{ trend_chart([{'label': 'OpenCanary', 'color': palette[1], 'points': history.opencanary_uptime_percent}], history.bucket_timestamps, fixed_max=100, unit='%') }}
+          <p class="hint">
+            {{ t(request, 'honeypots.monitoring.latest_check') }}
+            {% if history.latest_opencanary_active is not none %}
+              <span class="badge {{ 'badge-ok' if history.latest_opencanary_active else 'badge-error' }}">
+                {{ t(request, 'honeypots.monitoring.opencanary_up') if history.latest_opencanary_active else t(request, 'honeypots.monitoring.opencanary_down') }}
+              </span>
+              {% if history.latest_sampled_at %}({{ history.latest_sampled_at | local_time('%Y-%m-%d %H:%M %Z') }}){% endif %}
+            {% else %}
+              —
+            {% endif %}
+          </p>
+        </section>
+      {% endif %}
+
       <section class="panel">
         <h2>{{ t(request, 'honeypots.monitoring.cpu') }}</h2>
         {% if history.cpu_percent %}

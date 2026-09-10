@@ -213,6 +213,14 @@ class MonitoringHistory:
     latest_filesystems: dict[str, dict[str, Any]]
     latest_failed_services_count: int | None
     latest_sampled_at: datetime | None
+    # 0-100 per bucket, same "percentage of checks that succeeded" shape
+    # `AvailabilityHistory.uptime_percent` uses — a sample where
+    # `opencanary_active` was `None` (no systemd at all) contributes
+    # nothing to its bucket rather than counting as either up or down;
+    # a bucket with only `None` samples stays a gap, same as
+    # `_bucket_average`'s own convention.
+    opencanary_uptime_percent: list[float | None]
+    latest_opencanary_active: bool | None
 
 
 def build_monitoring_history(
@@ -261,6 +269,12 @@ def build_monitoring_history(
         mount: _bucket_average(fs_raw_by_mount[mount], _TARGET_POINTS) for mount in fs_keys
     }
 
+    opencanary_raw: list[float | None] = [
+        (100.0 if s.opencanary_active else 0.0) if s.opencanary_active is not None else None
+        for s in samples
+    ]
+    opencanary_series = _bucket_average(opencanary_raw, _TARGET_POINTS)
+
     latest = samples[-1] if samples else None
     latest_network_io = {
         iface: entries[-1] for iface, entries in net_by_key.items() if entries and entries[-1]
@@ -298,6 +312,8 @@ def build_monitoring_history(
         latest_filesystems=latest_filesystems,
         latest_failed_services_count=latest.failed_services_count if latest else None,
         latest_sampled_at=latest.sampled_at if latest else None,
+        opencanary_uptime_percent=opencanary_series,
+        latest_opencanary_active=latest.opencanary_active if latest else None,
     )
 
 
