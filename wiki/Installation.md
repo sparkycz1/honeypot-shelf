@@ -3,7 +3,7 @@
 ## Quick start (Docker) — recommended
 
 ```bash
-git clone https://github.com/sparkycz1/honeyhive.git
+git clone https://github.com/sparkycz1/honeypot-shelf.git
 cd honeyhive
 python scripts/setup.py
 ```
