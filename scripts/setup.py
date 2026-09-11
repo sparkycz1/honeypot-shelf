@@ -7,7 +7,7 @@ Usage (from a fresh git checkout, before anything else):
 
 What it does, in order: copies `.env.example` to `.env`, fills in every
 secret (`SECRET_KEY`, `ENCRYPTION_KEY`, `POSTGRES_PASSWORD`,
-`REDIS_PASSWORD`, `INFORM_TOKEN`, `INGEST_TOKEN`) with freshly generated
+`REDIS_PASSWORD`, `INFORM_TOKEN`) with freshly generated
 random values, asks a handful of questions (timezone, whether to use the
 bundled Caddy reverse proxy and its domain/email if so, whether the app's
 own port should only accept local connections, the background-check
@@ -307,13 +307,12 @@ def main() -> None:
     lines = ENV_EXAMPLE_PATH.read_text(encoding="utf-8").splitlines()
 
     print("==> Generating secrets (SECRET_KEY, ENCRYPTION_KEY, POSTGRES_PASSWORD, "
-          "REDIS_PASSWORD, INFORM_TOKEN, INGEST_TOKEN)...")
+          "REDIS_PASSWORD, INFORM_TOKEN)...")
     lines = _set_env_line(lines, "SECRET_KEY", secrets.token_urlsafe(64))
     lines = _set_env_line(lines, "ENCRYPTION_KEY", _fernet_key())
     lines = _set_env_line(lines, "POSTGRES_PASSWORD", secrets.token_urlsafe(24))
     lines = _set_env_line(lines, "REDIS_PASSWORD", secrets.token_urlsafe(24))
     lines = _set_env_line(lines, "INFORM_TOKEN", secrets.token_urlsafe(32))
-    lines = _set_env_line(lines, "INGEST_TOKEN", secrets.token_urlsafe(32))
 
     print()
     tz = _prompt("Timezone (IANA name, e.g. Europe/Prague)", default="UTC")

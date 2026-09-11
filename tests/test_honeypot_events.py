@@ -1,5 +1,6 @@
-"""`app.services.honeypot_events` — shared OpenCanary-payload -> HoneypotEvent
-builder used by both the push ingest endpoint and the SSH log poller."""
+"""`app.services.honeypot_events` — the OpenCanary-payload -> HoneypotEvent
+builder used by the SSH log poller (the only way an event is ingested
+now — see the module's own docstring for the removed push endpoint)."""
 
 from __future__ import annotations
 
@@ -7,7 +8,7 @@ import uuid
 from datetime import UTC
 
 from app.db.models.honeypot import Honeypot
-from app.services.honeypot_events import EventSource, build_event, parse_occurred_at
+from app.services.honeypot_events import build_event, parse_occurred_at
 
 
 def _make_honeypot() -> Honeypot:
@@ -40,7 +41,7 @@ def test_build_event_promotes_the_common_opencanary_fields():
         "local_time": "2026-01-02 03:04:05.000000",
     }
 
-    event = build_event(honeypot, payload, source=EventSource.SSH_POLL)
+    event = build_event(honeypot, payload)
 
     assert event.honeypot_id == honeypot.id
     assert event.event_type == "4002"
@@ -53,6 +54,6 @@ def test_build_event_promotes_the_common_opencanary_fields():
 
 def test_build_event_defaults_event_type_to_unknown_when_absent():
     honeypot = _make_honeypot()
-    event = build_event(honeypot, {}, source=EventSource.PUSH)
+    event = build_event(honeypot, {})
     assert event.event_type == "UNKNOWN"
-    assert event.source == "push"
+    assert event.source == "ssh_poll"

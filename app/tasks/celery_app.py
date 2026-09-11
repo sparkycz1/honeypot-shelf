@@ -6,11 +6,11 @@ Run (both handled by docker-compose.yml — the `worker` and `beat` services):
     celery -A app.tasks.celery_app beat   --loglevel=info
 
 Broker *and* result backend are the same Redis instance the rest of the app
-already uses (`REDIS_URL`). Unlike debcontrol, event ingestion itself
-(`app/web/routes/ingest.py`) is a plain synchronous DB write on the web
-process — there's no SSH round trip or apt run to fan out, so there's
-nothing time-consuming enough on the ingest path to justify enqueueing it.
-Celery here is only for the daily housekeeping sweeps below.
+already uses (`REDIS_URL`). Event ingestion itself is one of the periodic
+sweeps here too, not a web-process write — `poll_all_honeypot_canary_logs`
+SSH-polls each honeypot's own OpenCanary log on `OPENCANARY_LOG_POLL_
+INTERVAL_SECONDS` and writes any new alert as a `HoneypotEvent` — see
+`app.services.honeypot_events`.
 
 See `app.db.session`'s module docstring and the fork-safety handler below
 for why the DB engine is rebuilt in every worker child — same reasoning

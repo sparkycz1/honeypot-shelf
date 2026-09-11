@@ -16,8 +16,8 @@ environment variables, same reasoning as retention: these are things
 whoever's operating the app day to day turns on/off and tunes, not
 deploy-time infrastructure. Secrets in here (`ldap_bind_password_encrypted`,
 `oidc_client_secret_encrypted`) are encrypted at rest with
-`app.core.security` (the same Fernet key protecting per-honeypot ingest
-tokens).
+`app.core.security` (the same key protecting a honeypot's own stored
+password/private key).
 """
 
 from __future__ import annotations

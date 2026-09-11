@@ -1,7 +1,8 @@
 """Self-registration endpoint: a not-yet-known honeypot announces itself
-for review — see `app/db/models/pending_honeypot.py`'s module docstring
-for how this differs from `POST /api/ingest/{id}/events` (an
-already-registered honeypot's OpenCanary event stream).
+for review — see `app/db/models/pending_honeypot.py`'s module docstring.
+An already-registered honeypot's own OpenCanary events, by contrast,
+never need announcing at all — this app reads them straight off the
+honeypot over SSH (see `app.services.honeypot_events`).
 
 This is a honeypot-to-server JSON API, not a browser form — there's no
 cookie involved, so CSRF protection doesn't apply here (CSRF exploits a

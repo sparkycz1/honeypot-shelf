@@ -147,20 +147,8 @@ class Settings(BaseSettings):
     )
 
     # Bearer token a not-yet-registered honeypot presents when announcing
-    # itself via POST /api/inform (see app/db/models/pending_honeypot.py) —
-    # distinct from INGEST_TOKEN below, which is for an *already-registered*
-    # honeypot's OpenCanary event stream.
+    # itself via POST /api/inform (see app/db/models/pending_honeypot.py).
     inform_token: SecretStr = Field(alias="INFORM_TOKEN")
-
-    # --- Honeypot event ingestion (this project's own addition — see
-    # app/web/routes/ingest.py) ---
-    # Bearer token an OpenCanary host's forwarder must present when pushing
-    # events to POST /api/ingest/{id}/events (see
-    # wiki/Honeypot-Onboarding.md). Rotate a per-honeypot token
-    # (Honeypot.ingest_token_hash) instead once a specific honeypot needs
-    # revoking individually; this shared token is the bootstrap/fallback
-    # path, mirroring debcontrol's INFORM_TOKEN shape.
-    ingest_token: SecretStr = Field(alias="INGEST_TOKEN")
 
     # How long (days) raw honeypot events are kept before the daily
     # housekeeping job purges them. Daily/company summary rollups are kept
@@ -176,13 +164,9 @@ class Settings(BaseSettings):
     # How often (seconds) HoneyHive itself connects over SSH and reads
     # whatever's new in OpenCanary's own log (`app.ssh.logs.HONEYPOT_LOG_PATH`)
     # since the last read, for every honeypot with a pinned host key — the
-    # Honeypot Activity tab (`app.ssh.canary_activity`,
-    # `app.tasks.jobs.poll_all_honeypot_canary_logs`). Each new line found
-    # this way is recorded exactly like a pushed event (see
-    # `app.services.honeypot_events`) — `HoneypotEvent.source` distinguishes
-    # the two — so a honeypot never needs its own forwarder set up (see
-    # wiki/Honeypot-Onboarding.md) just to show up on this tab or the
-    # Dashboard. Overridable per honeypot
+    # only way an event ever reaches this app (`app.ssh.canary_activity`,
+    # `app.tasks.jobs.poll_all_honeypot_canary_logs`) — see
+    # `app.services.honeypot_events`. Overridable per honeypot
     # (`Honeypot.opencanary_log_poll_interval_seconds`); `None` there means
     # "use this default". Same SSH round trip shape as `monitoring_interval_
     # seconds` above, just aimed at OpenCanary's log instead of `/proc`.
@@ -267,7 +251,7 @@ class Settings(BaseSettings):
     # own OS timezone (see docker-compose.yml).
     tz: str = Field(default="UTC", alias="TZ")
 
-    @field_validator("secret_key", "encryption_key", "ingest_token", "inform_token")
+    @field_validator("secret_key", "encryption_key", "inform_token")
     @classmethod
     def _reject_placeholder_secrets(cls, value: SecretStr) -> SecretStr:
         raw = value.get_secret_value()

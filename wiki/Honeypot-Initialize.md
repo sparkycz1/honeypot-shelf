@@ -179,10 +179,9 @@ restarts `opencanary`, and (for Samba) starts `smbd`/`nmbd`.
 
 ## What it doesn't do
 
-- **Doesn't create a `Honeypot` row.** Add the device separately afterward.
+- **Doesn't create a `Honeypot` row.** Add the device separately
+  afterward — once its host key is pinned, events start arriving with no
+  further setup (see [Architecture](Architecture.md#-honeypot-data-model)'s
+  "How events arrive" section).
 - **Doesn't enable any OpenCanary module** — see "Modules prepared, not
   enabled" above and the Config tab's module editor.
-- **Doesn't wire up event forwarding** — see
-  [Honeypot Onboarding](Honeypot-Onboarding.md) for `POST
-  /api/ingest/{honeypot_id}/events`, which needs the `Honeypot` row this
-  page deliberately doesn't create.

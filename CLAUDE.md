@@ -23,9 +23,10 @@ exactly like debcontrol's `Machine`. **Not** reused: debcontrol's
 isn't explained here, debcontrol's repo/wiki is probably the reference
 this was ported from.
 
-**Genuinely new here**: OpenCanary event ingestion (`POST
-/api/ingest/{honeypot_id}/events`, `app/db/models/honeypot_event.py`) and
-the company-scoped Dashboard on top of it — see
+**Genuinely new here**: OpenCanary event ingestion — an SSH poll of each
+honeypot's own log, no forwarder/push endpoint (`app/db/models/
+honeypot_event.py`, `app.services.honeypot_events`) — and the
+company-scoped Dashboard on top of it — see
 [wiki/Architecture.md](wiki/Architecture.md).
 
 ## RBAC: the one thing genuinely different from debcontrol

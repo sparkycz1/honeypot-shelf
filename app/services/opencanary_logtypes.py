@@ -125,8 +125,8 @@ _MODULE_OF: dict[int, str] = {
 # every start, and — found live — every crash-loop restart), which would
 # otherwise flood the Activity tab/Dashboard with "General message"/
 # "Debug message" noise having nothing to do with actual attacker
-# activity. `app.ssh.canary_activity`/`app.web.routes.ingest` both skip
-# storing a `HoneypotEvent` for one of these — see `is_internal_logtype`.
+# activity. `app.tasks.jobs`'s SSH log poll skips storing a
+# `HoneypotEvent` for one of these — see `is_internal_logtype`.
 _INTERNAL_LOGTYPES = frozenset({1000, 1001, 1002, 1003, 1004, 1005, 1006})
 
 

@@ -13,7 +13,7 @@ python scripts/setup.py
 `scripts/setup.py` is a self-contained, pure-stdlib wizard (needs only a
 system `python3` and Docker — nothing from this project's own virtualenv):
 generates every secret (`SECRET_KEY`, `ENCRYPTION_KEY`,
-`POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `INFORM_TOKEN`, `INGEST_TOKEN`),
+`POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `INFORM_TOKEN`),
 asks a handful of questions (timezone, whether to use the bundled Caddy
 reverse proxy and its domain/email, whether to add the optional VPN
 sidecar (`docker-compose.vpn.yml` — no provider/key/config asked here,
@@ -31,9 +31,10 @@ regenerates secrets or touches your data.
 
 Once it finishes, log in and create at least one `Company` and one
 `Honeypot` from the Companies/Honeypots pages (both superadmin-only) —
-nothing shows up on the Dashboard before that. See
-[Honeypot Onboarding](Honeypot-Onboarding.md) for pointing an actual
-OpenCanary host at the honeypot you create.
+nothing shows up on the Dashboard before that. Pin that honeypot's SSH
+host key and events start arriving automatically, no setup needed on the
+Pi itself — see [Architecture](Architecture.md#-honeypot-data-model)'s
+"How events arrive" section.
 
 ## Manual setup
 
@@ -46,7 +47,7 @@ python scripts/generate_secrets.py
 ```
 
 Paste the printed values (`SECRET_KEY`, `ENCRYPTION_KEY`,
-`POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `INFORM_TOKEN`, `INGEST_TOKEN`)
+`POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `INFORM_TOKEN`)
 into `.env`. Optionally set `TZ` (e.g. `Europe/Prague`); defaults to UTC.
 Then:
 

@@ -37,18 +37,18 @@ flowchart LR
     Worker["worker<br/>Celery"]
     Beat["beat<br/>Celery Beat scheduler"]
 
-    Honeypot -->|"POST /api/ingest/&lt;id&gt;/events<br/>(bearer token)"| Web
+    Worker -->|"SSH: read OpenCanary's own log"| Honeypot
     Browser <-->|HTTP| Web
     Web <--> DB
-    Beat -->|"daily housekeeping"| Redis
+    Beat -->|"periodic sweeps, incl. the log poll"| Redis
     Redis --> Worker
     Worker <--> DB
 ```
 
-**The data flow is inverted from debcontrol's**: debcontrol's `web`
-reaches out over SSH to managed machines first. This app never reaches
-into a honeypot to *find out it exists* — a honeypot's own forwarder
-pushes events in (see [Honeypot Onboarding](Honeypot-Onboarding.md)).
+Unlike debcontrol's `Machine`, a `Honeypot` starts producing events with
+no forwarder or push setup on its side at all — `web`/`worker` reach out
+over SSH and read whatever's new in OpenCanary's own log, on the same
+schedule as every other periodic sweep (see "How events arrive" below).
 
 ## 📂 Project structure
 
@@ -330,33 +330,31 @@ honeypot or user can end up attached to zero companies; that's a valid,
 if superadmin-only-visible (for a honeypot) or scoped-to-nothing (for a
 user), state.
 
-### How events arrive — two ways, same table
+### How events arrive: an SSH poll, nothing pushed
 
-OpenCanary has no built-in "POST to a URL" — it only logs locally. Two
-mechanisms turn that log into `HoneypotEvent` rows:
+OpenCanary has no built-in "POST to a URL" — it only logs locally. Every
+`OPENCANARY_LOG_POLL_INTERVAL_SECONDS` (default 120), this app connects
+over SSH and reads whatever's new in that log, incrementally by byte
+offset, and turns each new alert line into a `HoneypotEvent` row
+(`source="ssh_poll"`) — no setup needed on the honeypot side beyond a
+pinned host key. Backs the **Activity** tab: an aggregated by-type trend
+chart plus a recent-alerts list.
 
-1. **Push** (`source="push"`) — `POST /api/ingest/{honeypot_id}/events`,
-   authenticated with the shared `INGEST_TOKEN`. Needs a small forwarder
-   set up on the honeypot — see [Honeypot Onboarding](Honeypot-Onboarding.md).
-2. **SSH poll** (`source="ssh_poll"`) — every
-   `OPENCANARY_LOG_POLL_INTERVAL_SECONDS` (default 120), this app
-   connects over SSH and reads whatever's new, incrementally by byte
-   offset. No forwarder needed. Backs the **Activity** tab — an
-   aggregated by-type trend chart plus a recent-alerts list.
-
-Both can run against the same honeypot without duplicating rows — a
-poll never re-reads a line it already saw, and a push is a different
-physical alert either way.
+There used to be a second path — a forwarder on the honeypot pushing to
+`POST /api/ingest/{honeypot_id}/events` — **removed** per explicit
+instruction: the SSH poll already covers every honeypot, so the push
+path was pure redundancy, one more thing to set up and keep working for
+no benefit. `HoneypotEvent.source` may still hold `"push"` on rows from
+before the removal; nothing writes that value any more.
 
 **"Online"/"offline"** is `last_seen_at` vs.
-`HONEYPOT_OFFLINE_AFTER_SECONDS`, bumped by either mechanism —
-deliberately separate from `is_reachable`/`last_ping_at` (a plain
-SSH-plane ping). A poll bumps `last_seen_at` on **any** successful
-contact with the log, not only when it found a real alert — once
-internal OpenCanary noise (module-registration/startup lines) started
-getting filtered out of storage, a quiet-but-healthy honeypot with no
-attacker traffic stopped updating this at all and sat "offline"
-forever. Found live, fixed.
+`HONEYPOT_OFFLINE_AFTER_SECONDS`, deliberately separate from
+`is_reachable`/`last_ping_at` (a plain SSH-plane ping). A poll bumps
+`last_seen_at` on **any** successful contact with the log, not only when
+it found a real alert — once internal OpenCanary noise (module-
+registration/startup lines) started getting filtered out of storage, a
+quiet-but-healthy honeypot with no attacker traffic stopped updating
+this at all and sat "offline" forever. Found live, fixed.
 
 The Monitoring tab's **"OpenCanary service"** panel is a third signal —
 `systemctl is-active opencanary`, piggybacked on the same round trip

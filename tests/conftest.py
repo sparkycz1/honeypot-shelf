@@ -17,7 +17,6 @@ os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 os.environ.setdefault("POSTGRES_PASSWORD", "test-only-not-for-real-use")
 os.environ.setdefault("REDIS_PASSWORD", "test-only-not-for-real-use")
 os.environ.setdefault("INFORM_TOKEN", "test-only-inform-token-not-for-real-use-000000")
-os.environ.setdefault("INGEST_TOKEN", "test-only-ingest-token-not-for-real-use-0000000")
 
 import uuid
 from collections.abc import Awaitable, Callable

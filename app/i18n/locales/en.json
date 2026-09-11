@@ -14,7 +14,7 @@
     "account.api_tokens.create": "Create API token",
     "account.api_tokens.expires_label": "Expires in (days, blank for never)",
     "account.api_tokens.heading": "API tokens",
-    "account.api_tokens.hint": "For scripts/dashboards reading the API (<code>GET /api/v1/honeypots</code>, <code>/api/v1/events</code>) as <code>Authorization: Bearer &lt;token&gt;</code>, or in place of the shared <code>INGEST_TOKEN</code> for <code>POST /api/ingest/events</code> (needs read + write access). A token can do whatever your account currently permits — it stops working immediately if your access level changes or your account is deactivated.",
+    "account.api_tokens.hint": "For scripts/dashboards reading the API (<code>GET /api/v1/honeypots</code>, <code>/api/v1/events</code>) as <code>Authorization: Bearer &lt;token&gt;</code>. A token can do whatever your account currently permits — it stops working immediately if your access level changes or your account is deactivated.",
     "account.api_tokens.name_label": "Name",
     "account.api_tokens.none": "No active API tokens.",
     "account.api_tokens.revoke": "Revoke",

@@ -10,11 +10,10 @@ name: CI
 # `app.core.config.Settings` (see tests/conftest.py), so this workflow
 # only needs to supply them itself for the one other step that imports
 # Settings outside of pytest: a plain `alembic heads`. Deliberately scoped
-# to just that step, not the whole job — setting INGEST_TOKEN/INFORM_TOKEN
-# at the workflow level would override tests/conftest.py's own dummy
-# values for the whole pytest run too, and several tests
-# (tests/test_ingest.py, tests/test_inform.py) hardcode the exact token
-# conftest.py sets and expect a real 401 against anything else.
+# to just that step, not the whole job — setting INFORM_TOKEN at the
+# workflow level would override tests/conftest.py's own dummy value for
+# the whole pytest run too, and tests/test_inform.py hardcodes the exact
+# token conftest.py sets and expects a real 401 against anything else.
 
 on:
   push:
@@ -57,7 +56,6 @@ jobs:
           POSTGRES_PASSWORD: ci-dummy-postgres-password
           REDIS_PASSWORD: ci-dummy-redis-password
           INFORM_TOKEN: ci-dummy-inform-token-not-a-real-value
-          INGEST_TOKEN: ci-dummy-ingest-token-not-a-real-value
         run: |
           heads="$(uv run alembic heads)"
           echo "$heads"

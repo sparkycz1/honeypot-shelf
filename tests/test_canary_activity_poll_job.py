@@ -77,13 +77,12 @@ async def test_poll_still_marks_the_honeypot_seen_when_only_internal_lines_found
     """A poll that only found OpenCanary's own internal log lines stores no
     `HoneypotEvent` (that's reserved for real alert activity), but it DOES
     still count as "the honeypot was seen" — reaching and reading the log
-    at all is itself proof OpenCanary is up, exactly like a push to the
-    ingest endpoint counts as "seen" regardless of that event's own
-    logtype. A quiet, healthy honeypot with no attacker traffic yet must
-    not sit stuck "offline" on the Dashboard just because it has nothing
-    to alert about — see `app.tasks.jobs._poll_honeypot_canary_log`'s own
-    comment for the full reasoning; this replaces a real bug where exactly
-    that used to happen."""
+    at all is itself proof OpenCanary is up, regardless of what it logged.
+    A quiet, healthy honeypot with no attacker traffic yet must not sit
+    stuck "offline" on the Dashboard just because it has nothing to alert
+    about — see `app.tasks.jobs._poll_honeypot_canary_log`'s own comment
+    for the full reasoning; this replaces a real bug where exactly that
+    used to happen."""
     monkeypatch.setattr("app.db.session.AsyncSessionLocal", db_session_factory)
     company = await create_company(db_session_factory)
     async with db_session_factory() as db:
@@ -162,9 +161,9 @@ async def test_poll_does_not_mark_seen_when_the_read_itself_failed(
 async def test_poll_forwards_each_real_alert_to_the_companys_syslog_target(
     db_session_factory, monkeypatch
 ):
-    """Same company-scoped syslog forwarding the push-ingest path gets
-    (see tests/test_ingest.py) — the SSH-poll path must forward too,
-    since it's just as valid a way for a real alert to arrive."""
+    """Every real alert the SSH poll finds gets forwarded to the
+    triggering honeypot's own company syslog target(s), same as the
+    (now-removed) push endpoint used to."""
     monkeypatch.setattr("app.db.session.AsyncSessionLocal", db_session_factory)
     async with db_session_factory() as db:
         company = Company(

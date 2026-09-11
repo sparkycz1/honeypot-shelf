@@ -24,7 +24,7 @@ for this, for no behavioral difference over running the same handful of
 idempotent shell commands through the SSH connection this app already has
 everywhere else. (The team's own separate Ansible-based imaging/install
 runbook, run once when a Pi is first provisioned, is complementary to
-this, not replaced by it — see wiki/Honeypot-Onboarding.md.)
+this, not replaced by it.)
 
 Requires connecting as root (or an account that already behaves like
 root) — that one-time credential is the whole point of onboarding a

@@ -44,7 +44,6 @@ from app.web.routes import (
     dashboard,
     honeypots,
     inform,
-    ingest,
     initialize,
     initialize_ws,
     live_ws,
@@ -254,7 +253,6 @@ def create_app() -> FastAPI:
     app.include_router(scheduling.router)
     app.include_router(audit.router)
     app.include_router(inform.router)
-    app.include_router(ingest.router)
     app.include_router(api_v1.router)
     app.include_router(api_v1_scheduling.router)
     app.include_router(api_v1_users.router)

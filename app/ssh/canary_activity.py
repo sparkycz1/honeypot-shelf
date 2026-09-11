@@ -52,9 +52,8 @@ class LogPollResult(NamedTuple):
 def parse_read_output(raw: str) -> LogPollResult:
     """Split `build_read_command`'s output into parsed JSON events (one per
     complete OpenCanary log line — a malformed/non-JSON line is silently
-    skipped, same tolerance `app.web.routes.ingest` already has for
-    whatever a forwarder sends) and the offset the *next* poll should start
-    from."""
+    skipped rather than aborting the whole poll) and the offset the *next*
+    poll should start from."""
     marker_prefix = f"\n{_MARKER} "
     marker_index = raw.rfind(marker_prefix)
     if marker_index == -1:

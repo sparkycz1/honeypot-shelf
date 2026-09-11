@@ -1,6 +1,4 @@
-"""Per-user API tokens for the read-only REST API (`app.web.routes.api_v1`)
-and, as an alternative to the shared `INGEST_TOKEN`, for
-`POST /api/ingest/events` — see that route's module docstring.
+"""Per-user API tokens for the REST API (`app.web.routes.api_v1`).
 
 A token authorizes whatever its owning user's company + access level
 currently permits, checked fresh on every request

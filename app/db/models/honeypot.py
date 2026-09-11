@@ -27,9 +27,8 @@ counts/packages mirror debcontrol's `Machine` exactly — see
 **Two independent "is this honeypot alive" signals coexist** — don't
 conflate them: `is_reachable`/`last_ping_at` is the SSH-management-plane
 check (same as debcontrol); `last_seen_at`/`last_seen_ip` is when this
-honeypot last *produced* an OpenCanary event — either pushed to `POST
-/api/ingest/{id}/events`, or found by HoneyHive itself SSH-polling
-OpenCanary's own log (see `app.ssh.canary_activity`,
+honeypot last *produced* an OpenCanary event, found by Honeypot Shelf
+itself SSH-polling OpenCanary's own log (see `app.ssh.canary_activity`,
 `app.services.honeypot_status`) — a honeypot can be SSH-reachable but have
 OpenCanary itself down, or vice versa.
 """
@@ -171,14 +170,14 @@ class Honeypot(Base):
     packages_updated_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     # --- Event ingestion (this project's own addition — see
-    # app/web/routes/ingest.py and app.services.honeypot_status) ---
+    # app.services.honeypot_status) ---
     last_seen_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
     last_seen_at: Mapped[datetime | None] = mapped_column(nullable=True, index=True)
 
     # --- Activity tab: SSH-polling OpenCanary's own log (see
     # app.ssh.canary_activity, app.tasks.jobs.poll_all_honeypot_canary_logs)
-    # — the other way (besides the ingest push above) a HoneypotEvent row
-    # gets created; see HoneypotEvent.source. ---
+    # — the only way a HoneypotEvent row gets created; see
+    # HoneypotEvent.source. ---
     # Byte offset already read from OPENCANARY_LOG_PATH — only the bytes
     # appended since this offset are fetched on the next poll. Reset to 0 if
     # the file has shrunk since (rotated/truncated).

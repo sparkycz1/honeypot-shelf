@@ -52,7 +52,7 @@ from app.db.models.honeypot_service import HoneypotService
 from app.db.models.honeypot_update_run import HoneypotUpdateRun, UpdateRunStatus, UpgradeStrategy
 from app.services.company_stats import compute_company_stats
 from app.services.honeypot_event_syslog import forward_honeypot_event_to_syslog
-from app.services.honeypot_events import EventSource, build_event
+from app.services.honeypot_events import build_event
 from app.services.honeypot_status import offline_cutoff
 from app.services.live_updates import (
     KIND_ACTIVITY,
@@ -1274,9 +1274,9 @@ async def _poll_honeypot_canary_log(honeypot_id: str) -> dict[str, Any]:
     (`source="ssh_poll"`) — the Activity tab. Requires a pinned host key —
     honeypots without one are skipped, same as monitoring/facts sampling.
 
-    Unlike the push-ingest endpoint, this can also *advance*
-    `Honeypot.opencanary_log_offset` on a poll that found zero new events
-    (nothing new since last time is the common case, not an error)."""
+    Advances `Honeypot.opencanary_log_offset` even on a poll that found
+    zero new events — nothing new since last time is the common case, not
+    an error."""
     async with db_session.AsyncSessionLocal() as session:
         honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
         if honeypot is None:
@@ -1306,18 +1306,14 @@ async def _poll_honeypot_canary_log(honeypot_id: str) -> dict[str, Any]:
             for payload in result.events
             if not is_internal_logtype(payload.get("logtype"))
         ]
-        new_rows = [
-            build_event(honeypot, payload, source=EventSource.SSH_POLL) for payload in alert_events
-        ]
+        new_rows = [build_event(honeypot, payload) for payload in alert_events]
         session.add_all(new_rows)
         if result.new_offset >= 0:
             honeypot.opencanary_log_offset = result.new_offset
             # A successful poll — the log file was reached and read,
             # whether or not it held any new *alert* lines this time — is
-            # itself proof OpenCanary is up, exactly like a push to the
-            # ingest endpoint counts as "seen" regardless of that event's
-            # own logtype (`app.web.routes.ingest.ingest_event`). Gating
-            # this on alert_events instead (the original shape) meant a
+            # itself proof OpenCanary is up. Gating this on alert_events
+            # instead (the original shape) meant a
             # quiet, healthy honeypot with no attacker traffic could sit
             # marked "offline" on the Dashboard indefinitely once internal
             # log noise stopped propping last_seen_at up by accident — see

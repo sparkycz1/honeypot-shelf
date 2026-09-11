@@ -5,12 +5,13 @@ fields `logtype`, `local_time`, `src_host`, `src_port`, `dst_host`,
 `dst_port`, `node_id`) — see
 https://github.com/thinkst/opencanary/blob/master/opencanary/logger.py and
 the module list in the OpenCanary wiki for what `logtype`/`logdata` look
-like per service (SSH, Telnet, FTP, HTTP, SMB, ...). `POST
-/api/ingest/events` (`app.web.routes.ingest`) accepts that shape close to
-verbatim — `raw` keeps the untouched payload for anything the UI doesn't
-special-case yet; the handful of promoted columns below exist purely so the
-common list/filter/dashboard queries don't have to unpack JSON on every
-row.
+like per service (SSH, Telnet, FTP, HTTP, SMB, ...). `app.ssh.
+canary_activity`/`app.services.honeypot_events.build_event` — reached by
+SSH-polling a honeypot's own log, the only way a row is created — accepts
+that shape close to verbatim. `raw` keeps the untouched payload for
+anything the UI doesn't special-case yet; the handful of promoted columns
+below exist purely so the common list/filter/dashboard queries don't have
+to unpack JSON on every row.
 """
 
 from __future__ import annotations
@@ -60,14 +61,15 @@ class HoneypotEvent(Base):
     # source of truth for anything not promoted to its own column above.
     raw: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
 
-    # How this row got here — "push" (a forwarder called POST
-    # /api/ingest/{id}/events, see app/web/routes/ingest.py) or "ssh_poll"
-    # (HoneyHive itself read a new line from OpenCanary's log over SSH, see
+    # How this row got here — always "ssh_poll" now (Honeypot Shelf itself
+    # read a new line from OpenCanary's log over SSH — see
     # app.ssh.canary_activity/app.tasks.jobs.poll_all_honeypot_canary_logs).
-    # Free text like `event_type`, not an enum, for the same reason — kept
-    # simple since there are only ever the two values in practice. Existing
-    # rows predate this column and were all "push" (see the migration).
-    source: Mapped[str] = mapped_column(String(20), nullable=False, server_default="push")
+    # A now-removed forwarder-push endpoint used to also write "push" rows;
+    # some existing deployments may still have historical rows with that
+    # value. Free text like `event_type`, not an enum, for the same
+    # reason — kept simple even though there's only ever one value written
+    # going forward.
+    source: Mapped[str] = mapped_column(String(20), nullable=False, server_default="ssh_poll")
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid only
         return (

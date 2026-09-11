@@ -3,7 +3,7 @@
 # scratch: the Postgres database, and `.env` (holds ENCRYPTION_KEY, without
 # which every stored honeypot password/private key and other encrypted
 # secret is unrecoverable ciphertext, plus SECRET_KEY, POSTGRES_PASSWORD,
-# REDIS_PASSWORD, INGEST_TOKEN). Unlike debcontrol, Honeypot Shelf keeps no
+# REDIS_PASSWORD, INFORM_TOKEN). Unlike debcontrol, Honeypot Shelf keeps no
 # shared app-level SSH identity volume to back up separately — every
 # honeypot's own credential lives in the database, encrypted with
 # ENCRYPTION_KEY (see app.core.security).

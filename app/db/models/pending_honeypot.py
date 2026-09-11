@@ -1,8 +1,9 @@
 """A honeypot that announced itself via POST /api/inform, awaiting review
-— same mechanism and purpose as debcontrol's `PendingMachine`, distinct
-from `POST /api/ingest/{id}/events` (OpenCanary event data for an
-*already-registered* honeypot — see `app/web/routes/ingest.py`). This is
-the "here's a brand new Pi, nobody in HoneyHive knows about it yet" path.
+— same mechanism and purpose as debcontrol's `PendingMachine`. This is
+the "here's a brand new Pi, nobody in HoneyHive knows about it yet" path
+— an *already-registered* honeypot's own OpenCanary events, by contrast,
+are read straight off it over SSH (see `app.services.honeypot_events`),
+nothing to announce.
 
 Self-registration is authenticated with a shared bearer token
 (`INFORM_TOKEN`), not by anything SSH-related — nothing here is trusted for

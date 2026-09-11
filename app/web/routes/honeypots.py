@@ -2787,8 +2787,7 @@ async def honeypot_status_tab(
     read from its own log over SSH every `opencanary_log_poll_interval_
     seconds` (see `app.ssh.canary_activity`,
     `app.tasks.jobs.poll_honeypot_canary_log`) and stored as `HoneypotEvent`
-    rows (`source="ssh_poll"`) exactly like a pushed ingest event. Same
-    aggregate-chart-plus-recent-list shape as the Dashboard, but scoped to
+    rows. Same aggregate-chart-plus-recent-list shape as the Dashboard, but scoped to
     this one honeypot and with a time-range picker like the Monitoring
     tab's."""
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)

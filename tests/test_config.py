@@ -15,7 +15,6 @@ _BASE_ENV = {
     "SECRET_KEY": "test-only-secret-key-not-for-real-use-000000",
     "ENCRYPTION_KEY": "IYH8EiMlmjkDacPXmvWQgDjTojLMD6GDwD8STyL1x0Y=",
     "INFORM_TOKEN": "test-only-inform-token-not-for-real-use-000000",
-    "INGEST_TOKEN": "test-only-ingest-token-not-for-real-use-0000000",
 }
 
 

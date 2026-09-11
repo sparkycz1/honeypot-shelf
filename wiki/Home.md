@@ -16,8 +16,9 @@ A honeypot is managed exactly like a machine in
 [debcontrol](https://github.com/sparkycz1/debcontrol) (a sister project
 for Debian fleets, where this project's stack, layout, auth system, and
 SSH management layer were all ported from) — plus this project's own
-addition: honeypots push OpenCanary events in, and the Dashboard sums
-them per company. Full "what was reused vs. what's different" story in
+addition: an SSH poll reads OpenCanary's own events straight off each
+honeypot, and the Dashboard sums them per company. Full "what was reused
+vs. what's different" story in
 [CLAUDE.md](../CLAUDE.md); this page is the map, not the territory.
 
 ```mermaid
@@ -42,7 +43,7 @@ flowchart LR
 > [!NOTE]
 > Two independent "is it alive" signals per honeypot, and they mean
 > different things: `is_reachable` is a plain SSH-plane ping; `last_seen_at`
-> is "OpenCanary itself pushed or was polled for a real event." A honeypot
+> is "the SSH log poll last found OpenCanary itself alive." A honeypot
 > can be reachable with OpenCanary dead, or vice versa — see
 > [Architecture](Architecture.md#honeypot-data-model).
 
@@ -53,7 +54,6 @@ flowchart LR
 | [🚀 Installation](Installation.md) | Stand the thing up — Docker, reverse proxy, backups |
 | [🏗️ Architecture](Architecture.md) | Understand *why* it's built this way (the deep-dive reference) |
 | [🌱 Initialize](Honeypot-Initialize.md) | Provision a brand-new Raspberry Pi into a honeypot over SSH |
-| [🍯 Honeypot Onboarding](Honeypot-Onboarding.md) | Teach an already-imaged Pi to report in, without Initialize |
 | [🛠️ Development](Development.md) | Run it locally, add a feature, ship a migration |
 
 ## 🔒 Sitting behind a reverse proxy

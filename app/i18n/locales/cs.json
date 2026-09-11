@@ -14,7 +14,7 @@
     "account.api_tokens.create": "Vytvořit API token",
     "account.api_tokens.expires_label": "Platnost (dny, prázdné = navždy)",
     "account.api_tokens.heading": "API tokeny",
-    "account.api_tokens.hint": "Pro skripty/dashboardy čtoucí API (<code>GET /api/v1/honeypots</code>, <code>/api/v1/events</code>) jako <code>Authorization: Bearer &lt;token&gt;</code>, nebo místo sdíleného <code>INGEST_TOKEN</code> pro <code>POST /api/ingest/events</code> (potřebuje přístup pro čtení i zápis). Token může dělat cokoliv, co aktuálně smí tvůj účet — přestane fungovat okamžitě, jakmile se změní tvůj přístup nebo je účet deaktivován.",
+    "account.api_tokens.hint": "Pro skripty/dashboardy čtoucí API (<code>GET /api/v1/honeypots</code>, <code>/api/v1/events</code>) jako <code>Authorization: Bearer &lt;token&gt;</code>. Token může dělat cokoliv, co aktuálně smí tvůj účet — přestane fungovat okamžitě, jakmile se změní tvůj přístup nebo je účet deaktivován.",
     "account.api_tokens.name_label": "Název",
     "account.api_tokens.none": "Žádné aktivní API tokeny.",
     "account.api_tokens.revoke": "Zneplatnit",

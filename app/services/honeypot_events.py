@@ -1,10 +1,15 @@
-"""Turning one OpenCanary JSON payload into a `HoneypotEvent` row — shared
-between the two ways a row gets created: a forwarder pushing to `POST
-/api/ingest/{id}/events` (`app.web.routes.ingest`) and HoneyHive itself
-SSH-polling OpenCanary's own log (`app.ssh.canary_activity`,
-`app.tasks.jobs.poll_honeypot_canary_log`). Both hand OpenCanary's payload
-shape to `build_event` close to verbatim — see
+"""Turning one OpenCanary JSON payload into a `HoneypotEvent` row — the one
+way a row gets created now: HoneyHive itself SSH-polling OpenCanary's own
+log (`app.ssh.canary_activity`, `app.tasks.jobs.poll_honeypot_canary_log`).
+Hands OpenCanary's payload shape to `build_event` close to verbatim — see
 `app.db.models.honeypot_event`'s module docstring for that shape.
+
+There used to be a second way — a forwarder on the honeypot pushing to
+`POST /api/ingest/{id}/events` — removed per explicit instruction: the SSH
+poll already covers every honeypot with no forwarder to set up, so the
+push path was pure redundancy. `HoneypotEvent.source` still holds
+`"push"` on rows ingested that way before the removal; nothing new is
+ever written with it.
 """
 
 from __future__ import annotations
@@ -17,8 +22,12 @@ from app.db.models.honeypot_event import HoneypotEvent
 
 
 class EventSource:
-    """`HoneypotEvent.source` values — a plain string, not an enum, matching
-    `event_type`'s own "free text" convention."""
+    """`HoneypotEvent.source` values — a plain string, not an enum,
+    matching `event_type`'s own "free text" convention.
+
+    `PUSH` is historical only (see the module docstring) — kept so
+    existing rows from before the push endpoint was removed still parse
+    and display correctly; `build_event` below never produces it."""
 
     PUSH = "push"
     SSH_POLL = "ssh_poll"
@@ -40,8 +49,9 @@ def parse_occurred_at(payload: dict[str, Any]) -> datetime:
     return datetime.now(UTC)
 
 
-def build_event(honeypot: Honeypot, payload: dict[str, Any], *, source: str) -> HoneypotEvent:
-    """One `HoneypotEvent` from one OpenCanary payload — not yet added to a
+def build_event(honeypot: Honeypot, payload: dict[str, Any]) -> HoneypotEvent:
+    """One `HoneypotEvent` from one OpenCanary payload, always sourced from
+    the SSH log poll (see the module docstring) — not yet added to a
     session or committed, that's the caller's job (it may want to batch
     several, or set `honeypot.last_seen_at` alongside)."""
     return HoneypotEvent(
@@ -54,5 +64,5 @@ def build_event(honeypot: Honeypot, payload: dict[str, Any], *, source: str) -> 
         src_port=payload.get("src_port"),
         dst_port=payload.get("dst_port"),
         raw=payload,
-        source=source,
+        source=EventSource.SSH_POLL,
     )
