@@ -44,7 +44,7 @@ flowchart LR
 ```
 
 **The data flow is inverted from debcontrol's**: debcontrol's `web`
-process reaches out over SSH to managed machines. HoneyHive never reaches
+process reaches out over SSH to managed machines. Honeypot Shelf never reaches
 into a honeypot at all — a honeypot's own forwarder pushes events in (see
 [Honeypot Onboarding](Honeypot-Onboarding.md)). There is no SSH client
 dependency in this codebase.
@@ -78,7 +78,7 @@ model layered on top:
 
 ### No accounts are ever auto-created
 
-Same as debcontrol: every `User` row is created inside HoneyHive first
+Same as debcontrol: every `User` row is created inside Honeypot Shelf first
 (`scripts/create_admin.py` for the very first superadmin, the Users page
 after that) — never by LDAP or OIDC. `auth_provider` only decides *how* an
 existing account proves who it is.
@@ -199,7 +199,7 @@ at all** — every other SSH-connecting feature (`app.ssh.*`, all gated
 through a real `Honeypot`) requires one first. It's a standalone,
 one-shot provisioning script (`app.ssh.initialize`) adapted from the
 team's own Ansible playbook, run before a device is ever added to
-HoneyHive. Because there's no prior `Honeypot.host_key_fingerprint` to
+Honeypot Shelf. Because there's no prior `Honeypot.host_key_fingerprint` to
 check against, host-key trust here is deliberately trust-on-first-use —
 the one explicit exception to the strict pinned-verification policy
 `app.ssh.client` otherwise enforces everywhere. A throwaway, never-
@@ -227,12 +227,12 @@ same constraint `app.services.live_updates` already has for a related
 reason, and the same fix (move it to Redis) would apply if that ever
 changes.
 
-**Second-to-last step: installs `authorized_keys`.** HoneyHive's own
+**Second-to-last step: installs `authorized_keys`.** Honeypot Shelf's own
 shared identity public key, plus every current superadmin's personal
 key(s) (My account → SSH public keys, see "Superadmin personal SSH keys"
 under "Security model" below), are appended — idempotently, additively,
 home-dir-aware (`app.ssh.authorized_keys`) — to the account Initialize
-connected as, so both HoneyHive and every superadmin can reach the device
+connected as, so both Honeypot Shelf and every superadmin can reach the device
 directly afterward without the one-time password/key this run itself
 used. Skipped (not fatal) if there's nothing to install.
 
@@ -255,8 +255,8 @@ works, no code changes anywhere else in this app.
 | | NetBird | WireGuard |
 |---|---|---|
 | **Status** | ✅ Built | ✅ Built |
-| **Solves NAT on both ends?** | Yes — NetBird's coordination/relay server (the public NetBird Cloud, or your own self-hosted management server) does the NAT traversal/hole-punching for you | **No** — plain WireGuard has no relay of its own. It only works if the WireGuard server the operator already runs (HoneyHive and the honeypot both just join it as peers — see below) is itself reachable, and even then only *that* NAT (the server's) is solved, not each peer's |
-| **What HoneyHive enters** | A setup key + management URL (Settings → VPN) | A complete peer config — the same `.conf` a WireGuard server admin hands out to any other client (Settings → VPN) |
+| **Solves NAT on both ends?** | Yes — NetBird's coordination/relay server (the public NetBird Cloud, or your own self-hosted management server) does the NAT traversal/hole-punching for you | **No** — plain WireGuard has no relay of its own. It only works if the WireGuard server the operator already runs (Honeypot Shelf and the honeypot both just join it as peers — see below) is itself reachable, and even then only *that* NAT (the server's) is solved, not each peer's |
+| **What Honeypot Shelf enters** | A setup key + management URL (Settings → VPN) | A complete peer config — the same `.conf` a WireGuard server admin hands out to any other client (Settings → VPN) |
 | **What a honeypot enters** (Initialize) | Its own setup key + management URL | Its own peer config |
 | **"Log"** | The NetBird daemon's own log file, tailed | Thinner — WireGuard itself has no daemon/log; the closest equivalent is `wg-quick up/down`'s own command output plus `wg show` for live state |
 
@@ -313,21 +313,21 @@ honeypot unreachable until someone noticed and clicked Connect again.
 
 This is a **different** NetBird connection from the one already on the
 [Initialize](Honeypot-Initialize.md) form — that one joins the *honeypot
-being provisioned* to your network; this one joins *HoneyHive's own
+being provisioned* to your network; this one joins *Honeypot Shelf's own
 management-plane containers*. A deployment can use either independently,
 but only the combination of both actually reaches a honeypot that has no
 other route to it.
 
 ### WireGuard — built
 
-Per the product decision behind this design: HoneyHive does **not** run
+Per the product decision behind this design: Honeypot Shelf does **not** run
 its own WireGuard server. It joins an **existing WireGuard server the
 operator already runs somewhere reachable** as a plain peer — exactly
 the same relationship a honeypot has to it too. Concretely, that means
 Settings → VPN's WireGuard option is a **paste your peer config**
 textarea (a standard `wg-quick`-style `.conf` — the same file any
 WireGuard server admin tool already hands out per client/peer), not a
-key-generation wizard: HoneyHive doesn't need to know how to mint
+key-generation wizard: Honeypot Shelf doesn't need to know how to mint
 WireGuard keys or manage a peer table, it just needs to bring up the
 interface described by the config it's given, the same as a human running
 `wg-quick up wg0` would. Initialize's WireGuard option is the same idea
@@ -392,7 +392,7 @@ the sense of not being redisplayed once saved).
 Initialize's own "VPN" field (None/NetBird/WireGuard, a same-`name` radio
 group toggled via `static/js/toggle-hidden.js` — extended to support
 radio groups, not just a single checkbox, for this) is the honeypot-side
-counterpart, entirely independent of HoneyHive's own choice above:
+counterpart, entirely independent of Honeypot Shelf's own choice above:
 `app.ssh.initialize.build_initialize_command`'s `vpn_provider` parameter
 installs at most one of `netbird`/`wireguard-tools` on the device (never
 both, and neither when "None" is picked, unlike the old behavior which
@@ -404,7 +404,7 @@ running daemon the way NetBird's connection does) for the WireGuard case.
 ## 🔒 Honeypot Config: read-only root filesystem + the OpenCanary module editor
 
 The Honeypot Config tab has two independent live-SSH sections, neither
-persisted in HoneyHive's own DB (same "the honeypot's own state is the
+persisted in Honeypot Shelf's own DB (same "the honeypot's own state is the
 only copy of the truth" philosophy the Logs tab documents):
 
 **Read-only root filesystem** (`app.ssh.readonly`) toggles a managed
@@ -476,7 +476,7 @@ regardless of what modules change.
 - **`Company`** — a tenant. One row per customer.
 - **`Honeypot`** — one deployed OpenCanary instance (one Raspberry Pi),
   belonging to exactly one `Company`. Identity + last-seen bookkeeping
-  only; HoneyHive never connects to it.
+  only; Honeypot Shelf never connects to it.
 - **`HoneypotEvent`** — one row per OpenCanary alert, close to OpenCanary's
   own JSON shape (`raw`), with `event_type`/`occurred_at`/`src_ip`/
   `src_port`/`dst_port`/`source` promoted to real columns for the common
@@ -504,7 +504,7 @@ looks identical either way):
    honeypot without needing push configured per-device.)
 2. **SSH poll** (`source="ssh_poll"`) — every
    `OPENCANARY_LOG_POLL_INTERVAL_SECONDS` (default 120, overridable per
-   honeypot), HoneyHive itself connects over the same SSH management
+   honeypot), Honeypot Shelf itself connects over the same SSH management
    plane every other periodic sweep uses and reads whatever's new in
    OpenCanary's own log (`app.ssh.canary_activity`, incremental by byte
    offset — `Honeypot.opencanary_log_offset`) — no forwarder needed at
@@ -558,11 +558,10 @@ reachability and from OpenCanary having emitted any events recently, and
 useful specifically for catching an OpenCanary process that's dead while
 the honeypot itself is still perfectly SSH-reachable.
 
-### Two syslog targets, deliberately never the same one
+### Three syslog targets, deliberately never mixed
 
 This app forwards two completely different kinds of traffic to syslog,
-each to its own, independently-configured target — never mixed, and
-never both to the same place by default:
+across three independently-configured targets:
 
 - **`app.audit_syslog`** — global, one target for the whole deployment,
   configured on Settings → Integrations (`AppSettings.syslog_*`). Carries
@@ -577,6 +576,16 @@ never both to the same place by default:
   in the first place), the instant one arrives via either ingestion path
   (`app.web.routes.ingest.ingest_event` or `app.tasks.jobs.
   _poll_honeypot_canary_log`). **Never** an audit log entry.
+- **The fleet-wide alert target** (`AppSettings.fleet_alert_syslog_*`),
+  configured on the "All honeypots" page's own Integrations tab
+  (`app/web/routes/companies.py`) — not backed by a `Company` row at all
+  (see `all_honeypots_company`'s own docstring for why "All honeypots"
+  never is). Carries *every* honeypot's alerts, fleet-wide, regardless of
+  company — **in addition to**, not instead of, that honeypot's own
+  company target, if both happen to be configured; a central overarching
+  SIEM alongside each tenant's own. Both are tried independently
+  (`forward_honeypot_event_to_syslog`'s own docstring) — one being
+  unreachable, disabled, or unconfigured never affects the other.
 
 Why split by company rather than one shared alert target: this is a
 multi-tenant deployment — company A's SOC shouldn't see company B's
@@ -585,18 +594,56 @@ alert traffic (or vice versa), and each may already run its own SIEM.
 lookup ("which target does *this* alert go to") never needs a join back
 through `Honeypot` — see that model's own docstring.
 
-Both share the same low-level transport
+All three share the same low-level transport
 (`app.services.syslog_transport` — UDP/TCP/TCP-over-TLS, RFC 6587
 octet-counting framing for the two TCP modes, `SyslogProtocol` used by
-both `AppSettings` and `Company`'s columns via the same Postgres enum
-type) and the same message convention: **the RFC 5424 MSG part is always
-a compact JSON object**, never free-text `key="value"` pairs — a
-receiver's own parser (or `jq`) never needs a bespoke grammar for either
-target. Both are best-effort/fire-and-forget: the DB row (an
-`AuditLogEntry`, or a `HoneypotEvent`) is always the source of truth,
-this is only ever a live mirror of it, and a delivery failure at either
+`AppSettings`' two target columns and `Company`'s own, all via the same
+Postgres enum type) and the same message convention: **the RFC 5424 MSG
+part is always a compact JSON object**, never free-text `key="value"`
+pairs — a receiver's own parser (or `jq`) never needs a bespoke grammar
+for any of them. All three are best-effort/fire-and-forget: the DB row
+(an `AuditLogEntry`, or a `HoneypotEvent`) is always the source of truth,
+this is only ever a live mirror of it, and a delivery failure at any
 target is logged and swallowed, never allowed to affect the action/event
-that triggered it.
+that triggered it or delivery to another target.
+
+The "All honeypots" page also dropped its own bulk update/power sections
+this same round (`trigger_all_honeypots_update`/`all_power_action` and
+friends, removed from `app/web/routes/companies.py`) — the Honeypots
+list's own bulk-select actions already cover the same ground with
+finer-grained selection, making the separate "type ALL HONEYPOTS to
+confirm" flow here redundant. The REST API's equivalent endpoints
+(`app/web/routes/api_v1.py`) are untouched — this was a web-UI-only
+removal.
+
+### SMTP — configured, not yet wired to send anything
+
+`AppSettings.smtp_*` (Settings → Integrations) holds an outbound mail
+relay's connection details — host/port/`SmtpEncryption`
+(none/STARTTLS/SSL-TLS)/username/password (encrypted, same convention as
+`ldap_bind_password_encrypted`)/from address/from name. Deliberately
+config-only for this round, per explicit instruction — `app.services.smtp`
+exists as a stub with the planned shape documented in its own docstring;
+nothing calls into it yet, and no notification feature exists to trigger
+a send.
+
+### Alert type labels are now localized
+
+`app.services.opencanary_logtypes.localized_logtype_label` — a real bug,
+found live: OpenCanary `logtype` labels ("SSH login attempt", "HTTP GET
+request", ...) were hardcoded English everywhere, even on an otherwise
+fully-translated Czech page (the Dashboard's "activity by alert type"
+chart and the Activity tab's own chart/table). `logtype_label` (plain
+English, unchanged) still backs every machine-consumed caller — the REST
+API, CSV/JSON export, both syslog forwarders — deliberately: an API
+response shouldn't vary by whichever session happened to trigger it.
+Only the two template-rendering call sites
+(`app.services.canary_activity_history`'s `build_activity_history`/
+`summarize_recent_events`, and the `canary_label` Jinja filter used
+directly in a couple of templates) go through the localized version,
+threading `t(request, ...)` in as a plain `Callable[[object], str]`
+default-argument override. i18n keys: `opencanary.event_label.<id>`, one
+per known `logtype`, in every `app/i18n/locales/*.json` file.
 
 ### Live updates over WebSocket, and "Refresh now"
 
@@ -718,7 +765,7 @@ output from `scripts/generate_secrets.py`) — just now decoded straight to
 
 ### FIPS alignment
 
-HoneyHive does not claim FIPS 140-2/140-3 **certification** — that means
+Honeypot Shelf does not claim FIPS 140-2/140-3 **certification** — that means
 running against a NIST-validated cryptographic module (a CMVP
 certificate), a build/deployment decision (which OpenSSL build, which
 base image) no amount of application code can grant on its own. The stock
@@ -800,7 +847,7 @@ paste their own personal SSH public key(s) — one `authorized_keys`-ready
 line each, validated on save (`app.auth.ssh_keys.parse_ssh_public_keys`,
 via `asyncssh.import_public_key` — the whole submission is rejected, not
 partially saved, if any line doesn't parse) — for logging into a honeypot
-directly, alongside HoneyHive's own management access. **Superadmin-only
+directly, alongside Honeypot Shelf's own management access. **Superadmin-only
 by design**: the field, and the "Push to every honeypot" button next to
 it, only appear for a superadmin account, and both the field's stored
 value and the button's route are only ever *read* for a superadmin (a
@@ -811,7 +858,7 @@ capability the way superadmin itself is, not something company scoping
 should ever widen. Two things read it:
 
 - **Initialize** (see above) installs every current superadmin's key(s),
-  plus HoneyHive's own shared identity key, onto a freshly provisioned
+  plus Honeypot Shelf's own shared identity key, onto a freshly provisioned
   device.
 - **"Push to every honeypot"** (`/account/ssh-keys/push`,
   `app.tasks.jobs.push_superadmin_ssh_keys`) does the same for the

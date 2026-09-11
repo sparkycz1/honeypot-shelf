@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{{ t(request, 'honeypots.power_confirm.action_reboot') if action.value == 'reboot' else t(request, 'honeypots.power_confirm.action_shutdown') }} {{ target_label }} — HoneyHive{% endblock %}
+{% block title %}{{ t(request, 'honeypots.power_confirm.action_reboot') if action.value == 'reboot' else t(request, 'honeypots.power_confirm.action_shutdown') }} {{ target_label }} — Honeypot Shelf{% endblock %}
 
 {% block content %}
   <h1>{{ t(request, 'honeypots.power_confirm.action_reboot') if action.value == 'reboot' else t(request, 'honeypots.power_confirm.action_shutdown') }} {{ target_label }}?</h1>

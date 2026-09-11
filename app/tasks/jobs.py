@@ -1331,7 +1331,7 @@ async def _poll_honeypot_canary_log(honeypot_id: str) -> dict[str, Any]:
         await session.commit()
         await publish_honeypot_event(honeypot_id, KIND_ACTIVITY)
         for row in new_rows:
-            await forward_honeypot_event_to_syslog(honeypot.company, honeypot, row)
+            await forward_honeypot_event_to_syslog(session, honeypot.company, honeypot, row)
 
         return {"ok": True, "new_events": len(alert_events)}
 

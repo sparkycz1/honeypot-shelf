@@ -10,7 +10,7 @@ locale (English + Czech, matching this app's own two) and timezone
 config, the device's hostname/`/etc/hosts` entry, at most one of
 [NetBird](https://netbird.io) or [WireGuard](https://www.wireguard.com)
 (per the VPN field below — see [Architecture](Architecture.md)'s "VPN
-connectivity" section for how this relates to HoneyHive's own,
+connectivity" section for how this relates to Honeypot Shelf's own,
 independent VPN choice in Settings → VPN), generating OpenCanary's own config
 (`opencanaryd --copyconfig`), and — confirmed against
 [OpenCanary's own wiki](https://github.com/thinkst/opencanary/wiki) as the
@@ -37,14 +37,14 @@ the interactive SSH terminal. A run can take up to an hour on a slow Pi
 socket stays open the whole time.
 
 **This is a separate, earlier step from onboarding a `Honeypot` already
-in HoneyHive** ([Architecture.md](Architecture.md)'s onboarding
+in Honeypot Shelf** ([Architecture.md](Architecture.md)'s onboarding
 paragraph, the "Run initial setup" button on a honeypot's Settings tab):
-Initialize targets a device that isn't in HoneyHive's database at all
+Initialize targets a device that isn't in Honeypot Shelf's database at all
 yet — there's no honeypot row, no pinned host key, nothing to onboard.
 Once it succeeds, add the device the normal way
 ([Installation](Installation.md)/`/honeypots/new`), which discovers and
 pins its host key the usual, non-TOFU way, then (optionally) run its own
-"Run initial setup" to hand SSH management over to HoneyHive's shared
+"Run initial setup" to hand SSH management over to Honeypot Shelf's shared
 `honeyhive` identity.
 
 ## Fields
@@ -56,8 +56,8 @@ pins its host key the usual, non-TOFU way, then (optionally) run its own
 | User | `root`, or any other account already reachable over SSH. Anything other than `root` runs the whole script via `sudo`. |
 | SSH port | Defaults to 22 — the port used for *this run only*, to reach the device as it is right now. |
 | New SSH port | Defaults to **22222**. As the very last step, on success, the device's own sshd is moved to this port (see "SSH moves to a new port on success" below); use it, not the port above, when adding the device as a honeypot afterward. Editable per run — e.g. set it to the same value as "SSH port" above to leave a device's SSH port unchanged on a re-run. |
-| Authentication | HoneyHive's own shared identity key (assumed already authorized on the device — e.g. preseeded via RPi Imager; see Settings for the public key) or a one-time password. Neither the password nor any of the VPN fields below is ever stored — all of them are used for this one run only. |
-| VPN | None (default), NetBird, or WireGuard — the device's own connection, independent of HoneyHive's own VPN choice in Settings → VPN (see [Architecture](Architecture.md)). Picking one reveals its own fields below; picking neither installs neither package. |
+| Authentication | Honeypot Shelf's own shared identity key (assumed already authorized on the device — e.g. preseeded via RPi Imager; see Settings for the public key) or a one-time password. Neither the password nor any of the VPN fields below is ever stored — all of them are used for this one run only. |
+| VPN | None (default), NetBird, or WireGuard — the device's own connection, independent of Honeypot Shelf's own VPN choice in Settings → VPN (see [Architecture](Architecture.md)). Picking one reveals its own fields below; picking neither installs neither package. |
 | NetBird setup key | Optional (shown when VPN = NetBird). NetBird installs either way; a setup key also joins the device to your network right away (`netbird up --setup-key ...`). Get one from your NetBird management console. |
 | NetBird management URL | Optional (shown when VPN = NetBird). Blank = NetBird Cloud (the public management service); set this only for a self-hosted management server. |
 | WireGuard config | Required when VPN = WireGuard. The device's own peer config — the same `.conf` your WireGuard server admin (or its own UI) already hands out for any client. Written to `/etc/wireguard/wg0.conf` and brought up with `wg-quick up wg0` (and `systemctl enable wg-quick@wg0`, so it survives a reboot). |
@@ -67,20 +67,20 @@ pins its host key the usual, non-TOFU way, then (optionally) run its own
 Every other SSH connection this app makes uses **strict pinned host-key
 verification** — no blind trust on first use (see `app.ssh.client`'s
 module docstring). Initialize is a narrow, explicit exception: since the
-device isn't in HoneyHive at all yet, there is no prior fingerprint to
+device isn't in Honeypot Shelf at all yet, there is no prior fingerprint to
 compare the one it presents against. The fingerprint is shown back after
 the run so an operator can note it down and verify it independently if
 they want to; nothing about it is stored anywhere. The normal "Add
 honeypot" flow that follows uses the real discover-then-confirm flow, not
 this one.
 
-## HoneyHive's and every superadmin's SSH keys are installed
+## Honeypot Shelf's and every superadmin's SSH keys are installed
 
 Second-to-last (right before the port change below), Initialize installs
-HoneyHive's own shared identity public key, plus every current
+Honeypot Shelf's own shared identity public key, plus every current
 superadmin's personal SSH public key(s) (My account → SSH public keys —
 see [Architecture](Architecture.md#superadmin-personal-ssh-keys)), onto
-the account it connected as. This means both HoneyHive and every
+the account it connected as. This means both Honeypot Shelf and every
 superadmin can reach the freshly provisioned device directly afterward
 without needing the one-time password/key this run itself used —
 particularly useful when "Password" was the authentication method above,
@@ -100,7 +100,7 @@ Config tab's module editor) — plus `flatpak`/`snap` if either is present.
 Skipped for a `root` connection (root never needs sudo granted to
 itself). This is the same grant `app.ssh.onboarding` gives its own
 dedicated `honeyhive` user — a freshly Initialized device no longer shows
-up in HoneyHive already failing every readiness check (and, in turn,
+up in Honeypot Shelf already failing every readiness check (and, in turn,
 things that quietly depend on the same sudo, like the Honeypot Config
 tab's "Apply" button) the way one used to before this existed.
 

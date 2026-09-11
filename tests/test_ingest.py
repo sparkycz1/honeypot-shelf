@@ -132,7 +132,7 @@ async def test_ingest_forwards_a_real_alert_to_the_companys_syslog_target(
 
     forwarded = []
 
-    async def fake_forward(company, honeypot, event):
+    async def fake_forward(db, company, honeypot, event):
         forwarded.append((company.name, honeypot.name, event.event_type))
 
     monkeypatch.setattr(

@@ -62,7 +62,7 @@
       </p>
 
       <label for="ldap_bind_dn">{{ t(request, "settings.integrations.ldap.bind_dn") }}</label>
-      <input type="text" id="ldap_bind_dn" name="ldap_bind_dn" placeholder="cn=HoneyHive,ou=services,dc=example,dc=com"
+      <input type="text" id="ldap_bind_dn" name="ldap_bind_dn" placeholder="cn=Honeypot Shelf,ou=services,dc=example,dc=com"
              value="{{ app_settings.ldap_bind_dn or '' }}">
 
       <label for="ldap_bind_password">{{ t(request, "settings.integrations.ldap.bind_password") }}</label>
@@ -133,6 +133,59 @@
       <label for="oidc_scopes">{{ t(request, "settings.integrations.oidc.scopes") }}</label>
       <input type="text" id="oidc_scopes" name="oidc_scopes" value="{{ app_settings.oidc_scopes }}">
       <p class="hint">{{ t(request, "settings.integrations.oidc.scopes_hint") }} <code>openid</code>.</p>
+
+      <button type="submit" class="button">{{ t(request, "common.save") }}</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>{{ t(request, "settings.integrations.smtp.heading") }}</h2>
+    <p class="hint">
+      {{ t(request, "settings.integrations.smtp.hint") }}
+    </p>
+    <form method="post" action="/settings/smtp" class="form" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label for="smtp_enabled">
+        <input type="checkbox" id="smtp_enabled" name="smtp_enabled" value="1"
+               {% if app_settings.smtp_enabled %}checked{% endif %}>
+        {{ t(request, "settings.integrations.enabled") }}
+      </label>
+
+      <label for="smtp_host">{{ t(request, "settings.integrations.smtp.server_host") }}</label>
+      <input type="text" id="smtp_host" name="smtp_host" maxlength="255"
+             placeholder="smtp.example.com" value="{{ app_settings.smtp_host or '' }}">
+
+      <label for="smtp_port">{{ t(request, "settings.integrations.smtp.port") }}</label>
+      <input type="number" id="smtp_port" name="smtp_port" min="1" max="65535"
+             value="{{ app_settings.smtp_port }}">
+
+      <label for="smtp_encryption">{{ t(request, "settings.integrations.smtp.encryption") }}</label>
+      <select id="smtp_encryption" name="smtp_encryption">
+        {% for enc in smtp_encryptions %}
+          <option value="{{ enc.value }}" {% if app_settings.smtp_encryption == enc %}selected{% endif %}>
+            {% if enc.value == 'none' %}{{ t(request, "settings.integrations.smtp.encryption_none") }}
+            {% elif enc.value == 'starttls' %}{{ t(request, "settings.integrations.smtp.encryption_starttls") }}
+            {% else %}{{ t(request, "settings.integrations.smtp.encryption_ssl_tls") }}{% endif %}
+          </option>
+        {% endfor %}
+      </select>
+
+      <label for="smtp_username">{{ t(request, "settings.integrations.smtp.username") }}</label>
+      <input type="text" id="smtp_username" name="smtp_username"
+             value="{{ app_settings.smtp_username or '' }}">
+
+      <label for="smtp_password">{{ t(request, "settings.integrations.smtp.password") }}</label>
+      <input type="password" id="smtp_password" name="smtp_password" autocomplete="new-password"
+             placeholder="{{ t(request, 'settings.integrations.unchanged') if app_settings.smtp_password_encrypted else '' }}">
+      <p class="hint">{{ t(request, "settings.integrations.leave_blank_unchanged") }}</p>
+
+      <label for="smtp_from_address">{{ t(request, "settings.integrations.smtp.from_address") }}</label>
+      <input type="text" id="smtp_from_address" name="smtp_from_address" maxlength="255"
+             placeholder="honeypots@example.com" value="{{ app_settings.smtp_from_address or '' }}">
+
+      <label for="smtp_from_name">{{ t(request, "settings.integrations.smtp.from_name") }}</label>
+      <input type="text" id="smtp_from_name" name="smtp_from_name" maxlength="255"
+             placeholder="Honeypot Shelf" value="{{ app_settings.smtp_from_name or '' }}">
 
       <button type="submit" class="button">{{ t(request, "common.save") }}</button>
     </form>

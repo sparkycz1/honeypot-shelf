@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Recover a HoneyHive account from the server console — no login required.
+"""Recover a Honeypot Shelf account from the server console — no login required.
 
 For when someone is locked out and can't get in through the web UI at all:
 a forgotten password, a lost/broken TOTP device, or an account-level

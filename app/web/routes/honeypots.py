@@ -66,7 +66,7 @@ from app.services.honeypot_tags import (
     set_honeypot_tags,
     sync_module_tags,
 )
-from app.services.opencanary_logtypes import logtype_label
+from app.services.opencanary_logtypes import localized_logtype_label, logtype_label
 from app.services.saved_views import (
     DuplicateViewNameError,
     build_query_string,
@@ -2735,13 +2735,17 @@ async def honeypot_logs(
 
 
 async def _build_activity_context(
-    honeypot: Honeypot, range_key: str, db: AsyncSession
+    request: Request, honeypot: Honeypot, range_key: str, db: AsyncSession
 ) -> dict[str, Any]:
     """The Activity tab's own data — same "shared by first-paint/panel/
     refresh routes" shape as `_build_monitoring_context`."""
     range_key = _normalize_range_key(range_key)
     now = datetime.now(UTC)
     since = now - monitoring_history.time_range_delta(range_key)
+
+    def label_of(logtype: object) -> str:
+        return localized_logtype_label(lambda key: t(request, key), logtype)
+
     windowed_result = await db.execute(
         select(HoneypotEvent)
         .where(HoneypotEvent.honeypot_id == honeypot.id, HoneypotEvent.occurred_at >= since)
@@ -2749,7 +2753,13 @@ async def _build_activity_context(
         .limit(canary_activity_history.MAX_RAW_EVENTS)
     )
     windowed_events = list(windowed_result.scalars().all())
-    activity = canary_activity_history.build_activity_history(windowed_events, range_key, now=now)
+    activity = canary_activity_history.build_activity_history(
+        windowed_events,
+        range_key,
+        now=now,
+        label_of=label_of,
+        other_label=t(request, "dashboard.activity_other"),
+    )
 
     recent_result = await db.execute(
         select(HoneypotEvent)
@@ -2758,7 +2768,7 @@ async def _build_activity_context(
         .limit(canary_activity_history.RECENT_EVENTS_LIMIT)
     )
     recent_events = canary_activity_history.summarize_recent_events(
-        list(recent_result.scalars().all())
+        list(recent_result.scalars().all()), label_of=label_of
     )
 
     return {
@@ -2789,7 +2799,7 @@ async def honeypot_status_tab(
     this one honeypot and with a time-range picker like the Monitoring
     tab's."""
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    context = await _build_activity_context(honeypot, range_key, db)
+    context = await _build_activity_context(request, honeypot, range_key, db)
 
     csrf_token, new_cookie = get_or_create_csrf_token(request)
     response = templates.TemplateResponse(
@@ -2819,7 +2829,7 @@ async def honeypot_activity_panel(
     target (see honeypots/status.html) — a plain re-read of whatever's
     currently in the DB, no SSH round trip."""
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    context = await _build_activity_context(honeypot, range_key, db)
+    context = await _build_activity_context(request, honeypot, range_key, db)
     csrf_token, _ = get_or_create_csrf_token(request)
     return templates.TemplateResponse(
         request, "partials/honeypot_activity_content.html", {**context, "csrf_token": csrf_token}
@@ -2866,7 +2876,7 @@ async def refresh_activity_endpoint(
     )
 
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    context = await _build_activity_context(honeypot, range_key, db)
+    context = await _build_activity_context(request, honeypot, range_key, db)
     csrf_token, _ = get_or_create_csrf_token(request)
     return templates.TemplateResponse(
         request, "partials/honeypot_activity_content.html", {**context, "csrf_token": csrf_token}

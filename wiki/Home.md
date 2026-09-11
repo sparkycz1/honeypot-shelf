@@ -1,4 +1,4 @@
-# 🐝 HoneyHive
+# 🐝 Honeypot Shelf
 
 Management and monitoring for a fleet of
 [OpenCanary](https://github.com/thinkst/opencanary) honeypots (Raspberry
@@ -41,7 +41,7 @@ Telnet/databases/RDP/VNC/SIP/SNMP/NTP/TFTP/Git/LLMNR/a generic TCP
 banner/portscan/Samba));
 [Initialize](Honeypot-Initialize.md) — provisioning a brand new
 Raspberry Pi into a working honeypot (packages, OpenCanary, NetBird) over
-SSH before it's ever added to HoneyHive, with a persisted run history for
+SSH before it's ever added to Honeypot Shelf, with a persisted run history for
 debugging a failed provisioning after the fact; Company management (each
 company's own page shows just its users and its honeypots, each with a
 link to add another) and fleet-wide/"All honeypots" bulk actions;
@@ -50,7 +50,7 @@ failed firing, and two on-demand debugging actions ("force OpenCanary log
 poll now"/"force monitoring sample now") alongside update/power/run-
 command; a per-honeypot ingest token (rotate/revoke from that honeypot's
 Settings tab), alternative to the shared `INGEST_TOKEN`; NetBird or
-WireGuard connectivity for HoneyHive's own SSH management plane
+WireGuard connectivity for Honeypot Shelf's own SSH management plane
 (Settings → VPN, an optional `docker-compose.vpn.yml` sidecar — see
 [Architecture](Architecture.md)) for a honeypot that's only reachable over
 one of those; a fleet-wide "activity by alert type" breakdown on the
@@ -67,7 +67,7 @@ aligned crypto defaults (AES-256-GCM secrets at rest, SHA-2-signed
 tickets, a restricted SSH algorithm set — see
 [Architecture](Architecture.md#fips-alignment)); superadmin personal SSH
 public keys (My account), installed onto both a freshly Initialized
-device and, on demand, the existing fleet, alongside HoneyHive's own
+device and, on demand, the existing fleet, alongside Honeypot Shelf's own
 shared identity key (see
 [Architecture](Architecture.md#superadmin-personal-ssh-keys)); full
 **English and Czech i18n** across every page, not just the site chrome. A
@@ -86,7 +86,7 @@ section for what's left (mainly: no CI workflow file).
   power — everything `/honeypots` offers, already scoped to that company).
   Companies/Users/Settings/Audit stay superadmin-only end to end (nav,
   web routes, and REST API).
-- **What does `READ_WRITE` mean on a honeypot?** More than HoneyHive-side
+- **What does `READ_WRITE` mean on a honeypot?** More than Honeypot Shelf-side
   metadata — it includes reaching into the honeypot itself: an interactive
   terminal, and everything debcontrol's `Machine` management already
   covers (facts, packages, system updates, power, running an ad-hoc
@@ -105,6 +105,18 @@ section for what's left (mainly: no CI workflow file).
   company's own alert traffic to that company's own SIEM this way,
   rather than one shared target seeing every company's alerts. Every
   syslog message this app sends — both targets — is JSON.
+- **A third, fleet-wide alert syslog target** — "All honeypots" ->
+  Integrations, `AppSettings.fleet_alert_syslog_*` — fires *in addition
+  to* a honeypot's own company target if both are configured. The "All
+  honeypots" page also dropped its own redundant bulk update/power
+  sections this round (the Honeypots list's own bulk-select already
+  covers the same ground).
+- **SMTP relay settings** (Settings → Integrations) — connection details
+  only for now; actually sending a notification through it is a
+  follow-up task.
+- **OpenCanary alert type labels are now localized** (Czech included) —
+  found live still hardcoded English on an otherwise fully-translated
+  page.
 - **Audit log / Settings visibility**: superadmin-only.
 - **Event retention**: `EVENT_RETENTION_DAYS` defaults to 90 days.
 - **Audit log retention**: `AppSettings.audit_log_retention_days` also

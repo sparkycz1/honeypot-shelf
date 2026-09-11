@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "partials/_os_badge.html" import render as render_os_badge %}
 
-{% block title %}{{ t(request, 'honeypots.title') }} — HoneyHive{% endblock %}
+{% block title %}{{ t(request, 'honeypots.title') }} — Honeypot Shelf{% endblock %}
 
 {% macro status_badge(request, honeypot) %}
   {% if honeypot.is_reachable is none %}

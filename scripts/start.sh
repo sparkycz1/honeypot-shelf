@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start a HoneyHive stack previously stopped with ./scripts/stop.sh (or
+# Start a Honeypot Shelf stack previously stopped with ./scripts/stop.sh (or
 # `docker compose stop`) — auto-detects whether the bundled Caddy reverse
 # proxy and/or the VPN sidecar were part of that deployment, from the
 # stopped-but-still-present containers' own Compose service label (same
@@ -18,7 +18,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 if [ ! -f docker-compose.yml ]; then
-  echo "error: docker-compose.yml not found here — run this from the HoneyHive checkout." >&2
+  echo "error: docker-compose.yml not found here — run this from the Honeypot Shelf checkout." >&2
   exit 1
 fi
 
@@ -41,7 +41,7 @@ fi
 if ! docker ps -a \
     --filter "label=com.docker.compose.project=honeyhive" \
     --format '{{.Names}}' | grep -q .; then
-  echo "error: no existing HoneyHive containers found — nothing to start." >&2
+  echo "error: no existing Honeypot Shelf containers found — nothing to start." >&2
   echo "       First time here? Use: python scripts/setup.py" >&2
   exit 1
 fi

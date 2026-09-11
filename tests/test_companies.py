@@ -218,3 +218,53 @@ async def test_company_integrations_is_superadmin_only(
 
     response = await anonymous_client.get(f"/companies/{company.id}/integrations")
     assert response.status_code == 403
+
+
+async def test_all_honeypots_integrations_tab_updates_fleet_syslog_target(
+    client, db_session_factory
+):
+    form = await client.get("/companies/all/integrations")
+    assert form.status_code == 200
+
+    response = await client.post(
+        "/companies/all/integrations",
+        data={
+            "csrf_token": _csrf_from(form),
+            "syslog_enabled": "1",
+            "syslog_host": "siem.fleet.example.com",
+            "syslog_port": "6514",
+            "syslog_protocol": "tls",
+        },
+    )
+    assert response.status_code == 303
+
+    from app.core.app_settings import get_or_create_app_settings
+
+    async with db_session_factory() as db:
+        app_settings = await get_or_create_app_settings(db)
+        assert app_settings.fleet_alert_syslog_enabled is True
+        assert app_settings.fleet_alert_syslog_host == "siem.fleet.example.com"
+        assert app_settings.fleet_alert_syslog_port == 6514
+        assert app_settings.fleet_alert_syslog_protocol.value == "tls"
+
+
+async def test_all_honeypots_page_no_longer_has_bulk_update_or_power_sections(client):
+    response = await client.get("/companies/all")
+    assert response.status_code == 200
+    assert "/companies/all/updates" not in response.text
+    assert "/companies/all/power" not in response.text
+
+
+async def test_all_honeypots_integrations_is_superadmin_only(
+    anonymous_client, login_as, db_session_factory
+):
+    from app.db.models.user import AccessLevel
+    from tests.conftest import create_company
+
+    company = await create_company(db_session_factory)
+    await login_as(
+        anonymous_client, company_id=company.id, access_level=AccessLevel.READ_WRITE
+    )
+
+    response = await anonymous_client.get("/companies/all/integrations")
+    assert response.status_code == 403

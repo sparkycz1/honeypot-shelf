@@ -166,7 +166,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
 def create_app() -> FastAPI:
     app = FastAPI(
-        title="HoneyHive",
+        title="Honeypot Shelf",
         description=(
             "Management and monitoring overview for a fleet of OpenCanary "
             "honeypots, across multiple companies — see /api for interactive docs."

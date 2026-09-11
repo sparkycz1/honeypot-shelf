@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Back up everything a running HoneyHive instance needs to be restored from
+# Back up everything a running Honeypot Shelf instance needs to be restored from
 # scratch: the Postgres database, and `.env` (holds ENCRYPTION_KEY, without
 # which every stored honeypot password/private key and other encrypted
 # secret is unrecoverable ciphertext, plus SECRET_KEY, POSTGRES_PASSWORD,
-# REDIS_PASSWORD, INGEST_TOKEN). Unlike debcontrol, HoneyHive keeps no
+# REDIS_PASSWORD, INGEST_TOKEN). Unlike debcontrol, Honeypot Shelf keeps no
 # shared app-level SSH identity volume to back up separately — every
 # honeypot's own credential lives in the database, encrypted with
 # ENCRYPTION_KEY (see app.core.security).
@@ -33,7 +33,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 if [ ! -f docker-compose.yml ]; then
-  echo "error: docker-compose.yml not found here — run this from the HoneyHive checkout." >&2
+  echo "error: docker-compose.yml not found here — run this from the Honeypot Shelf checkout." >&2
   exit 1
 fi
 

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "partials/_tabnav.html" import render as render_tabnav %}
 
-{% block title %}{{ t(request, 'honeypots.monitoring.title') }} — {{ honeypot.name }} — HoneyHive{% endblock %}
+{% block title %}{{ t(request, 'honeypots.monitoring.title') }} — {{ honeypot.name }} — Honeypot Shelf{% endblock %}
 
 {# Rotating palette for series that don't have one fixed color (Load
    average's 1/5/15m lines, one line per network interface/disk/filesystem

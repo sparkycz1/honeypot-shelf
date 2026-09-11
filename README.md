@@ -1,4 +1,4 @@
-# <img src="app/web/static/img/logo.svg" width="32" height="32" align="center" alt=""> HoneyHive
+# <img src="app/web/static/img/logo.svg" width="32" height="32" align="center" alt=""> Honeypot Shelf
 
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Python](https://img.shields.io/badge/python-3.14-blue?logo=python&logoColor=white)

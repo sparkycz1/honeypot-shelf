@@ -1,5 +1,5 @@
 """Company scoping (`app.auth.scope`) and the superadmin-only pages —
-the HoneyHive equivalent of debcontrol's test_rbac.py/test_access_scope.py,
+the Honeypot Shelf equivalent of debcontrol's test_rbac.py/test_access_scope.py,
 adapted to the flat superadmin/company+access_level model (see
 `app.db.models.user`'s module docstring)."""
 

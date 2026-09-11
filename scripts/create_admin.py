@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Bootstrap the very first superadmin account.
 
-Every HoneyHive account is created inside the app itself (see
+Every Honeypot Shelf account is created inside the app itself (see
 `app/db/models/user.py` — no auto-provisioning from LDAP/OIDC), and every
 page requires a login (see `app.auth.middleware`) — so a fresh deployment
 needs one way in that isn't a web page. This is it.

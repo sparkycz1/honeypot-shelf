@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ t(request, "auth.totp_challenge.title") }} — HoneyHive</title>
+  <title>{{ t(request, "auth.totp_challenge.title") }} — Honeypot Shelf</title>
   <link rel="icon" href="{{ branding_favicon_url() }}">
   <link rel="stylesheet" href="/static/css/style.css">
 </head>
@@ -12,11 +12,11 @@
     <span class="brand">
       {% set logo = branding_logo_url() %}
       {% if logo %}
-        <img class="brand-mark-lg" src="{{ logo }}" alt="HoneyHive">
+        <img class="brand-mark-lg" src="{{ logo }}" alt="Honeypot Shelf">
       {% else %}
         {% set mark_class = "brand-mark-lg" %}
         {% include "partials/_brand_mark.html" %}
-        <span class="sr-only">HoneyHive</span>
+        <span class="sr-only">Honeypot Shelf</span>
       {% endif %}
     </span>
     <div class="panel">

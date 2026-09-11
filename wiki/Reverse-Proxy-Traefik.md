@@ -1,16 +1,16 @@
 # 🔒 Reverse proxy: Traefik
 
-Use this if you already run Traefik on the host where HoneyHive's
+Use this if you already run Traefik on the host where Honeypot Shelf's
 `docker compose up -d --build` (the base file, without
 `docker-compose.caddy.yml`) is running, exposing the app on
 `127.0.0.1:8080` (or whatever `APP_PORT` you set in `.env`). Once this is
 working, consider also setting `APP_BIND_ADDRESS=127.0.0.1` in
-HoneyHive's own `.env` (no `docker-compose.yml` edit needed) so the app
+Honeypot Shelf's own `.env` (no `docker-compose.yml` edit needed) so the app
 is only reachable through this proxy, never directly on its own port.
 
 Two ways to wire Traefik up to a service: a static **file provider** entry
 pointing at an address, or **Docker labels** read via Traefik's Docker
-provider. The file provider is simpler when HoneyHive and Traefik aren't
+provider. The file provider is simpler when Honeypot Shelf and Traefik aren't
 in the same Compose project (the default here).
 
 ## ⚙️ Static config (`traefik.yml`)
@@ -55,24 +55,24 @@ tls:
       maxVersion: VersionTLS13
 ```
 
-## 🔀 Route to HoneyHive (`dynamic/HoneyHive.yml`)
+## 🔀 Route to Honeypot Shelf (`dynamic/Honeypot Shelf.yml`)
 
 ```yaml
 http:
   routers:
-    HoneyHive:
+    Honeypot Shelf:
       rule: "Host(`your-domain.example.com`)"
       entryPoints:
         - websecure
-      service: HoneyHive
+      service: Honeypot Shelf
       tls:
         certResolver: letsencrypt
         options: tls13only@file
       middlewares:
-        - HoneyHive-headers
+        - Honeypot Shelf-headers
 
   middlewares:
-    HoneyHive-headers:
+    Honeypot Shelf-headers:
       headers:
         stsSeconds: 63072000
         stsIncludeSubdomains: true
@@ -82,7 +82,7 @@ http:
           Server: ""
 
   services:
-    HoneyHive:
+    Honeypot Shelf:
       loadBalancer:
         servers:
           - url: "http://127.0.0.1:8080"
@@ -105,11 +105,11 @@ then label `web`:
 ```yaml
 labels:
   - traefik.enable=true
-  - traefik.http.routers.HoneyHive.rule=Host(`your-domain.example.com`)
-  - traefik.http.routers.HoneyHive.entrypoints=websecure
-  - traefik.http.routers.HoneyHive.tls.certresolver=letsencrypt
-  - traefik.http.routers.HoneyHive.tls.options=tls13only@file
-  - traefik.http.services.HoneyHive.loadbalancer.server.port=8080
+  - traefik.http.routers.Honeypot Shelf.rule=Host(`your-domain.example.com`)
+  - traefik.http.routers.Honeypot Shelf.entrypoints=websecure
+  - traefik.http.routers.Honeypot Shelf.tls.certresolver=letsencrypt
+  - traefik.http.routers.Honeypot Shelf.tls.options=tls13only@file
+  - traefik.http.services.Honeypot Shelf.loadbalancer.server.port=8080
 ```
 
 This requires exposing the Docker socket to the Traefik container, which

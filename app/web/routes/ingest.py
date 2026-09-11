@@ -88,5 +88,5 @@ async def ingest_event(
     await db.commit()
     await publish_honeypot_event(str(honeypot_id), KIND_ACTIVITY)
     if event is not None:
-        await forward_honeypot_event_to_syslog(honeypot.company, honeypot, event)
+        await forward_honeypot_event_to_syslog(db, honeypot.company, honeypot, event)
     return {"status": "accepted", "event_id": event_id}

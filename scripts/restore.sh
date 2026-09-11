@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Restore a HoneyHive instance from a backup made by scripts/backup.sh.
+# Restore a Honeypot Shelf instance from a backup made by scripts/backup.sh.
 # DESTRUCTIVE: replaces the current database and .env outright. Meant for
 # disaster recovery (lost/corrupted host) or standing up a replacement
 # server from another instance's backup — not for everyday use.
@@ -46,7 +46,7 @@ for f in db.sql.gz env.backup; do
 done
 
 if [ ! -f docker-compose.yml ]; then
-  echo "error: docker-compose.yml not found here — run this from the HoneyHive checkout." >&2
+  echo "error: docker-compose.yml not found here — run this from the Honeypot Shelf checkout." >&2
   exit 1
 fi
 

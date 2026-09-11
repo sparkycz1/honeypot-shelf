@@ -643,7 +643,7 @@ def build_initialize_command(
     # strictly additive — see app.ssh.authorized_keys's module docstring
     # for why a key added by hand is never at risk from this. ---
     if ssh_username and authorized_keys:
-        lines.append(_step("Installing SSH keys (HoneyHive + superadmins)"))
+        lines.append(_step("Installing SSH keys (Honeypot Shelf + superadmins)"))
         lines.append(build_authorized_keys_append_command(ssh_username, list(authorized_keys)))
 
     # --- Grant the same scoped, passwordless sudo app.ssh.onboarding
@@ -682,7 +682,7 @@ def build_initialize_command(
     lines.append("systemctl restart ssh")
     lines.append(
         f'echo "SSH now listens on port {new_ssh_port} — use that port (not 22) when '
-        f'adding this device as a honeypot in HoneyHive."'
+        f'adding this device as a honeypot in Honeypot Shelf."'
     )
 
     lines.append(f"echo {INITIALIZE_SUCCESS_MARKER}")

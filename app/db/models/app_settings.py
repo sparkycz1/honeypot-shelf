@@ -42,6 +42,21 @@ DEFAULT_OIDC_USERNAME_CLAIM = "email"
 DEFAULT_OIDC_SCOPES = "openid email profile"
 
 
+class SmtpEncryption(enum.StrEnum):
+    """Transport security for `app.services.smtp` (config only for now —
+    see that module's own docstring). `NONE` is plaintext, for an
+    internal/trusted relay only; `STARTTLS` upgrades a plain connection
+    (the common case, port 587); `SSL_TLS` connects already-encrypted
+    from the start (the older convention, typically port 465)."""
+
+    NONE = "none"
+    STARTTLS = "starttls"
+    SSL_TLS = "ssl_tls"
+
+
+DEFAULT_SMTP_PORT = 587
+
+
 class VpnProvider(enum.StrEnum):
     """Which of the two VPN options (if either) HoneyHive's own SSH
     management plane is currently joined to — see
@@ -190,6 +205,51 @@ class AppSettings(Base):
     syslog_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
     syslog_port: Mapped[int] = mapped_column(Integer, default=DEFAULT_SYSLOG_PORT, nullable=False)
     syslog_protocol: Mapped[SyslogProtocol] = mapped_column(
+        pg_enum(SyslogProtocol, name="syslog_protocol"),
+        default=SyslogProtocol.UDP,
+        nullable=False,
+    )
+
+    # --- SMTP relay for outbound email notifications — configuration only
+    # for now (see app.services.smtp's own docstring for what's built and
+    # what's a deliberately separate follow-up: actually sending a
+    # notification through this, e.g. on a new honeypot alert, isn't wired
+    # up yet). Same encrypted-secret convention as
+    # `ldap_bind_password_encrypted`/`oidc_client_secret_encrypted` above. ---
+    smtp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    smtp_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    smtp_port: Mapped[int] = mapped_column(Integer, default=DEFAULT_SMTP_PORT, nullable=False)
+    smtp_encryption: Mapped[SmtpEncryption] = mapped_column(
+        pg_enum(SmtpEncryption, name="smtp_encryption"),
+        default=SmtpEncryption.STARTTLS,
+        nullable=False,
+    )
+    smtp_username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    smtp_password_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    # Envelope/header From — most relays (and SPF/DKIM-checking recipients)
+    # reject a send whose From doesn't match an address the relay account
+    # is actually allowed to send as, so this is its own field rather than
+    # reusing `smtp_username`.
+    smtp_from_address: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    smtp_from_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # --- Fleet-wide honeypot-alert syslog target — the "All honeypots"
+    # page's own Integrations tab (app/web/routes/companies.py). Every
+    # honeypot's alert forwards here *in addition to* its own company's
+    # target (Company.syslog_*, app.services.honeypot_event_syslog) if
+    # both are configured — a central overarching SIEM alongside each
+    # tenant's own, not a replacement for either. Lives here rather than
+    # on a `Company` row since "All honeypots" isn't backed by one at all
+    # (see `all_honeypots_company`'s own docstring). Same shape/transport
+    # as both other syslog targets (app.services.syslog_transport). ---
+    fleet_alert_syslog_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    fleet_alert_syslog_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    fleet_alert_syslog_port: Mapped[int] = mapped_column(
+        Integer, default=DEFAULT_SYSLOG_PORT, nullable=False
+    )
+    fleet_alert_syslog_protocol: Mapped[SyslogProtocol] = mapped_column(
         pg_enum(SyslogProtocol, name="syslog_protocol"),
         default=SyslogProtocol.UDP,
         nullable=False,

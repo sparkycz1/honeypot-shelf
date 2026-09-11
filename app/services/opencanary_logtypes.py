@@ -18,6 +18,8 @@ ids, so the chart stays readable even though the id list is long.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 # id -> human label. Kept as a flat dict (not an enum) — like
 # `HoneypotEvent.event_type` itself, this list belongs to OpenCanary, not
 # this app, and can grow across an OpenCanary upgrade without a HoneyHive
@@ -171,3 +173,25 @@ def module_key(logtype: object) -> str | None:
     if as_int is None:
         return None
     return _MODULE_OF.get(as_int)
+
+
+def localized_logtype_label(translate: Callable[[str], str], logtype: object) -> str:
+    """Same as `logtype_label`, but through `translate` (a pre-bound
+    `lambda key: t(request, key)`, see `app.web.templating.t`) for every
+    one of the ~30 fixed ids above — i18n key `opencanary.event_label.
+    <id>`, present in every `app/i18n/locales/*.json` file. Only for the
+    two template-rendering call sites (`app.services.
+    canary_activity_history`'s `build_activity_history`/
+    `summarize_recent_events`, called from the Activity tab and the
+    Dashboard) — every other caller of `logtype_label` (the REST API, CSV/
+    JSON export, the per-company syslog forwarder) deliberately keeps the
+    plain English label instead: a machine-consumed value shouldn't vary
+    by whichever session happened to render the page that triggered it.
+    The 10 generated "Custom event N" ids and any id this list doesn't
+    recognize at all fall back to the same plain `logtype_label` a
+    non-localized caller gets — not worth ten more i18n keys for ids
+    OpenCanary itself doesn't name."""
+    as_int = _as_int(logtype)
+    if as_int is not None and as_int in _LABELS and as_int < 99000:
+        return translate(f"opencanary.event_label.{as_int}")
+    return logtype_label(logtype)
