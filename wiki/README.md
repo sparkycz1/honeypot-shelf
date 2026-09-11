@@ -41,7 +41,7 @@ enabled, and it lives in its own separate git repository
 - [Initialize](Honeypot-Initialize.md) — provisioning a brand new
   Raspberry Pi into a working OpenCanary honeypot over SSH
 - [Honeypot Onboarding](Honeypot-Onboarding.md) — what a Raspberry Pi
-  running OpenCanary needs to start reporting to HoneyHive
+  running OpenCanary needs to start reporting to Honeypot Shelf
 - [Reverse Proxy: Caddy](Reverse-Proxy-Caddy.md) — using the bundled Caddy service
 - [Reverse Proxy: nginx](Reverse-Proxy-Nginx.md) — bring your own nginx
 - [Reverse Proxy: Traefik](Reverse-Proxy-Traefik.md) — bring your own Traefik

@@ -1,4 +1,4 @@
-"""HoneyHive's own VPN connection (Settings -> VPN) — `app.services.netbird`
+"""Honeypot Shelf's own VPN connection (Settings -> VPN) — `app.services.netbird`
 (subprocess control) and `app.services.wireguard` (a Unix-socket JSON
 client to `app.services.vpn_control_server`), both mocked here — there's
 no real netbird daemon or vpn_control_server socket in the test

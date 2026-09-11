@@ -11,6 +11,7 @@ one definition of what "Last 24 hours" means across both tabs.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -61,8 +62,20 @@ class ActivityHistory:
 
 
 def build_activity_history(
-    events: list[HoneypotEvent], range_key: str, *, now: datetime
+    events: list[HoneypotEvent],
+    range_key: str,
+    *,
+    now: datetime,
+    label_of: Callable[[object], str] = logtype_label,
+    other_label: str = "Other",
 ) -> ActivityHistory:
+    """`label_of` defaults to the plain-English `logtype_label` (every
+    non-template caller, e.g. `app.web.routes.dashboard`'s own API-facing
+    bits) — a template-rendering caller passes `app.services.
+    opencanary_logtypes.localized_logtype_label` pre-bound to the current
+    request's `t`, so the chart legend/table read in whichever language
+    the viewer's session is in (found live: this was hardcoded English
+    even on an otherwise fully-translated Czech page)."""
     delta = time_range_delta(range_key)
     start = now - delta
     bucket_width = delta / BUCKET_COUNT
@@ -81,7 +94,7 @@ def build_activity_history(
         index = min(max(int(offset), 0), BUCKET_COUNT - 1)
         total_counts[index] += 1
 
-        label = logtype_label(event.event_type)
+        label = label_of(event.event_type)
         totals_by_type[label] = totals_by_type.get(label, 0) + 1
         per_type_buckets.setdefault(label, [0] * BUCKET_COUNT)[index] += 1
 
@@ -99,7 +112,7 @@ def build_activity_history(
                 continue
             for i, count in enumerate(buckets):
                 other_buckets[i] += count
-        counts_by_type["Other"] = other_buckets
+        counts_by_type[other_label] = other_buckets
 
     return ActivityHistory(
         bucket_timestamps=bucket_timestamps,
@@ -121,11 +134,13 @@ class RecentActivityEvent:
     source: str
 
 
-def summarize_recent_events(events: list[HoneypotEvent]) -> list[RecentActivityEvent]:
+def summarize_recent_events(
+    events: list[HoneypotEvent], *, label_of: Callable[[object], str] = logtype_label
+) -> list[RecentActivityEvent]:
     return [
         RecentActivityEvent(
             occurred_at=event.occurred_at,
-            label=logtype_label(event.event_type),
+            label=label_of(event.event_type),
             module=module_key(event.event_type),
             src_ip=event.src_ip,
             src_port=event.src_port,

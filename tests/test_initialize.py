@@ -1,5 +1,5 @@
 """The "Initialize" top-nav action — provisions a brand new device over SSH
-before it's ever added to HoneyHive. See app.web.routes.initialize and
+before it's ever added to Honeypot Shelf. See app.web.routes.initialize and
 app.ssh.initialize.
 """
 

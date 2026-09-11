@@ -1,11 +1,11 @@
 # 🔒 Reverse proxy: nginx
 
-Use this if you already run nginx on the host where HoneyHive's
+Use this if you already run nginx on the host where Honeypot Shelf's
 `docker compose up -d --build` (the base file, without
 `docker-compose.caddy.yml`) is running, exposing the app on
 `127.0.0.1:8080` (or whatever `APP_PORT` you set in `.env`). Once this is
 working, consider also setting `APP_BIND_ADDRESS=127.0.0.1` in
-HoneyHive's own `.env` (no `docker-compose.yml` edit needed) so the app
+Honeypot Shelf's own `.env` (no `docker-compose.yml` edit needed) so the app
 is only reachable through this proxy, never directly on its own port.
 
 ## ✅ Prerequisites
@@ -18,7 +18,7 @@ is only reachable through this proxy, never directly on its own port.
   TLS 1.3 over HTTP/2 (below, without the HTTP/3 section) works fine and
   is much simpler to set up.
 
-## ⚙️ Base config: TLS 1.3 only, reverse proxy to HoneyHive
+## ⚙️ Base config: TLS 1.3 only, reverse proxy to Honeypot Shelf
 
 ```nginx
 server {

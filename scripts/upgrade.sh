@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pull the latest HoneyHive release and rebuild/redeploy the running stack.
+# Pull the latest Honeypot Shelf release and rebuild/redeploy the running stack.
 #
 # Run this from the git checkout on the server, as whichever user normally
 # runs `docker compose` here:
@@ -34,7 +34,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 if [ ! -f docker-compose.yml ]; then
-  echo "error: docker-compose.yml not found here — run this from the HoneyHive checkout." >&2
+  echo "error: docker-compose.yml not found here — run this from the Honeypot Shelf checkout." >&2
   exit 1
 fi
 

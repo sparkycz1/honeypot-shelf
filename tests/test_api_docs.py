@@ -73,7 +73,7 @@ async def test_read_write_user_with_api_access_enabled_can_reach_openapi_json(
     )
     response = await client.get("/openapi.json")
     assert response.status_code == 200
-    assert response.json()["info"]["title"] == "HoneyHive"
+    assert response.json()["info"]["title"] == "Honeypot Shelf"
 
 
 async def test_read_only_user_cannot_reach_openapi_json(client, login_as, db_session_factory):

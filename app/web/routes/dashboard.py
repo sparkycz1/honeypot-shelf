@@ -27,7 +27,8 @@ from app.db.models.user import User
 from app.db.session import get_db
 from app.services.canary_activity_history import MAX_RAW_EVENTS, build_activity_history
 from app.services.honeypot_status import is_online, offline_cutoff
-from app.web.templating import templates
+from app.services.opencanary_logtypes import localized_logtype_label
+from app.web.templating import t, templates
 
 router = APIRouter()
 
@@ -94,7 +95,13 @@ async def dashboard(
     if company_id is not None:
         activity_window_query = activity_window_query.where(HoneypotEvent.company_id == company_id)
     activity_events = (await db.execute(activity_window_query)).scalars().all()
-    activity = build_activity_history(list(activity_events), "24h", now=now)
+    activity = build_activity_history(
+        list(activity_events),
+        "24h",
+        now=now,
+        label_of=lambda logtype: localized_logtype_label(lambda key: t(request, key), logtype),
+        other_label=t(request, "dashboard.activity_other"),
+    )
 
     company_count = None
     company_breakdown = None

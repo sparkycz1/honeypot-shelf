@@ -19,7 +19,7 @@ import pyotp
 import qrcode
 import qrcode.image.svg
 
-_ISSUER = "HoneyHive"
+_ISSUER = "Honeypot Shelf"
 # One step of drift either way (±30s) — enough slack for clocks that are a
 # little off without meaningfully widening the guessing window.
 _VALID_WINDOW = 1

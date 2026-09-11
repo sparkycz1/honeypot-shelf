@@ -1,15 +1,15 @@
 # 🔒 Reverse proxy: Caddy
 
-There are two ways to use Caddy with HoneyHive:
+There are two ways to use Caddy with Honeypot Shelf:
 
 - **Bundled**: `docker-compose.caddy.yml` in this repo runs Caddy for you,
   wired to the `web` service automatically. Use this unless you already
   run a reverse proxy on this host.
 - **Standalone**: you already run your own Caddy instance (for other
   sites, or because you prefer managing it outside this repo). Point it at
-  HoneyHive's `127.0.0.1:8080` (or whatever `APP_PORT` you set in
+  Honeypot Shelf's `127.0.0.1:8080` (or whatever `APP_PORT` you set in
   `.env`). Once this is working, consider also setting
-  `APP_BIND_ADDRESS=127.0.0.1` in HoneyHive's own `.env` (no
+  `APP_BIND_ADDRESS=127.0.0.1` in Honeypot Shelf's own `.env` (no
   `docker-compose.yml` edit needed) so the app is only reachable through
   this proxy, never directly on its own port.
 
@@ -96,7 +96,7 @@ openssl s_client -connect your-domain.example.com:443 -tls1_3 </dev/null
 ## 🔧 Option B — your own standalone Caddy instance
 
 If you run Caddy separately (not via this repo's compose files), add a
-site block pointing at wherever HoneyHive's `web` service is reachable
+site block pointing at wherever Honeypot Shelf's `web` service is reachable
 from your Caddy host — typically `127.0.0.1:8080` if Caddy runs directly
 on the same machine as `docker compose up -d --build` (the base file,
 without `docker-compose.caddy.yml`):
@@ -121,7 +121,7 @@ your-domain.example.com {
 ```
 
 If your Caddy instance is itself a container in a different Compose
-project, join it to HoneyHive's Docker network so it can resolve the
+project, join it to Honeypot Shelf's Docker network so it can resolve the
 `web` service by name rather than going through the published `8080` port
 — the base `docker-compose.yml` publishes that port on every interface,
 so joining the network is the more locked-down option.

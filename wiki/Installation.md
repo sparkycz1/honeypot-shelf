@@ -102,7 +102,7 @@ that.
 > copy; native Ctrl+V paste still works, since that doesn't go through the
 > Clipboard API). Both need a real "secure context" — reached over HTTPS
 > (an `https://` reverse proxy, Caddy or otherwise) or accessed as
-> `http://localhost` on the machine HoneyHive itself runs on. A plain HTTP
+> `http://localhost` on the machine Honeypot Shelf itself runs on. A plain HTTP
 > LAN IP/hostname (e.g. `http://192.168.1.x:8080`) satisfies neither, no
 > matter how the app itself or its host firewall is configured.
 >
@@ -146,7 +146,7 @@ that.
 
 ## Custom logo & favicon
 
-By default, HoneyHive shows its own built-in bee mark in the nav bar,
+By default, Honeypot Shelf shows its own built-in bee mark in the nav bar,
 login/two-factor pages, and browser tab — it already adapts to the
 in-app light/dark toggle (and the favicon separately follows the OS/
 browser's own dark-mode preference). To replace it with your own:
@@ -194,7 +194,7 @@ command whichever of `docker-compose.yml` alone,
 `+ docker-compose.caddy.yml`, `+ docker-compose.vpn.yml`, or both overlays
 together you're actually running; nothing to remember or pass by hand.
 `start.sh` refuses to run (with a pointer to `scripts/setup.py` instead)
-if it finds no existing HoneyHive containers at all — it only starts a
+if it finds no existing Honeypot Shelf containers at all — it only starts a
 stack that's already been set up once, it doesn't create one.
 
 For a one-off restart of just one service instead of the whole stack
@@ -221,7 +221,7 @@ from nothing on a fresh host:
   [Architecture](Architecture.md#secrets-at-rest)) is encrypted with it,
   so a database restored under a *different* `ENCRYPTION_KEY` turns those
   into permanently unreadable ciphertext — there is no way to recover them
-  after the fact, not even by hand. (Unlike debcontrol, HoneyHive keeps no
+  after the fact, not even by hand. (Unlike debcontrol, Honeypot Shelf keeps no
   separate shared SSH identity volume to back up — every honeypot's own
   credential already lives in the database, covered by `db.sql.gz`.)
 

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{{ t(request, "companies.power_confirm.reboot") if action.value == 'reboot' else t(request, "companies.power_confirm.shutdown") }} {{ target_label }} — HoneyHive{% endblock %}
+{% block title %}{{ t(request, "companies.power_confirm.reboot") if action.value == 'reboot' else t(request, "companies.power_confirm.shutdown") }} {{ target_label }} — Honeypot Shelf{% endblock %}
 
 {% block content %}
   <h1>{{ t(request, "companies.power_confirm.reboot") if action.value == 'reboot' else t(request, "companies.power_confirm.shutdown") }} {{ target_label }}?</h1>

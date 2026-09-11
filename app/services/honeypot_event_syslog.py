@@ -2,7 +2,11 @@
 operational log lines `app.services.opencanary_logtypes.is_internal_logtype`
 already filters out before a `HoneypotEvent` row is ever created) to each
 company's own syslog target, configured on that Company's own page
-(`Company.syslog_*`).
+(`Company.syslog_*`) — **and**, if configured, to the fleet-wide target on
+the "All honeypots" page's own Integrations tab
+(`AppSettings.fleet_alert_syslog_*`). Both can be on at the same time for
+the same event: a central, overarching SIEM alongside each tenant's own,
+not a replacement for either.
 
 **Deliberately separate from `app.audit_syslog`** (the global target on
 Settings → Integrations, which carries every audit log entry and never a
@@ -19,9 +23,10 @@ docstring for the fuller split).
 Same best-effort/fire-and-forget contract as the audit forwarder: the
 `HoneypotEvent` row is always the source of truth (queryable via the
 Activity tab/`GET /api/v1/events`), this is only ever a live mirror of
-it, and a delivery failure here must never affect event ingestion itself.
-Same transport (`app.services.syslog_transport`) and same "MSG part is a
-compact JSON object" convention `app.audit_syslog` uses.
+it, and a delivery failure at either target must never affect event
+ingestion itself, or delivery to the *other* target. Same transport
+(`app.services.syslog_transport`) and same "MSG part is a compact JSON
+object" convention `app.audit_syslog` uses.
 """
 
 from __future__ import annotations
@@ -31,10 +36,13 @@ import logging
 import socket
 from typing import TYPE_CHECKING
 
+from app.core.app_settings import get_or_create_app_settings
 from app.services.opencanary_logtypes import logtype_label
-from app.services.syslog_transport import send_syslog
+from app.services.syslog_transport import SyslogProtocol, send_syslog
 
 if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
     from app.db.models.company import Company
     from app.db.models.honeypot import Honeypot
     from app.db.models.honeypot_event import HoneypotEvent
@@ -69,30 +77,52 @@ def _rfc5424_message(event: HoneypotEvent, honeypot: Honeypot, company: Company)
         "raw": event.raw,
     }
     body = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-    # "HoneyHive" is the APP-NAME field; "-" (no PROCID), then MSGID, then
+    # "HoneypotShelf" is the APP-NAME field; "-" (no PROCID), then MSGID, then
     # "-" for STRUCTURED-DATA (none), then the JSON message itself.
-    return f"<{pri}>1 {timestamp} {hostname} HoneyHive - {msg_id} - {body}"
+    return f"<{pri}>1 {timestamp} {hostname} HoneypotShelf - {msg_id} - {body}"
+
+
+async def _send(
+    host: str, port: int, protocol: SyslogProtocol, message: str, *, target_label: str
+) -> None:
+    try:
+        await send_syslog(host, port, protocol, message)
+    except OSError:
+        logger.warning(
+            "Failed to forward honeypot alert to syslog %s:%s (%s)",
+            host,
+            port,
+            target_label,
+            exc_info=True,
+        )
 
 
 async def forward_honeypot_event_to_syslog(
-    company: Company, honeypot: Honeypot, event: HoneypotEvent
+    db: AsyncSession, company: Company, honeypot: Honeypot, event: HoneypotEvent
 ) -> None:
-    """No-op unless this company has `syslog_enabled` and a host
-    configured. Never raises — logs a warning and swallows any failure,
-    since a company's SIEM being unreachable must never be allowed to
-    affect event ingestion itself."""
-    if not company.syslog_enabled or not company.syslog_host:
-        return
+    """Sends to whichever of the two targets are actually configured —
+    this company's own (`Company.syslog_*`) and/or the fleet-wide one
+    (`AppSettings.fleet_alert_syslog_*`) — independently: one being
+    unreachable, disabled, or unconfigured never affects the other. A
+    no-op entirely if neither is set up. Never raises — see this
+    module's own docstring for why."""
     message = _rfc5424_message(event, honeypot, company)
-    try:
-        await send_syslog(
-            company.syslog_host, company.syslog_port, company.syslog_protocol, message
-        )
-    except OSError:
-        logger.warning(
-            "Failed to forward honeypot alert to syslog %s:%s for company %s",
+
+    if company.syslog_enabled and company.syslog_host:
+        await _send(
             company.syslog_host,
             company.syslog_port,
-            company.name,
-            exc_info=True,
+            company.syslog_protocol,
+            message,
+            target_label=f"company {company.name!r}",
+        )
+
+    app_settings = await get_or_create_app_settings(db)
+    if app_settings.fleet_alert_syslog_enabled and app_settings.fleet_alert_syslog_host:
+        await _send(
+            app_settings.fleet_alert_syslog_host,
+            app_settings.fleet_alert_syslog_port,
+            app_settings.fleet_alert_syslog_protocol,
+            message,
+            target_label="fleet-wide",
         )

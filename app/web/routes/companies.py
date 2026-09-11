@@ -22,23 +22,18 @@ from app.auth.scope import (
     count_visible_honeypots,
     honeypots_visible_to,
 )
+from app.core.app_settings import get_or_create_app_settings
 from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie, verify_csrf
 from app.db.models.audit_log import AuditOutcome
 from app.db.models.company import Company
 from app.db.models.honeypot import Honeypot
 from app.db.models.honeypot_tag import Tag
-from app.db.models.honeypot_update_run import HoneypotUpdateRun, UpdateRunStatus, UpgradeStrategy
+from app.db.models.honeypot_update_run import HoneypotUpdateRun, UpdateRunStatus
 from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.company import CompanyCreate
 from app.services.company_stats import compute_company_stats
-from app.services.honeypot_actions import (
-    send_power_to_honeypots,
-    trigger_check_updates,
-    trigger_updates,
-)
 from app.services.syslog_transport import DEFAULT_SYSLOG_PORT, SyslogProtocol
-from app.ssh.power import PowerAction
 from app.web.honeypot_search import honeypot_search_clause
 from app.web.routes.honeypots import _HONEYPOT_LIST_PAGE_SIZE
 from app.web.templating import t, templates
@@ -51,26 +46,35 @@ from app.web.templating import t, templates
 # than through this router.
 router = APIRouter(prefix="/companies", dependencies=[Depends(require_superadmin)])
 _manage = Depends(require_superadmin)
-_updates = Depends(require_superadmin)
-_power = Depends(require_superadmin)
-
-# Typed phrase to confirm a power action against literally every honeypot —
-# "All honeypots" doesn't have a single name of its own to ask someone to type.
-ALL_HONEYPOTS_CONFIRM_PHRASE = "ALL HONEYPOTS"
 
 
 def _company_tabs(request: Request, company: Company) -> list[tuple[str, str, str]]:
     """The (key, label, url) tabs shown on every one of this company's own
     pages. "Overview" — a single company's own page deliberately shows
     only its users and its honeypots (see the product decision in
-    CLAUDE.md/wiki/Home.md); the fleet-wide bulk update/power tools stay on
-    "All honeypots" (`companies/all.html`), not here — and "Integrations",
-    this company's own syslog target for its honeypot alerts (see
-    `app.services.honeypot_event_syslog`)."""
+    CLAUDE.md/wiki/Home.md) — and "Integrations", this company's own
+    syslog target for its honeypot alerts (see `app.services.
+    honeypot_event_syslog`). Same two-tab shape `_all_honeypots_tabs`
+    below uses for the "All honeypots" virtual company."""
     base = f"/companies/{company.id}"
     return [
         ("overview", t(request, "honeypots.tabs.overview"), base),
         ("integrations", t(request, "companies.tabs.integrations"), f"{base}/integrations"),
+    ]
+
+
+def _all_honeypots_tabs(request: Request) -> list[tuple[str, str, str]]:
+    """Same shape as `_company_tabs`, for the "All honeypots" virtual
+    company (`all_honeypots_company`/`all_honeypots_integrations` below) —
+    no `Company` row to hang this off, so it's a plain function rather
+    than reading anything off a model."""
+    return [
+        ("overview", t(request, "honeypots.tabs.overview"), "/companies/all"),
+        (
+            "integrations",
+            t(request, "companies.tabs.integrations"),
+            "/companies/all/integrations",
+        ),
     ]
 
 
@@ -298,6 +302,8 @@ async def all_honeypots_company(
         request,
         "companies/all.html",
         {
+            "tabs": _all_honeypots_tabs(request),
+            "active_tab": "overview",
             "honeypots": honeypots,
             "all_tags": await _get_all_tags(db),
             "q": q,
@@ -305,7 +311,6 @@ async def all_honeypots_company(
             "page": page,
             "has_more": has_more,
             "csrf_token": csrf_token,
-            "power_skipped": request.query_params.get("power_skipped"),
         },
     )
     if new_cookie:
@@ -313,64 +318,36 @@ async def all_honeypots_company(
     return response
 
 
-@router.post("/all/updates", dependencies=[_updates, Depends(verify_csrf)])
-async def trigger_all_honeypots_update(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-    strategy: UpgradeStrategy = Form(...),
+@router.get("/all/integrations")
+async def all_honeypots_integrations(
+    request: Request, db: AsyncSession = Depends(get_db)
 ) -> Response:
-    honeypots = await _all_visible_honeypots(db, current_user)
+    """The "All honeypots" page's own syslog target — same shape as a real
+    company's own Integrations tab (`company_integrations` above), but
+    fleet-wide: every honeypot's alerts get forwarded here *in addition
+    to* its own company's target, if both are configured. Persisted on
+    `AppSettings` (there's no `Company` row backing "All honeypots" at
+    all — see `all_honeypots_company`'s own docstring), not a second,
+    per-company-shaped table.
 
-    batch_id, skipped = await trigger_updates(db, honeypots, strategy)
-
-    await log_event(
-        db,
-        request=request,
-        action="all_honeypots.updates.run",
-        summary=f"Triggered {strategy.value.replace('_', '-')} on all honeypots",
-        target_type="all_honeypots",
-        details={"strategy": strategy.value, "batch_id": str(batch_id), "skipped": skipped},
-    )
-
-    redirect_url = f"/companies/batches/{batch_id}"
-    if skipped:
-        redirect_url += f"?skipped={skipped}"
-    return RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
-
-
-@router.post("/all/check-updates", dependencies=[_updates, Depends(verify_csrf)])
-async def trigger_all_check_updates(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> Response:
-    skipped = await trigger_check_updates(await _all_visible_honeypots(db, current_user))
-    await log_event(
-        db,
-        request=request,
-        action="all_honeypots.updates.check",
-        summary="Checked for updates on all honeypots",
-        target_type="all_honeypots",
-        details={"skipped": skipped},
-    )
-    return RedirectResponse(url="/companies/all", status_code=status.HTTP_303_SEE_OTHER)
-
-
-@router.get("/all/power/{action}")
-async def all_power_confirm(request: Request, action: PowerAction) -> Response:
+    Replaces the bulk update/power sections this page used to have —
+    removed per explicit instruction: the Honeypots list's own bulk-select
+    actions already cover the same ground with finer-grained selection,
+    making a separate "confirm by typing ALL HONEYPOTS" flow here
+    redundant.
+    """
+    app_settings = await get_or_create_app_settings(db)
     csrf_token, new_cookie = get_or_create_csrf_token(request)
     response = templates.TemplateResponse(
         request,
-        "companies/power_confirm.html",
+        "companies/all_integrations.html",
         {
-            "action": action,
-            "target_label": "every honeypot",
-            "confirm_phrase": ALL_HONEYPOTS_CONFIRM_PHRASE,
-            "action_url": "/companies/all/power",
-            "cancel_url": "/companies/all",
-            "error": None,
+            "tabs": _all_honeypots_tabs(request),
+            "active_tab": "integrations",
+            "app_settings": app_settings,
             "csrf_token": csrf_token,
+            "syslog_protocols": list(SyslogProtocol),
+            "errors": [],
         },
     )
     if new_cookie:
@@ -378,59 +355,71 @@ async def all_power_confirm(request: Request, action: PowerAction) -> Response:
     return response
 
 
-@router.post("/all/power", dependencies=[_power, Depends(verify_csrf)])
-async def all_power_action(
+@router.post("/all/integrations", dependencies=[Depends(verify_csrf)])
+async def update_all_honeypots_integrations(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-    action: PowerAction = Form(...),
-    confirm_name: str = Form(...),
+    syslog_enabled: str = Form(""),
+    syslog_host: str = Form(""),
+    syslog_port: str = Form(str(DEFAULT_SYSLOG_PORT)),
+    syslog_protocol: str = Form(SyslogProtocol.UDP.value),
 ) -> Response:
-    if confirm_name.strip() != ALL_HONEYPOTS_CONFIRM_PHRASE:
-        await log_event(
-            db,
-            request=request,
-            action=f"all_honeypots.power.{action.value}",
-            summary=f"Blocked {action.value} on all honeypots: confirmation mismatch",
-            outcome=AuditOutcome.DENIED,
-            target_type="all_honeypots",
-        )
+    app_settings = await get_or_create_app_settings(db)
+    errors: list[str] = []
+
+    host = syslog_host.strip()
+    try:
+        protocol = SyslogProtocol(syslog_protocol)
+    except ValueError:
+        errors.append("Unknown syslog protocol.")
+        protocol = app_settings.fleet_alert_syslog_protocol
+
+    try:
+        port = int(syslog_port.strip() or str(DEFAULT_SYSLOG_PORT))
+        if not (0 < port <= 65535):
+            raise ValueError
+    except ValueError:
+        errors.append("Port must be a whole number between 1 and 65535.")
+        port = app_settings.fleet_alert_syslog_port
+
+    if bool(syslog_enabled) and not host:
+        errors.append("Enabling syslog forwarding needs a server host/IP.")
+
+    if errors:
         csrf_token, new_cookie = get_or_create_csrf_token(request)
         response = templates.TemplateResponse(
             request,
-            "companies/power_confirm.html",
+            "companies/all_integrations.html",
             {
-                "action": action,
-                "target_label": "every honeypot",
-                "confirm_phrase": ALL_HONEYPOTS_CONFIRM_PHRASE,
-                "action_url": "/companies/all/power",
-                "cancel_url": "/companies/all",
-                "error": (
-                    f'That doesn\'t match — type "{ALL_HONEYPOTS_CONFIRM_PHRASE}" '
-                    "exactly to confirm."
-                ),
+                "tabs": _all_honeypots_tabs(request),
+                "active_tab": "integrations",
+                "app_settings": app_settings,
                 "csrf_token": csrf_token,
+                "syslog_protocols": list(SyslogProtocol),
+                "errors": errors,
             },
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
         if new_cookie:
             set_csrf_cookie(response, new_cookie)
         return response
 
-    honeypots = await _all_visible_honeypots(db, current_user)
-    skipped = await send_power_to_honeypots(honeypots, action)
+    app_settings.fleet_alert_syslog_enabled = bool(syslog_enabled)
+    app_settings.fleet_alert_syslog_host = host or None
+    app_settings.fleet_alert_syslog_port = port
+    app_settings.fleet_alert_syslog_protocol = protocol
+    await db.commit()
+
+    state = "enabled, " + protocol.value if app_settings.fleet_alert_syslog_enabled else "disabled"
     await log_event(
         db,
         request=request,
-        action=f"all_honeypots.power.{action.value}",
-        summary=f"Sent {action.value} to all honeypots",
+        action="all_honeypots.syslog.update",
+        summary=f"Updated fleet-wide honeypot-alert syslog forwarding ({state})",
         target_type="all_honeypots",
-        details={"skipped": skipped},
     )
-    redirect_url = "/companies/all"
-    if skipped:
-        redirect_url += f"?power_skipped={skipped}"
-    return RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(
+        url="/companies/all/integrations", status_code=status.HTTP_303_SEE_OTHER
+    )
 
 
 @router.get("/{company_id}")

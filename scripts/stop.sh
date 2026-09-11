@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Stop the running HoneyHive stack without removing anything — containers,
+# Stop the running Honeypot Shelf stack without removing anything — containers,
 # volumes (your data), and networks are all left in place, just not
 # running. Auto-detects whether the bundled Caddy reverse proxy and/or the
 # VPN sidecar are part of this deployment (same detection
@@ -17,7 +17,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 if [ ! -f docker-compose.yml ]; then
-  echo "error: docker-compose.yml not found here — run this from the HoneyHive checkout." >&2
+  echo "error: docker-compose.yml not found here — run this from the Honeypot Shelf checkout." >&2
   exit 1
 fi
 

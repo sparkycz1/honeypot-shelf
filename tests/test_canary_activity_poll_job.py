@@ -203,7 +203,7 @@ async def test_poll_forwards_each_real_alert_to_the_companys_syslog_target(
 
     forwarded = []
 
-    async def fake_forward(company, honeypot, event):
+    async def fake_forward(db, company, honeypot, event):
         forwarded.append((company.name, honeypot.name, event.event_type))
 
     monkeypatch.setattr("app.tasks.jobs.forward_honeypot_event_to_syslog", fake_forward)

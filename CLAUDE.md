@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-HoneyHive: a FastAPI + htmx web app for **managing and monitoring a fleet
+Honeypot Shelf: a FastAPI + htmx web app for **managing and monitoring a fleet
 of [OpenCanary](https://github.com/thinkst/opencanary) honeypots**
 (Raspberry Pis deployed at customer sites) across **multiple companies**,
 with per-company RBAC. Server-rendered Jinja2 + htmx, not a SPA. Python
@@ -110,7 +110,7 @@ Scheduling (cron-driven actions, company-scoped via
 key rotation, retention policies), Initialize (`app.ssh.initialize` +
 `app.web.routes.initialize_ws`, `/initialize` — provisions a brand new
 Raspberry Pi OS 13 device into a working OpenCanary honeypot over SSH,
-before it's ever added to HoneyHive: packages, the OpenCanary venv/
+before it's ever added to Honeypot Shelf: packages, the OpenCanary venv/
 service, locale/timezone, hostname, NetBird, generating OpenCanary's own
 config, and the portscan/Samba modules' host-side prep, all streamed live
 to the browser over a WebSocket — see
@@ -128,7 +128,7 @@ apply here too (see that project's own release history) — most recently
 (`app.core.proxy_headers`), the two-step login above, the honeypot list
 folding tag search into its main search box, and a CSP-safety regression
 test (`tests/test_no_inline_event_handlers.py`) that also caught two
-HoneyHive-specific inline `onchange` handlers on the Users new/edit forms
+Honeypot Shelf-specific inline `onchange` handlers on the Users new/edit forms
 (silently dead under this app's CSP — fixed via `data-toggle-hidden` +
 `static/js/toggle-hidden.js`). Also caught and fixed during this pass: the
 interactive SSH terminal's own client-side assets (`static/js/terminal.js`,
@@ -181,7 +181,7 @@ disabled before; incomplete annotations, untyped calls, and `Any`
 returns — all normal in test fixtures — were still erroring). None of
 this blocks using the app.
 
-**VPN connectivity for HoneyHive itself** (Settings → VPN, `app.services.
+**VPN connectivity for Honeypot Shelf itself** (Settings → VPN, `app.services.
 netbird`/`wireguard`) — distinct from a honeypot's own, independent VPN
 choice on the Initialize form — lets `web`/`worker` reach a honeypot
 that's only addressable over NetBird or WireGuard (e.g. behind a NAT with
@@ -406,7 +406,7 @@ ssh_public_keys`'s own comment for why) lets a superadmin paste their own
 public key(s), validated on save via `app.auth.ssh_keys.
 parse_ssh_public_keys` (never a partial save — one bad line rejects the
 whole submission). Two things read it: Initialize now installs every
-superadmin's key(s) plus HoneyHive's own shared identity key onto a
+superadmin's key(s) plus Honeypot Shelf's own shared identity key onto a
 freshly provisioned device (second-to-last step, right before the port
 change), and a new "Push to every honeypot" button on the account page
 (`app.tasks.jobs.push_superadmin_ssh_keys`) does the same for the
@@ -551,7 +551,7 @@ own `READ_WRITE` user manages honeypots *within* their own company (via
 `/honeypots`, already scoped) but never creates a company or another
 user; the audit log and Settings stay superadmin-only; no alerting in v1
 (dashboard/overview only); `READ_WRITE` includes the SSH terminal and host
-config, not just HoneyHive-side metadata.
+config, not just Honeypot Shelf-side metadata.
 
 ## Architecture, beyond what one file shows
 

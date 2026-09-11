@@ -72,9 +72,9 @@ def _rfc5424_message(entry: AuditLogEntry) -> str:
         "details": entry.details,
     }
     body = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-    # "HoneyHive" is the APP-NAME field; "-" (no PROCID), then MSGID, then
+    # "HoneypotShelf" is the APP-NAME field; "-" (no PROCID), then MSGID, then
     # "-" for STRUCTURED-DATA (none), then the JSON message itself.
-    return f"<{pri}>1 {timestamp} {hostname} HoneyHive - {msg_id} - {body}"
+    return f"<{pri}>1 {timestamp} {hostname} HoneypotShelf - {msg_id} - {body}"
 
 
 async def forward_to_syslog(app_settings: AppSettings, entry: AuditLogEntry) -> None:

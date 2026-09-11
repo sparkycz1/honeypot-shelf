@@ -43,7 +43,7 @@ from webauthn.registration.verify_registration_response import VerifiedRegistrat
 
 from app.db.models.webauthn_credential import WebAuthnCredential
 
-RP_NAME = "HoneyHive"
+RP_NAME = "Honeypot Shelf"
 
 
 class WebAuthnError(Exception):

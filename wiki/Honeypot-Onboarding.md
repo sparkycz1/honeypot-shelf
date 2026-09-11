@@ -1,7 +1,7 @@
 # 🍯 Honeypot Onboarding
 
 How a Raspberry Pi running [OpenCanary](https://github.com/thinkst/opencanary)
-starts reporting events to HoneyHive. This page is about the **HoneyHive
+starts reporting events to Honeypot Shelf. This page is about the **Honeypot Shelf
 side of the wire protocol** — it doesn't cover imaging the Pi, hardening
 it, or picking which OpenCanary modules to enable; that's the team's own
 internal deployment runbook, kept elsewhere on purpose (it has
@@ -12,12 +12,12 @@ site-specific and credential material that doesn't belong in this repo).
 OpenCanary has no built-in "POST events to a URL" output — its `logger`
 config only writes to a local file, syslog, or a handful of other sinks
 (see [OpenCanary's own docs](https://github.com/thinkst/opencanary/wiki)).
-HoneyHive's ingest endpoint below is one way to bridge that: a small
+Honeypot Shelf's ingest endpoint below is one way to bridge that: a small
 forwarder running *on* (or reachable from) the Pi that reads OpenCanary's
 own JSON log output and re-POSTs each event.
 
 **Setting up a forwarder is optional, not required, for events to show
-up in HoneyHive.** Once a honeypot's host key is pinned, HoneyHive itself
+up in Honeypot Shelf.** Once a honeypot's host key is pinned, Honeypot Shelf itself
 also reads whatever's new in OpenCanary's own log over the same SSH
 management connection every other periodic sweep uses — no forwarder, no
 extra config on the Pi at all. See that honeypot's own **Activity** tab,
@@ -26,14 +26,14 @@ actually arrive" section for how the two mechanisms relate
 (`HoneypotEvent.source` records which one produced each row). The
 push-based endpoint below is still worth setting up if you want events to
 land with less latency than the poll interval, or from a honeypot
-HoneyHive doesn't otherwise manage over SSH.
+Honeypot Shelf doesn't otherwise manage over SSH.
 
 ## `POST /api/ingest/{honeypot_id}/events`
 
 - **Auth**: `Authorization: Bearer <token>` — the shared `INGEST_TOKEN`
-  (from this HoneyHive instance's `.env`; revoke/rotate it for every
+  (from this Honeypot Shelf instance's `.env`; revoke/rotate it for every
   honeypot at once if it ever leaks).
-- **`honeypot_id`**: this honeypot's HoneyHive-assigned UUID (from the
+- **`honeypot_id`**: this honeypot's Honeypot Shelf-assigned UUID (from the
   `Honeypot` row created for it — see [Installation](Installation.md) for
   how to create one today).
 - **Body**: OpenCanary's own JSON event object, close to verbatim —
@@ -70,7 +70,7 @@ The simplest option: point OpenCanary's `logger` config at a local file (or
 a named pipe), and run a small `systemd` unit that tails it and re-POSTs
 each JSON line — a few dozen lines of Python (`requests`, or even `curl` in
 a loop) is enough; it doesn't need to be more sophisticated than "read a
-line, POST it, move on," since HoneyHive is the system of record and a
+line, POST it, move on," since Honeypot Shelf is the system of record and a
 dropped/retried event is harmless (no idempotency key is required — a
 duplicate just shows up as two rows). Batch the sync steps yourself if
 volume ever makes one-`curl`-per-event too chatty on a slow uplink.

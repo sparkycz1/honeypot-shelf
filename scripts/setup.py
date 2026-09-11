@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Interactive setup wizard for a new HoneyHive deployment — the
+"""Interactive setup wizard for a new Honeypot Shelf deployment — the
 recommended way to configure and start one for the first time.
 
 Usage (from a fresh git checkout, before anything else):
@@ -273,7 +273,7 @@ def _sync_and_start(docker_path: str) -> None:
             file=sys.stderr,
         )
     else:
-        print("\nHoneyHive is running — .env was kept as-is (plus anything just added above).")
+        print("\nHoneypot Shelf is running — .env was kept as-is (plus anything just added above).")
 
 
 def _wait_until_healthy(port: str) -> bool:
@@ -291,7 +291,7 @@ def _wait_until_healthy(port: str) -> bool:
 
 
 def main() -> None:
-    print("HoneyHive setup — press Enter to accept a default shown in [brackets].\n")
+    print("Honeypot Shelf setup — press Enter to accept a default shown in [brackets].\n")
 
     docker_path = _require_docker()
 
@@ -330,7 +330,7 @@ def main() -> None:
         lines = _set_env_line(lines, "ACME_EMAIL", email)
 
     use_vpn = _prompt_yes_no(
-        "Add the optional VPN sidecar (lets HoneyHive reach a honeypot that's "
+        "Add the optional VPN sidecar (lets Honeypot Shelf reach a honeypot that's "
         "only addressable over NetBird or WireGuard, e.g. behind a NAT with no "
         "forwarded SSH port)? You'll pick a provider and enter its setup key/"
         "config from Settings -> VPN once this finishes — nothing to enter here.",
@@ -471,7 +471,7 @@ def main() -> None:
 
     print()
     print("=" * 64)
-    print("HoneyHive is running.")
+    print("Honeypot Shelf is running.")
     if use_caddy:
         print(f"URL:      https://{domain}")
     else:
