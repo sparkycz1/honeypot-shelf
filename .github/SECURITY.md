@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Only the **latest released version** (the most recent [tag/release](https://github.com/sparkycz1/honeyhive/releases)) is supported with security fixes. There are no maintained older branches — upgrade to the latest release before reporting an issue, and after a fix ships.
+Only the **latest released version** (the most recent [tag/release](https://github.com/sparkycz1/honeypot-shelf/releases)) is supported with security fixes. There are no maintained older branches — upgrade to the latest release before reporting an issue, and after a fix ships.
 
 | Version | Supported |
 |---|---|
