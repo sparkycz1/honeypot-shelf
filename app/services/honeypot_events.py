@@ -46,7 +46,6 @@ def build_event(honeypot: Honeypot, payload: dict[str, Any], *, source: str) -> 
     several, or set `honeypot.last_seen_at` alongside)."""
     return HoneypotEvent(
         honeypot_id=honeypot.id,
-        company_id=honeypot.company_id,
         event_type=str(
             payload.get("logtype") or payload.get("logdata", {}).get("type") or "UNKNOWN"
         ),

@@ -75,15 +75,28 @@ async def _resolve_owner_company_id(
     db: AsyncSession, user: User, payload: ScheduledTaskCreate
 ) -> uuid.UUID:
     """The company a schedule belongs to: a honeypot-targeted schedule
-    always inherits its honeypot's company (`payload.owner_company_id` is
-    ignored — never trust the client to have kept it in sync with the
-    honeypot); an ALL_HONEYPOTS schedule uses `payload.owner_company_id`
-    as submitted."""
+    inherits its honeypot's company when it has exactly one
+    (`payload.owner_company_id` ignored in that case — never trust the
+    client to have kept it in sync with the honeypot); with zero or
+    several, `payload.owner_company_id` is required and validated against
+    that honeypot's actual companies. An ALL_HONEYPOTS schedule uses
+    `payload.owner_company_id` as submitted."""
     if payload.target_honeypot_id is not None:
         honeypot = await db.get(Honeypot, payload.target_honeypot_id)
         if honeypot is None:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown honeypot.")
-        return honeypot.company_id
+        honeypot_company_ids = {c.id for c in honeypot.companies}
+        if len(honeypot_company_ids) == 1:
+            return next(iter(honeypot_company_ids))
+        if payload.owner_company_id not in honeypot_company_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    '"owner_company_id" must name one of this honeypot\'s companies '
+                    "(it belongs to none or several, so it can't be inferred)."
+                ),
+            )
+        return payload.owner_company_id
     # Guaranteed non-None here by ScheduledTaskCreate's own model_validator
     # (raises "Pick a company..." during request-body parsing otherwise) —
     # the field itself stays Optional in the schema only because the

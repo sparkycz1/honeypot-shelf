@@ -37,12 +37,11 @@ class HoneypotEvent(Base):
         ForeignKey("honeypots.id", ondelete="CASCADE"), nullable=False, index=True
     )
     honeypot: Mapped[Honeypot] = relationship(back_populates="events", lazy="joined")
-    # Denormalized onto the event so a company-wide event query never has to
-    # join through Honeypot — every list/filter/dashboard-count query in
-    # this app is scoped by company first (see app.services.access_scope).
-    company_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True
-    )
+    # No denormalized `company_id` any more — a honeypot can belong to any
+    # number of companies now (see app.db.models.company's module
+    # docstring), so an event's company scope is derived by joining
+    # through `honeypot.companies` at query time instead (see
+    # `app.auth.scope`). Was a single required FK before this.
 
     # OpenCanary's own event type, e.g. "SSH_LOGIN_ATTEMPT", "PORTSCAN",
     # "HTTP_GET" — see the OpenCanary wiki's module list for the full set.

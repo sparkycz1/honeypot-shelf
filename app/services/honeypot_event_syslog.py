@@ -13,12 +13,12 @@ Settings → Integrations, which carries every audit log entry and never a
 honeypot alert): in a multi-tenant deployment, "send every alert to one
 shared syslog server" is usually wrong — company A's SOC shouldn't see
 company B's alert traffic (or vice versa), and each may already run its
-own SIEM. This module answers "where does *this* company's own alert
-traffic go" per `HoneypotEvent.company_id` (already denormalized onto the
-row — see that model's own docstring — so no join back through `Honeypot`
-is needed to find it), while the global target keeps covering everything
-else app-wide regardless of company (see `app.audit_syslog`'s own
-docstring for the fuller split).
+own SIEM. This module answers "where does *this* alert's traffic go" by
+walking the triggering honeypot's own `companies` (a honeypot can belong
+to any number of them — see `app.db.models.company`'s module docstring)
+and sending to every one that has forwarding configured, while the global
+target keeps covering everything else app-wide regardless of company (see
+`app.audit_syslog`'s own docstring for the fuller split).
 
 Same best-effort/fire-and-forget contract as the audit forwarder: the
 `HoneypotEvent` row is always the source of truth (queryable via the
@@ -43,7 +43,6 @@ from app.services.syslog_transport import SyslogProtocol, send_syslog
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
-    from app.db.models.company import Company
     from app.db.models.honeypot import Honeypot
     from app.db.models.honeypot_event import HoneypotEvent
 
@@ -56,7 +55,7 @@ _FACILITY_SECURITY = 4
 _SEVERITY_WARNING = 4  # every alert is treated the same severity — OpenCanary itself reports none.
 
 
-def _rfc5424_message(event: HoneypotEvent, honeypot: Honeypot, company: Company) -> str:
+def _rfc5424_message(event: HoneypotEvent, honeypot: Honeypot) -> str:
     pri = _FACILITY_SECURITY * 8 + _SEVERITY_WARNING
     timestamp = event.occurred_at.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
     hostname = socket.gethostname() or "-"
@@ -65,7 +64,7 @@ def _rfc5424_message(event: HoneypotEvent, honeypot: Honeypot, company: Company)
         "event": "honeypot_alert",
         "id": str(event.id),
         "timestamp": timestamp,
-        "company": company.name,
+        "companies": [c.name for c in honeypot.companies],
         "honeypot": honeypot.name,
         "honeypot_ip": honeypot.ip_address,
         "type": event.event_type,
@@ -98,24 +97,26 @@ async def _send(
 
 
 async def forward_honeypot_event_to_syslog(
-    db: AsyncSession, company: Company, honeypot: Honeypot, event: HoneypotEvent
+    db: AsyncSession, honeypot: Honeypot, event: HoneypotEvent
 ) -> None:
-    """Sends to whichever of the two targets are actually configured —
-    this company's own (`Company.syslog_*`) and/or the fleet-wide one
-    (`AppSettings.fleet_alert_syslog_*`) — independently: one being
-    unreachable, disabled, or unconfigured never affects the other. A
-    no-op entirely if neither is set up. Never raises — see this
-    module's own docstring for why."""
-    message = _rfc5424_message(event, honeypot, company)
+    """Sends to whichever targets are actually configured — every one of
+    `honeypot.companies`' own targets (`Company.syslog_*`) and/or the
+    fleet-wide one (`AppSettings.fleet_alert_syslog_*`) — independently:
+    one being unreachable, disabled, or unconfigured never affects any
+    other. A no-op entirely if none are set up (including an unattached
+    honeypot with no companies at all). Never raises — see this module's
+    own docstring for why."""
+    message = _rfc5424_message(event, honeypot)
 
-    if company.syslog_enabled and company.syslog_host:
-        await _send(
-            company.syslog_host,
-            company.syslog_port,
-            company.syslog_protocol,
-            message,
-            target_label=f"company {company.name!r}",
-        )
+    for company in honeypot.companies:
+        if company.syslog_enabled and company.syslog_host:
+            await _send(
+                company.syslog_host,
+                company.syslog_port,
+                company.syslog_protocol,
+                message,
+                target_label=f"company {company.name!r}",
+            )
 
     app_settings = await get_or_create_app_settings(db)
     if app_settings.fleet_alert_syslog_enabled and app_settings.fleet_alert_syslog_host:

@@ -7,8 +7,10 @@ from app.db.models.api_token import ApiToken
 from app.db.models.app_settings import AppSettings
 from app.db.models.audit_log import AuditChainState, AuditLogEntry
 from app.db.models.company import Company
+from app.db.models.company_membership import CompanyMembership
 from app.db.models.company_snapshot import CompanySnapshot
 from app.db.models.honeypot import Honeypot
+from app.db.models.honeypot_company import honeypot_companies
 from app.db.models.honeypot_event import HoneypotEvent
 from app.db.models.honeypot_monitoring_sample import HoneypotMonitoringSample
 from app.db.models.honeypot_package import HoneypotPackage
@@ -33,9 +35,11 @@ __all__ = [
     "AuditChainState",
     "AuditLogEntry",
     "Company",
+    "CompanyMembership",
     "CompanySnapshot",
     "Honeypot",
     "HoneypotEvent",
+    "honeypot_companies",
     "HoneypotMonitoringSample",
     "HoneypotPackage",
     "HoneypotReachabilitySample",

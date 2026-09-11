@@ -26,10 +26,12 @@ from app.core.app_settings import get_or_create_app_settings
 from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie, verify_csrf
 from app.db.models.audit_log import AuditOutcome
 from app.db.models.company import Company
+from app.db.models.company_membership import CompanyMembership
 from app.db.models.honeypot import Honeypot
+from app.db.models.honeypot_company import honeypot_companies
 from app.db.models.honeypot_tag import Tag
 from app.db.models.honeypot_update_run import HoneypotUpdateRun, UpdateRunStatus
-from app.db.models.user import User
+from app.db.models.user import AccessLevel, User
 from app.db.session import get_db
 from app.schemas.company import CompanyCreate
 from app.services.company_stats import compute_company_stats
@@ -125,11 +127,10 @@ async def _get_company_member_counts(db: AsyncSession) -> dict[uuid.UUID, int]:
     columns) just to call `len()` on it turns one page view into loading the
     entire `honeypots` table."""
     result = await db.execute(
-        select(Honeypot.company_id, func.count())
-        .where(Honeypot.company_id.is_not(None))
-        .group_by(Honeypot.company_id)
+        select(honeypot_companies.c.company_id, func.count())
+        .group_by(honeypot_companies.c.company_id)
     )
-    return {company_id: count for company_id, count in result.all() if company_id is not None}
+    return {company_id: count for company_id, count in result.all()}
 
 
 @router.get("")
@@ -283,7 +284,7 @@ async def all_honeypots_company(
     unbounded-page-size problem at fleet sizes in the hundreds/thousands.
     """
     page = max(page, 1)
-    query = (honeypots_visible_to(current_user)).options(selectinload(Honeypot.company))
+    query = honeypots_visible_to(current_user)
     if q.strip():
         query = query.where(honeypot_search_clause(q))
     if tag.strip():
@@ -431,24 +432,18 @@ async def company_detail(
     q: str = "",
     tag: str = "",
 ) -> Response:
-    """A single company's own page shows only two things, per the product
-    decision recorded in CLAUDE.md/wiki/Home.md: its users, and its
-    honeypots — each with a link to add another (`/users/new` and
-    `/honeypots/new`, both superadmin-only forms, pre-selecting this
-    company). Unlike debcontrol's machine groups, a honeypot's company
-    isn't editable from here as a membership action — every `Honeypot`
-    requires exactly one `Company` (DB-enforced, not nullable), so "move a
-    honeypot in/out of this company" doesn't make sense the way optional
-    group membership did. Reassigning a honeypot to a different company is
-    part of its own edit form (`app/web/routes/honeypots.py`, superadmin-
-    only there too via the company `<select>`)."""
+    """A single company's own page shows its users and its honeypots, each
+    with a way to attach one that already exists (`attach_existing_user`/
+    `attach_existing_honeypot` below) rather than only ever creating a
+    brand new one — both `User`↔`Company` and `Honeypot`↔`Company` are
+    many-to-many now (see `app.db.models.company`'s module docstring), so
+    "add" here means "grant/attach", never a silent create. Creating a
+    genuinely new user/honeypot from scratch still goes through
+    `/users/new`/`/honeypots/new` (both superadmin-only), which this page
+    also links to, pre-selecting this company."""
     company = await _get_company_or_404(company_id, db, current_user)
 
-    members_query = (
-        select(Honeypot)
-        .options(selectinload(Honeypot.company))
-        .where(Honeypot.company_id == company_id)
-    )
+    members_query = select(Honeypot).where(Honeypot.companies.any(Company.id == company_id))
     if q.strip():
         members_query = members_query.where(honeypot_search_clause(q))
     if tag.strip():
@@ -457,10 +452,27 @@ async def company_detail(
     honeypots = result.scalars().all()
 
     users_result = await db.execute(
-        select(User).where(User.company_id == company_id).order_by(User.username)
+        select(User)
+        .where(User.memberships.any(CompanyMembership.company_id == company_id))
+        .order_by(User.username)
     )
     users = users_result.scalars().all()
     stats = await compute_company_stats(db, company_id)
+
+    member_honeypot_ids = {h.id for h in honeypots}
+    member_user_ids = {u.id for u in users}
+    attachable_honeypots_result = await db.execute(
+        honeypots_visible_to(current_user).order_by(Honeypot.name)
+    )
+    attachable_honeypots = [
+        h for h in attachable_honeypots_result.scalars().all() if h.id not in member_honeypot_ids
+    ]
+    attachable_users_result = await db.execute(select(User).order_by(User.username))
+    attachable_users = [
+        u
+        for u in attachable_users_result.scalars().all()
+        if u.id not in member_user_ids and not u.is_superadmin
+    ]
 
     csrf_token, new_cookie = get_or_create_csrf_token(request)
     response = templates.TemplateResponse(
@@ -472,6 +484,9 @@ async def company_detail(
             "active_tab": "overview",
             "honeypots": honeypots,
             "users": users,
+            "attachable_honeypots": attachable_honeypots,
+            "attachable_users": attachable_users,
+            "access_levels": list(AccessLevel),
             "stats": stats,
             "all_tags": await _get_all_tags(db),
             "q": q,
@@ -482,6 +497,155 @@ async def company_detail(
     if new_cookie:
         set_csrf_cookie(response, new_cookie)
     return response
+
+
+@router.post("/{company_id}/users/attach", dependencies=[Depends(verify_csrf)])
+async def attach_existing_user(
+    request: Request,
+    company_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    user_id: uuid.UUID = Form(...),
+    access_level: str = Form(...),
+) -> Response:
+    """Grants an already-existing (non-superadmin) user access to this
+    company — additive: never touches any membership that user already
+    holds elsewhere. The counterpart to `/users/new?company_id=...`, for
+    the common case of a person who already has an account somewhere else
+    in the fleet."""
+    company = await _get_company_or_404(company_id, db, current_user)
+    user = await db.get(User, user_id, options=[selectinload(User.memberships)])
+    if user is None or user.is_superadmin:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+    try:
+        parsed_level = AccessLevel(access_level)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Unknown access level."
+        ) from None
+
+    existing = next((m for m in user.memberships if m.company_id == company_id), None)
+    if existing is not None:
+        existing.access_level = parsed_level
+    else:
+        db.add(
+            CompanyMembership(user_id=user.id, company_id=company_id, access_level=parsed_level)
+        )
+    await db.commit()
+
+    await log_event(
+        db,
+        request=request,
+        action="company.user.attach",
+        summary=f'Granted "{user.username}" {parsed_level.value} access to "{company.name}"',
+        target_type="company",
+        target_id=company.id,
+        target_label=company.name,
+    )
+    return RedirectResponse(url=f"/companies/{company_id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/{company_id}/users/{user_id}/detach", dependencies=[Depends(verify_csrf)])
+async def detach_user(
+    request: Request,
+    company_id: uuid.UUID,
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Removes one user's membership in this company — the account itself
+    is untouched (it may still hold membership elsewhere, or none at
+    all)."""
+    company = await _get_company_or_404(company_id, db, current_user)
+    user = await db.get(User, user_id, options=[selectinload(User.memberships)])
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+    membership = next((m for m in user.memberships if m.company_id == company_id), None)
+    if membership is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not a member.")
+    await db.delete(membership)
+    await db.commit()
+
+    await log_event(
+        db,
+        request=request,
+        action="company.user.detach",
+        summary=f'Removed "{user.username}"\'s access to "{company.name}"',
+        target_type="company",
+        target_id=company.id,
+        target_label=company.name,
+    )
+    return RedirectResponse(url=f"/companies/{company_id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/{company_id}/honeypots/attach", dependencies=[Depends(verify_csrf)])
+async def attach_existing_honeypot(
+    request: Request,
+    company_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    honeypot_id: uuid.UUID = Form(...),
+) -> Response:
+    """Attaches an already-existing honeypot to this company — additive:
+    a honeypot can sit under any number of companies at once, so this
+    never detaches it from wherever else it already is. The counterpart
+    to `/honeypots/new?company_id=...`, for a honeypot that's shared
+    across companies or was provisioned before it had one."""
+    company = await _get_company_or_404(company_id, db, current_user)
+    result = await db.execute(honeypots_visible_to(current_user).where(Honeypot.id == honeypot_id))
+    honeypot = result.scalar_one_or_none()
+    if honeypot is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Honeypot not found.")
+
+    if company not in honeypot.companies:
+        honeypot.companies.append(company)
+        await db.commit()
+
+    await log_event(
+        db,
+        request=request,
+        action="company.honeypot.attach",
+        summary=f'Attached "{honeypot.name}" to "{company.name}"',
+        target_type="company",
+        target_id=company.id,
+        target_label=company.name,
+    )
+    return RedirectResponse(url=f"/companies/{company_id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post(
+    "/{company_id}/honeypots/{honeypot_id}/detach", dependencies=[Depends(verify_csrf)]
+)
+async def detach_honeypot(
+    request: Request,
+    company_id: uuid.UUID,
+    honeypot_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Detaches a honeypot from this company only — the honeypot itself is
+    never deleted, even if this was its last company (an unassigned
+    honeypot is a valid, if superadmin-only-visible, state)."""
+    company = await _get_company_or_404(company_id, db, current_user)
+    result = await db.execute(honeypots_visible_to(current_user).where(Honeypot.id == honeypot_id))
+    honeypot = result.scalar_one_or_none()
+    if honeypot is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Honeypot not found.")
+
+    if company in honeypot.companies:
+        honeypot.companies.remove(company)
+        await db.commit()
+
+    await log_event(
+        db,
+        request=request,
+        action="company.honeypot.detach",
+        summary=f'Detached "{honeypot.name}" from "{company.name}"',
+        target_type="company",
+        target_id=company.id,
+        target_label=company.name,
+    )
+    return RedirectResponse(url=f"/companies/{company_id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/{company_id}/integrations")
@@ -656,31 +820,18 @@ async def delete_company(
     company = await _get_company_or_404(company_id, db, current_user)
     company_name = company.name
     honeypot_count = len(company.honeypots)
-    # Unlike debcontrol (deleting a group just orphans its machines —
-    # `group_id` is nullable there), deleting a Company here cascades to
-    # delete every one of its Honeypots, and each honeypot's events with
-    # it (`Company.honeypots`/`Honeypot.events` are both
-    # `cascade="all, delete-orphan"`) — there is no "no company" state a
-    # honeypot can be left in. The confirmation form
-    # (`companies/detail.html`) makes this explicit before this route is
+    member_count = len(company.memberships)
+    # Unlike the old single-company model (and unlike debcontrol's own
+    # `group_id`-is-nullable orphaning), deleting a Company now only ever
+    # removes *links* — its `CompanyMembership` rows and its
+    # `honeypot_companies` rows, both `ondelete=CASCADE` at the DB level
+    # (see the `d4e5f6a7b8c9` migration). Neither a honeypot nor a user
+    # account is ever deleted by this: a honeypot may still belong to
+    # other companies (or none, which is now a valid state), and a user
+    # may still hold membership elsewhere (or none, which just means
+    # logged in but scoped to nothing). The confirmation form
+    # (`companies/detail.html`) says exactly this before this route is
     # ever reached.
-    #
-    # A company-scoped `User`, unlike a `Honeypot`, is never left
-    # companyless either — `User.company_id` is required for every
-    # non-superadmin account (see that model's own CheckConstraint), so
-    # there's no "no company" state to fall back to for a user here any
-    # more than there is for a honeypot. Deleted along with the company,
-    # same as its honeypots — `User.company_id`'s FK is `ondelete=
-    # RESTRICT` (deliberately, so an *accidental* company delete with
-    # users still on it fails loudly at the DB level instead of silently
-    # orphaning them) rather than `CASCADE`, so this has to happen
-    # explicitly, before the company itself is deleted, or the delete
-    # below fails outright.
-    users_result = await db.execute(select(User).where(User.company_id == company.id))
-    deleted_users = list(users_result.scalars().all())
-    for user in deleted_users:
-        await db.delete(user)
-
     await db.delete(company)
     await db.commit()
     await log_event(
@@ -688,15 +839,13 @@ async def delete_company(
         request=request,
         action="company.delete",
         summary=(
-            f'Deleted company "{company_name}", its {honeypot_count} honeypot(s), '
-            f"and {len(deleted_users)} user(s)"
+            f'Deleted company "{company_name}" — detached {honeypot_count} honeypot(s) '
+            f"and removed {member_count} user membership(s); no honeypot or user account "
+            "was deleted"
         ),
         target_type="company",
         target_id=company_id,
         target_label=company_name,
-        details={
-            "honeypot_count": honeypot_count,
-            "deleted_usernames": [user.username for user in deleted_users],
-        },
+        details={"honeypot_count": honeypot_count, "member_count": member_count},
     )
     return RedirectResponse(url="/companies", status_code=status.HTTP_303_SEE_OTHER)

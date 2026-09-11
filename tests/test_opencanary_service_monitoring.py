@@ -15,6 +15,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlalchemy import select
 
+from app.db.models.company import Company
 from app.db.models.honeypot import Honeypot
 from app.db.models.honeypot_monitoring_sample import HoneypotMonitoringSample
 from app.services.monitoring_history import build_monitoring_history
@@ -87,7 +88,7 @@ async def test_sample_honeypot_monitoring_stores_opencanary_active(
     company = await create_company(db_session_factory)
     async with db_session_factory() as db:
         honeypot = Honeypot(
-            company_id=company.id,
+            companies=[await db.get(Company, company.id)],
             name="acme-honey1",
             host_key_fingerprint="SHA256:fakefingerprint",
         )

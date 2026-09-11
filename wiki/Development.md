@@ -56,8 +56,8 @@ invisible to `--autogenerate`.
    `require_write` (mutating).
 2. Resolve the `company_id` in question and call
    `app.auth.scope.ensure_company_access(user, company_id, write=...)` —
-   or, for a list view, filter by `app.auth.scope.visible_company_id(user)`
-   (`None` for a superadmin means "no filter").
+   or, for a list view, filter by `app.auth.scope.visible_company_ids(user)`
+   (a set of ids; `None` for a superadmin means "no filter").
 3. If it's a mutation, wrap it with CSRF (`Depends(verify_csrf)` on the
    route, or the router-level `dependencies=[...]` if every route on it
    mutates) and call `app.audit.log_event(...)` after the commit.

@@ -34,6 +34,7 @@ from app.auth.security import hash_password
 from app.auth.sessions import SESSION_COOKIE_NAME, create_session
 from app.db.base import Base
 from app.db.models.company import Company
+from app.db.models.company_membership import CompanyMembership
 from app.db.models.user import AccessLevel, AuthProvider, User
 from app.db.session import get_db
 from app.main import app
@@ -140,6 +141,21 @@ async def create_company(db_session_factory: Any, *, name: str = "Acme Corp") ->
     return company
 
 
+def _memberships_for(
+    company_id: uuid.UUID | None, access_level: AccessLevel | None
+) -> list[CompanyMembership]:
+    """`company_id`/`access_level` kwargs are kept on every test factory
+    below as the common single-company shorthand (most tests only need
+    one) — internally always expressed as a `CompanyMembership` list, the
+    real shape now that a user can hold any number of them. Pass neither
+    for a superadmin (no memberships) or a deliberately company-less
+    account."""
+    if company_id is None:
+        return []
+    assert access_level is not None, "company_id needs access_level too"
+    return [CompanyMembership(company_id=company_id, access_level=access_level)]
+
+
 async def _create_user(
     db_session_factory: Any,
     *,
@@ -160,8 +176,7 @@ async def _create_user(
             auth_provider=auth_provider,
             is_active=True,
             is_superadmin=is_superadmin,
-            company_id=company_id,
-            access_level=access_level,
+            memberships=_memberships_for(company_id, access_level),
             **user_kwargs,
         )
         db.add(user)
@@ -196,8 +211,7 @@ async def create_local_user(
             password_hash=hash_password(password),
             is_active=is_active,
             is_superadmin=is_superadmin,
-            company_id=company_id,
-            access_level=access_level,
+            memberships=_memberships_for(company_id, access_level),
             **user_kwargs,
         )
         db.add(user)

@@ -1331,7 +1331,7 @@ async def _poll_honeypot_canary_log(honeypot_id: str) -> dict[str, Any]:
         await session.commit()
         await publish_honeypot_event(honeypot_id, KIND_ACTIVITY)
         for row in new_rows:
-            await forward_honeypot_event_to_syslog(session, honeypot.company, honeypot, row)
+            await forward_honeypot_event_to_syslog(session, honeypot, row)
 
         return {"ok": True, "new_events": len(alert_events)}
 
@@ -1963,14 +1963,17 @@ async def _record_company_snapshots() -> int:
             online_result = await session.execute(
                 select(func.count())
                 .select_from(Honeypot)
-                .where(Honeypot.company_id == company.id, Honeypot.last_seen_at >= cutoff)
+                .where(
+                    Honeypot.companies.any(Company.id == company.id),
+                    Honeypot.last_seen_at >= cutoff,
+                )
             )
             honeypots_online = online_result.scalar_one()
             event_count_result = await session.execute(
                 select(func.count())
                 .select_from(HoneypotEvent)
                 .where(
-                    HoneypotEvent.company_id == company.id,
+                    HoneypotEvent.honeypot.has(Honeypot.companies.any(Company.id == company.id)),
                     func.date(HoneypotEvent.occurred_at) == today,
                 )
             )

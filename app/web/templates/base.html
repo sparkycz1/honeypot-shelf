@@ -40,7 +40,7 @@
         <a href="/users" {% if current_path.startswith('/users') %}class="active" aria-current="page"{% endif %}>{{ t(request, "nav.users") }}</a>
         <a href="/settings" {% if current_path.startswith('/settings') %}class="active" aria-current="page"{% endif %}>{{ t(request, "nav.settings") }}</a>
       {% endif %}
-      {% if current_user.can_write() %}
+      {% if current_user.can_write() and current_user.api_access_enabled %}
         <a href="/api" {% if current_path == '/api' %}class="active" aria-current="page"{% endif %}>{{ t(request, "nav.api_docs") }}</a>
       {% endif %}
     </nav>

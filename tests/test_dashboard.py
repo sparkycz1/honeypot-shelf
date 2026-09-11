@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from app.db.models.company import Company
 from app.db.models.honeypot import Honeypot
 from app.db.models.honeypot_event import HoneypotEvent
 from tests.conftest import create_company
@@ -16,13 +17,13 @@ pytestmark = pytest.mark.asyncio
 
 async def _add_honeypot_with_event(db_session_factory, company_id, name="honey1"):
     async with db_session_factory() as db:
-        honeypot = Honeypot(company_id=company_id, name=name, last_seen_at=datetime.now(UTC))
+        company = await db.get(Company, company_id)
+        honeypot = Honeypot(companies=[company], name=name, last_seen_at=datetime.now(UTC))
         db.add(honeypot)
         await db.flush()
         db.add(
             HoneypotEvent(
                 honeypot_id=honeypot.id,
-                company_id=company_id,
                 event_type="SSH_LOGIN_ATTEMPT",
                 occurred_at=datetime.now(UTC),
                 raw={},
@@ -43,8 +44,7 @@ async def test_dashboard_shows_fleet_wide_activity_by_type(client, db_session_fa
         db.add(
             HoneypotEvent(
                 honeypot_id=honeypot.id,
-                company_id=company.id,
-                event_type="4002",
+event_type="4002",
                 occurred_at=datetime.now(UTC),
                 raw={},
             )

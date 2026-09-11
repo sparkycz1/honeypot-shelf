@@ -1,7 +1,7 @@
 """REST API for OpenCanary events (`HoneypotEvent`) — list/filter and CSV/
 JSON export, mirroring `app/web/routes/api_v1_audit.py`'s shape. Unlike the
 audit log, this is company-scoped like everything else honeypot-related
-(`app.auth.scope.visible_company_id`), not superadmin-only.
+(`app.auth.scope.visible_company_ids`), not superadmin-only.
 
 Referenced from `auth/account.html`'s API-tokens hint since that page was
 written (`GET /api/v1/events`) — this module is what finally makes that
@@ -23,7 +23,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
 from app.auth.dependencies import get_api_token_user
-from app.auth.scope import visible_company_id
+from app.auth.scope import visible_company_ids
+from app.db.models.company import Company
+from app.db.models.honeypot import Honeypot
 from app.db.models.honeypot_event import HoneypotEvent
 from app.db.models.user import User
 from app.db.session import get_db
@@ -41,7 +43,7 @@ _EXPORT_FIELDS = (
     "occurred_at",
     "received_at",
     "honeypot_id",
-    "company_id",
+    "companies",
     "event_type",
     "event_label",
     "src_ip",
@@ -74,9 +76,11 @@ def _apply_filters[S: Select[tuple[HoneypotEvent]]](
     since: str,
     until: str,
 ) -> S:
-    company_id = visible_company_id(user)
-    if company_id is not None:
-        query = query.where(HoneypotEvent.company_id == company_id)
+    company_ids = visible_company_ids(user)
+    if company_ids is not None:
+        query = query.where(
+            HoneypotEvent.honeypot.has(Honeypot.companies.any(Company.id.in_(company_ids)))
+        )
     if honeypot_id is not None:
         query = query.where(HoneypotEvent.honeypot_id == honeypot_id)
     if event_type.strip():
@@ -96,7 +100,7 @@ def _event_to_dict(event: HoneypotEvent) -> dict[str, Any]:
     return {
         "id": str(event.id),
         "honeypot_id": str(event.honeypot_id),
-        "company_id": str(event.company_id),
+        "companies": [{"id": str(c.id), "name": c.name} for c in event.honeypot.companies],
         "event_type": event.event_type,
         "event_label": logtype_label(event.event_type),
         "occurred_at": event.occurred_at.isoformat(),
@@ -115,7 +119,7 @@ def _event_to_export_row(event: HoneypotEvent) -> dict[str, Any]:
         "occurred_at": event.occurred_at.isoformat(),
         "received_at": event.received_at.isoformat(),
         "honeypot_id": str(event.honeypot_id),
-        "company_id": str(event.company_id),
+        "companies": "; ".join(c.name for c in event.honeypot.companies),
         "event_type": event.event_type,
         "event_label": logtype_label(event.event_type),
         "src_ip": event.src_ip,

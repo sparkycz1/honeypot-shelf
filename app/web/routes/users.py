@@ -6,10 +6,16 @@ deactivate, delete, or demote your own account, and the last active
 superadmin can't be deactivated, deleted, or demoted away from it either
 (see `app.auth.login.count_active_superadmins`).
 
-Unlike debcontrol's role selection + opt-in machine-group scope checkbox
-list, creating/editing a user here means picking exactly one of two
-shapes: superadmin (no company, no access level), or a company +
-READ/READ_WRITE access level. See `app.db.models.user`'s module docstring.
+Creating/editing a user here means picking exactly one of two shapes:
+superadmin (no company memberships at all), or one row per company this
+user should have access to, each with its own READ/READ_WRITE level — see
+`app.db.models.user`/`app.db.models.company_membership`'s module
+docstrings. The New/Edit forms render one company-scoped `<select>` per
+existing `Company` (value: "", "read", or "read_write"), submitted as
+`membership__<company_id>` form fields — `_parse_memberships` below reads
+those directly off the raw form body rather than declaring them as typed
+FastAPI `Form(...)` parameters, since the number of companies (and so the
+number of fields) isn't known ahead of time.
 """
 
 from __future__ import annotations
@@ -17,7 +23,9 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, status
+from fastapi.datastructures import FormData
 from fastapi.responses import RedirectResponse
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,17 +39,20 @@ from app.auth.sessions import revoke_all_sessions_for_user
 from app.core.csrf import verify_csrf
 from app.db.models.audit_log import AuditOutcome
 from app.db.models.company import Company
+from app.db.models.company_membership import CompanyMembership
 from app.db.models.user import AccessLevel, AuthProvider, User
 from app.db.session import get_db
-from app.schemas.user import MIN_PASSWORD_LENGTH, UserCreate, UserUpdate
+from app.schemas.user import MIN_PASSWORD_LENGTH, MembershipInput, UserCreate, UserUpdate
 from app.web.templating import templates
 
 router = APIRouter(prefix="/users", dependencies=[Depends(require_superadmin)])
 
+_MEMBERSHIP_FIELD_PREFIX = "membership__"
+
 
 async def _get_user_or_404(user_id: uuid.UUID, db: AsyncSession) -> User:
     result = await db.execute(
-        select(User).options(selectinload(User.company)).where(User.id == user_id)
+        select(User).options(selectinload(User.memberships)).where(User.id == user_id)
     )
     user = result.scalar_one_or_none()
     if user is None:
@@ -61,18 +72,47 @@ async def _would_remove_last_superadmin(db: AsyncSession, target: User) -> bool:
     return remaining == 0
 
 
-def _resolve_scope(
-    is_superadmin: str, company_id: str, access_level: str
-) -> tuple[bool, uuid.UUID | None, AccessLevel | None]:
-    """The three raw form fields into the (is_superadmin, company_id,
-    access_level) shape `UserCreate`/`UserUpdate` validate — a checkbox
-    plus a company `<select>` plus an access-level `<select>`, the latter
-    two only meaningful (and only rendered) when the checkbox is off."""
-    if is_superadmin:
-        return True, None, None
-    parsed_company_id = uuid.UUID(company_id) if company_id else None
-    parsed_access_level = AccessLevel(access_level) if access_level else None
-    return False, parsed_company_id, parsed_access_level
+def _parse_memberships(form: FormData) -> list[MembershipInput]:
+    """Reads every `membership__<company_id>` field with a non-blank value
+    off the raw form body — see the module docstring for why this isn't a
+    typed `Form(...)` parameter."""
+    memberships = []
+    for key, value in form.multi_items():
+        if not key.startswith(_MEMBERSHIP_FIELD_PREFIX) or not value:
+            continue
+        company_id = uuid.UUID(key.removeprefix(_MEMBERSHIP_FIELD_PREFIX))
+        memberships.append(
+            MembershipInput(company_id=company_id, access_level=AccessLevel(str(value)))
+        )
+    return memberships
+
+
+def _membership_map(user: User) -> dict[uuid.UUID, AccessLevel]:
+    """For pre-filling the edit form's per-company `<select>`s."""
+    return {m.company_id: m.access_level for m in user.memberships}
+
+
+async def _apply_memberships(
+    db: AsyncSession, user: User, memberships: list[MembershipInput]
+) -> None:
+    """Replaces every one of `user`'s memberships with exactly the given
+    set — simplest correct approach for a form re-submitting the whole
+    fieldset each time, and cheap (a handful of rows at most)."""
+    for existing in list(user.memberships):
+        await db.delete(existing)
+    user.memberships = [
+        CompanyMembership(company_id=m.company_id, access_level=m.access_level)
+        for m in memberships
+    ]
+
+
+def _scope_label(user: User, memberships: list[MembershipInput], companies: list[Company]) -> str:
+    if user.is_superadmin:
+        return "superadmin"
+    names = {c.id: c.name for c in companies}
+    return ", ".join(
+        f"{names.get(m.company_id, m.company_id)}/{m.access_level.value}" for m in memberships
+    )
 
 
 @router.get("")
@@ -84,9 +124,9 @@ async def list_users(
     everyone, not just the ones shown inline there) as well as directly.
     Superadmin-only end to end (router-level), so no scoping check beyond
     the filter itself is needed."""
-    query = select(User).options(selectinload(User.company)).order_by(User.username)
+    query = select(User).options(selectinload(User.memberships)).order_by(User.username)
     if company_id is not None:
-        query = query.where(User.company_id == company_id)
+        query = query.where(User.memberships.any(CompanyMembership.company_id == company_id))
     result = await db.execute(query)
     users = result.scalars().all()
     filtered_company = await db.get(Company, company_id) if company_id is not None else None
@@ -109,6 +149,7 @@ async def list_users(
 
 @router.get("/new")
 async def new_user_form(request: Request, db: AsyncSession = Depends(get_db)) -> Response:
+    preselect_company_id = request.query_params.get("company_id", "")
     return templates.TemplateResponse(
         request,
         "users/new.html",
@@ -117,10 +158,15 @@ async def new_user_form(request: Request, db: AsyncSession = Depends(get_db)) ->
             "access_levels": list(AccessLevel),
             "companies": await _get_companies(db),
             "errors": [],
-            # Pre-selects the company `<select>` when linked from that
-            # company's own page ("Add user") — purely a UI convenience,
-            # still just a regular field on the form the operator can change.
-            "form": {"company_id": request.query_params.get("company_id", "")},
+            # Pre-selects one company's `READ` row when linked from that
+            # company's own page ("Add existing user") — purely a UI
+            # convenience, still just regular fields the operator can change.
+            "form": {"username": "", "display_name": ""},
+            "membership_levels": (
+                {uuid.UUID(preselect_company_id): AccessLevel.READ}
+                if preselect_company_id
+                else {}
+            ),
             "csrf_token": request.state.csrf_token,
         },
     )
@@ -135,10 +181,17 @@ async def create_user(
     auth_provider: AuthProvider = Form(...),
     password: str = Form(""),
     is_superadmin: str = Form(""),
-    company_id: str = Form(""),
-    access_level: str = Form(""),
     api_access_enabled: str = Form(""),
 ) -> Response:
+    form = await request.form()
+    try:
+        memberships = _parse_memberships(form)
+    except ValueError:
+        # A malformed membership field (not something the rendered form can
+        # actually produce) — fall through to the model's own "needs at
+        # least one membership" validation rather than a raw 500.
+        memberships = []
+
     async def _rerender(errors: list[str], status_code: int) -> Response:
         await log_event(
             db,
@@ -160,24 +213,25 @@ async def create_user(
                     "display_name": display_name,
                     "auth_provider": auth_provider,
                 },
+                "membership_levels": {m.company_id: m.access_level for m in memberships},
                 "csrf_token": request.state.csrf_token,
             },
             status_code=status_code,
         )
 
     try:
-        resolved_is_superadmin, resolved_company_id, resolved_access_level = _resolve_scope(
-            is_superadmin, company_id, access_level
-        )
         payload = UserCreate(
             username=username,
             display_name=display_name or None,
             auth_provider=auth_provider,
             password=password or None,
-            is_superadmin=resolved_is_superadmin,
-            company_id=resolved_company_id,
-            access_level=resolved_access_level,
+            is_superadmin=bool(is_superadmin),
+            memberships=memberships,
             api_access_enabled=bool(api_access_enabled),
+        )
+    except ValidationError as exc:
+        return await _rerender(
+            [e["msg"] for e in exc.errors()], status.HTTP_422_UNPROCESSABLE_CONTENT
         )
     except ValueError as exc:
         return await _rerender([str(exc)], status.HTTP_422_UNPROCESSABLE_CONTENT)
@@ -192,10 +246,12 @@ async def create_user(
         # else picked and now knows.
         must_change_password=payload.auth_provider == AuthProvider.LOCAL,
         is_superadmin=payload.is_superadmin,
-        company_id=payload.company_id,
-        access_level=payload.access_level,
         api_access_enabled=payload.api_access_enabled,
     )
+    user.memberships = [
+        CompanyMembership(company_id=m.company_id, access_level=m.access_level)
+        for m in payload.memberships
+    ]
     db.add(user)
     try:
         await db.commit()
@@ -206,11 +262,8 @@ async def create_user(
         )
     await db.refresh(user)
 
-    scope_label = (
-        "superadmin"
-        if user.is_superadmin
-        else f"{(await db.get(Company, user.company_id)).name}/{user.access_level.value}"  # type: ignore[union-attr]
-    )
+    companies = await _get_companies(db)
+    scope_label = _scope_label(user, payload.memberships, companies)
     await log_event(
         db,
         request=request,
@@ -280,10 +333,12 @@ async def bulk_assign_company(
     company_id: str = Form(""),
     access_level: str = Form(""),
 ) -> Response:
-    """Re-homes every selected non-superadmin user to one company/access
-    level in one go — a superadmin in the selection is skipped and counted
-    (moving a superadmin *out* of superadmin is a deliberate, one-at-a-time
-    decision on that account's own edit page, not a bulk side effect)."""
+    """Grants every selected non-superadmin user one additional company
+    membership (or updates the level of an existing one) — a superadmin in
+    the selection is skipped and counted (moving a superadmin *out* of
+    superadmin is a deliberate, one-at-a-time decision on that account's
+    own edit page, not a bulk side effect). Unlike the single-company era,
+    this is additive — it never removes a user's other memberships."""
     if not user_ids:
         return RedirectResponse(
             url="/users?bulk_error=Select+at+least+one+user.",
@@ -307,14 +362,21 @@ async def bulk_assign_company(
     assigned = 0
     skipped = 0
     for user_id in user_ids:
-        user = await db.get(User, user_id)
+        user = await db.get(User, user_id, options=[selectinload(User.memberships)])
         if user is None:
             continue
         if user.is_superadmin:
             skipped += 1
             continue
-        user.company_id = parsed_company_id
-        user.access_level = parsed_access_level
+        existing = next((m for m in user.memberships if m.company_id == parsed_company_id), None)
+        if existing is not None:
+            existing.access_level = parsed_access_level
+        else:
+            db.add(
+                CompanyMembership(
+                    user_id=user.id, company_id=parsed_company_id, access_level=parsed_access_level
+                )
+            )
         assigned += 1
 
     await db.commit()
@@ -324,7 +386,7 @@ async def bulk_assign_company(
             request=request,
             action="user.bulk_assign_company",
             summary=(
-                f'Assigned {assigned} user(s) to "{company.name}" '
+                f'Granted {assigned} user(s) access to "{company.name}" '
                 f"({parsed_access_level.value})"
             ),
             target_type="company",
@@ -352,6 +414,7 @@ async def edit_user_form(
             "auth_providers": list(AuthProvider),
             "access_levels": list(AccessLevel),
             "companies": await _get_companies(db),
+            "membership_levels": _membership_map(user),
             "errors": [],
             "csrf_token": request.state.csrf_token,
         },
@@ -368,13 +431,19 @@ async def update_user(
     auth_provider: AuthProvider = Form(...),
     password: str = Form(""),
     is_superadmin: str = Form(""),
-    company_id: str = Form(""),
-    access_level: str = Form(""),
     api_access_enabled: str = Form(""),
     is_active: str = Form(""),
     current_user: User = Depends(get_current_user),
 ) -> Response:
     user = await _get_user_or_404(user_id, db)
+    form = await request.form()
+    try:
+        memberships = _parse_memberships(form)
+    except ValueError:
+        # A malformed membership field (not something the rendered form can
+        # actually produce) — fall through to the model's own "needs at
+        # least one membership" validation rather than a raw 500.
+        memberships = []
 
     async def _rerender(errors: list[str], status_code: int) -> Response:
         return templates.TemplateResponse(
@@ -385,6 +454,7 @@ async def update_user(
                 "auth_providers": list(AuthProvider),
                 "access_levels": list(AccessLevel),
                 "companies": await _get_companies(db),
+                "membership_levels": {m.company_id: m.access_level for m in memberships},
                 "errors": errors,
                 "csrf_token": request.state.csrf_token,
             },
@@ -392,25 +462,27 @@ async def update_user(
         )
 
     try:
-        resolved_is_superadmin, resolved_company_id, resolved_access_level = _resolve_scope(
-            is_superadmin, company_id, access_level
-        )
         payload = UserUpdate(
             username=username,
             display_name=display_name or None,
             auth_provider=auth_provider,
             password=password or None,
-            is_superadmin=resolved_is_superadmin,
-            company_id=resolved_company_id,
-            access_level=resolved_access_level,
+            is_superadmin=bool(is_superadmin),
+            memberships=memberships,
             api_access_enabled=bool(api_access_enabled),
             is_active=bool(is_active),
+        )
+    except ValidationError as exc:
+        return await _rerender(
+            [e["msg"] for e in exc.errors()], status.HTTP_422_UNPROCESSABLE_CONTENT
         )
     except ValueError as exc:
         return await _rerender([str(exc)], status.HTTP_422_UNPROCESSABLE_CONTENT)
 
     if user.id == current_user.id:
-        if payload.is_superadmin != user.is_superadmin or payload.company_id != user.company_id:
+        own_company_ids = {m.company_id for m in user.memberships}
+        new_company_ids = {m.company_id for m in payload.memberships}
+        if payload.is_superadmin != user.is_superadmin or own_company_ids != new_company_ids:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You can't change your own scope — ask another superadmin.",
@@ -423,7 +495,13 @@ async def update_user(
 
     becoming_local = payload.auth_provider == AuthProvider.LOCAL
     losing_local = user.auth_provider == AuthProvider.LOCAL and not becoming_local
-    if becoming_local and user.auth_provider != AuthProvider.LOCAL and not payload.password:
+    # True provider switch only — not "already local, staying local." An
+    # already-local account's password is changed exclusively through the
+    # "Reset password" panel below, which also revokes every existing
+    # session; this field silently doing the same thing with no
+    # session-revocation would be an inconsistent, easy-to-miss backdoor.
+    switching_to_local = becoming_local and user.auth_provider != AuthProvider.LOCAL
+    if switching_to_local and not payload.password:
         return await _rerender(
             [f'Switching "{user.username}" to a local account needs a password.'],
             status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -442,14 +520,12 @@ async def update_user(
     user.display_name = payload.display_name
     user.auth_provider = payload.auth_provider
     user.is_superadmin = payload.is_superadmin
-    user.company_id = payload.company_id
-    user.access_level = payload.access_level
+    await _apply_memberships(db, user, payload.memberships)
     user.is_active = payload.is_active
     user.api_access_enabled = payload.api_access_enabled
-    if becoming_local:
-        if payload.password:
-            user.password_hash = hash_password(payload.password)
-            user.must_change_password = True
+    if switching_to_local and payload.password:
+        user.password_hash = hash_password(payload.password)
+        user.must_change_password = True
     if losing_local:
         user.password_hash = None
         user.must_change_password = False
@@ -499,6 +575,7 @@ async def reset_password(
                 "auth_providers": list(AuthProvider),
                 "access_levels": list(AccessLevel),
                 "companies": await _get_companies(db),
+                "membership_levels": _membership_map(user),
                 "errors": [f"Password must be at least {MIN_PASSWORD_LENGTH} characters."],
                 "csrf_token": request.state.csrf_token,
             },

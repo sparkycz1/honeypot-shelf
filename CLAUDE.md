@@ -30,23 +30,37 @@ the company-scoped Dashboard on top of it — see
 
 ## RBAC: the one thing genuinely different from debcontrol
 
-**No roles, no groups.** Every user either:
+**No roles, no groups — but not single-company either.** Every user
+either:
 
 - is a **superadmin** (`User.is_superadmin`) — sees/manages every company,
-  every honeypot, Users, Companies, Settings, the Audit log; or
-- belongs to **exactly one `Company`** (`User.company_id`, required) with
-  exactly one **`AccessLevel`**: `READ` or `READ_WRITE`. Nothing in
-  between, no per-honeypot grants. `READ_WRITE` covers everything a
-  company user can do — no separate "terminal permission" the way
-  debcontrol's `action.terminal` was its own grant.
+  every honeypot, Users, Companies, Settings, the Audit log; no
+  memberships at all; or
+- holds zero or more `CompanyMembership` rows
+  (`app/db/models/company_membership.py`), each naming one `Company` and
+  one **`AccessLevel`** (`READ`/`READ_WRITE`), independent per company —
+  the same person can be `READ_WRITE` at one company and `READ`-only at
+  another. `READ_WRITE` on a company covers everything for *that*
+  company — no separate "terminal permission" the way debcontrol's
+  `action.terminal` was its own grant.
+
+**`Honeypot` is many-to-many with `Company` too** (`honeypot_companies`,
+a plain link table) — a honeypot can belong to any number of companies,
+including zero (superadmin-visible only). A company's own page can
+*attach* an already-existing honeypot/grant an already-existing user
+access, additively, alongside creating a brand-new one — see
+[`app/web/routes/companies.py`](app/web/routes/companies.py)'s
+`attach_existing_honeypot`/`attach_existing_user` (and their `detach_*`
+counterparts). Deleting a `Company` only ever removes those links now,
+never the honeypot or user account itself.
 
 See [`app/db/models/user.py`](app/db/models/user.py)'s docstring for the
-full reasoning and the DB `CheckConstraint` enforcing this shape, and
-[`app/auth/scope.py`](app/auth/scope.py) for enforcement
-(`require_write` = "can write at all", `ensure_company_access`/
-`visible_company_id`/`has_company_access` = "which company"). **Out-of-
-scope reads 404, never 403** — a 403 would itself leak that the company/
-honeypot exists. Companies, Users, Settings, and the Audit log are
+full reasoning, and [`app/auth/scope.py`](app/auth/scope.py) for
+enforcement (`require_write` = "can write at all, on any company",
+`ensure_company_access`/`visible_company_ids`/`has_company_access`/
+`can_write_company` = "which company/companies"). **Out-of-scope reads
+404, never 403** — a 403 would itself leak that the company/honeypot
+exists. Companies, Users, Settings, and the Audit log are
 **superadmin-only** end to end — see [wiki/Home.md](wiki/Home.md).
 
 ## Commands

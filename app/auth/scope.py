@@ -1,15 +1,20 @@
 """Company scoping: which company's data a user may read or write.
 
-The single implementation of per-user visibility scoping — the HoneyHive
-equivalent of debcontrol's `app.services.access_scope`, much simpler
-because there's nothing opt-in to look up: every non-superadmin user
-belongs to exactly one `Company` (`User.company_id`), full stop. A
-superadmin sees everything.
+The single implementation of per-user visibility scoping — the Honeypot
+Shelf equivalent of debcontrol's `app.services.access_scope`. Both `User`
+and `Honeypot` relate to `Company` many-to-many now (`CompanyMembership`
+for users, each with its own `AccessLevel`; a plain link table for
+honeypots) — see `app.db.models.company`'s module docstring — so "which
+companies can this user see" is a *set*, not a single id, and a honeypot
+is visible if it shares **any** company with the user (a superadmin sees
+everything regardless, an honeypot with zero companies is visible to a
+superadmin only).
 
 Orthogonal to `app.auth.dependencies.require_write` the same way
 debcontrol's machine-group scoping was orthogonal to its permission
-matrix — `require_write` decides *whether* this user may write at all,
-this module decides *which company* they may read or write.
+matrix — `require_write` decides *whether* this user may write at all
+(on at least one company), this module decides *which* company/honeypot
+they may read or write.
 
 Two shapes are offered, mirroring debcontrol's `access_scope`, because
 call sites come in two shapes:
@@ -50,9 +55,9 @@ from app.db.models.user import User
 def has_company_access(user: User, company_id: uuid.UUID, *, write: bool = False) -> bool:
     if user.is_superadmin:
         return True
-    if user.company_id != company_id:
-        return False
-    return user.can_write() if write else True
+    if write:
+        return user.can_write_company(company_id)
+    return company_id in user.company_ids()
 
 
 def ensure_company_access(user: User, company_id: uuid.UUID, *, write: bool = False) -> None:
@@ -62,32 +67,34 @@ def ensure_company_access(user: User, company_id: uuid.UUID, *, write: bool = Fa
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found.")
 
 
-def visible_company_id(user: User) -> uuid.UUID | None:
-    """The single company a non-superadmin user may ever see — `None` for a
-    superadmin, meaning "every company" (callers branch on that rather than
-    trying to express "no filter" as a company id)."""
-    return None if user.is_superadmin else user.company_id
+def visible_company_ids(user: User) -> set[uuid.UUID] | None:
+    """Every company a non-superadmin user may see — `None` for a
+    superadmin, meaning "every company" (callers branch on that rather
+    than trying to express "no filter" as a finite set). An empty set for
+    a non-superadmin with zero memberships is a real, valid result — it
+    means "sees nothing," not "unscoped"."""
+    return None if user.is_superadmin else user.company_ids()
 
 
 def honeypots_visible_to(user: User) -> Select[tuple[Honeypot]]:
     """A `Select` for `Honeypot`, already scope-filtered — compose with
     `.where()` / `.order_by()` / `.options()` exactly as the call site
-    needs. No DB round trip of its own (unlike debcontrol's
-    `machines_visible_to`, which had to look up opt-in grants) — the scope
-    is just `user.company_id`."""
+    needs. A honeypot is visible if it shares **any** company with the
+    user; superadmin sees everything, including a honeypot attached to no
+    company at all."""
     query = select(Honeypot)
-    company_id = visible_company_id(user)
-    if company_id is not None:
-        query = query.where(Honeypot.company_id == company_id)
+    company_ids = visible_company_ids(user)
+    if company_ids is not None:
+        query = query.where(Honeypot.companies.any(Company.id.in_(company_ids)))
     return query
 
 
 def companies_visible_to(user: User) -> Select[tuple[Company]]:
     """The `Company` equivalent of `honeypots_visible_to`."""
     query = select(Company)
-    company_id = visible_company_id(user)
-    if company_id is not None:
-        query = query.where(Company.id == company_id)
+    company_ids = visible_company_ids(user)
+    if company_ids is not None:
+        query = query.where(Company.id.in_(company_ids))
     return query
 
 
@@ -99,11 +106,18 @@ async def count_visible_honeypots(db: AsyncSession, user: User) -> int:
 
 
 def can_see_honeypot(user: User, honeypot: Honeypot) -> bool:
-    return has_company_access(user, honeypot.company_id)
+    if user.is_superadmin:
+        return True
+    return bool(user.company_ids() & {c.id for c in honeypot.companies})
 
 
 def can_write_honeypot(user: User, honeypot: Honeypot) -> bool:
-    return has_company_access(user, honeypot.company_id, write=True)
+    """`True` if the user can write this honeypot through **any** of the
+    companies it's attached to — a honeypot shared across companies is
+    manageable by anyone with `READ_WRITE` on at least one of them."""
+    if user.is_superadmin:
+        return True
+    return any(user.can_write_company(c.id) for c in honeypot.companies)
 
 
 def filter_honeypots(user: User, honeypots: Iterable[Honeypot]) -> list[Honeypot]:
@@ -111,10 +125,10 @@ def filter_honeypots(user: User, honeypots: Iterable[Honeypot]) -> list[Honeypot
     for any endpoint acting on an ad-hoc, client-submitted selection of
     honeypot ids: out-of-scope ids are dropped silently rather than
     rejected loudly, for the same 404-not-403 reasoning as detail routes."""
-    company_id = visible_company_id(user)
-    if company_id is None:
+    if user.is_superadmin:
         return list(honeypots)
-    return [h for h in honeypots if h.company_id == company_id]
+    my_companies = user.company_ids()
+    return [h for h in honeypots if my_companies & {c.id for c in h.companies}]
 
 
 async def visible_honeypots_by_ids(

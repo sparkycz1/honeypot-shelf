@@ -52,7 +52,9 @@
             <td>{{ u.display_name or u.username }}</td>
             <td>
               {% if u.is_superadmin %}<span class="badge">{{ t(request, "users.list.superadmin_badge") }}</span>
-              {% else %}{{ u.company.name }} — {{ t(request, "users.field.access_level_read_write") if u.access_level.value == "read_write" else t(request, "users.field.access_level_read_only") }}{% endif %}
+              {% elif u.memberships %}
+                {% for m in u.memberships %}{{ m.company.name }} ({{ t(request, "users.field.access_level_read_write") if m.access_level.value == "read_write" else t(request, "users.field.access_level_read_only") }}){% if not loop.last %}, {% endif %}{% endfor %}
+              {% else %}<span class="hint">{{ t(request, "users.field.no_access") }}</span>{% endif %}
             </td>
             <td>{{ u.auth_provider.value }}</td>
             <td>{{ t(request, "users.list.on") if u.totp_enabled else '—' }}</td>

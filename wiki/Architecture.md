@@ -83,23 +83,29 @@ Every `User` row is created inside this app first
 after that) — never by LDAP or OIDC. `auth_provider` only decides *how*
 an existing account proves who it is.
 
-### RBAC: company + access level, not roles
+### RBAC: company memberships + access level, not roles
 
-No custom roles. Every user is either:
+Still no custom roles — but not single-company either. Every user is
+either:
 
-- **A superadmin** (`User.is_superadmin = True`) — `company_id`/
-  `access_level` both `NULL`. Sees and manages every company.
-- **A company user** — `company_id` (required) points at exactly one
-  `Company`; `access_level` is `READ` or `READ_WRITE`. No third tier,
-  no multi-company non-superadmin.
+- **A superadmin** (`User.is_superadmin = True`) — no memberships at
+  all. Sees and manages every company.
+- **A company user** — zero or more `CompanyMembership` rows
+  (`app.db.models.company_membership`), each naming one `Company` and
+  one `AccessLevel` (`READ` or `READ_WRITE`), independent per company.
+  The same person can be `READ_WRITE` at one company and `READ`-only at
+  another. Zero memberships means logged in but scoped to nothing.
 
 Enforced at two independent layers:
 
 - **`require_write`** — is this user allowed to write *at all*
-  (superadmin, or `READ_WRITE` on their own company)?
+  (superadmin, or `READ_WRITE` on **at least one** company)? The generic
+  nav-level gate for pages not scoped to one company (Initialize,
+  Scheduling's landing page).
 - **`ensure_company_access(user, company_id, write=...)`** /
-  **`visible_company_id(user)`** — *which* company's data may they
-  touch? **Out-of-scope reads 404, never 403** — a 403 would itself
+  **`visible_company_ids(user)`** — *which* company/companies' data may
+  they touch (a set, not a single id — `None` for a superadmin means "no
+  filter")? **Out-of-scope reads 404, never 403** — a 403 would itself
   confirm the company/honeypot exists, which an outsider shouldn't
   learn for free.
 
@@ -290,15 +296,39 @@ future save.
 ## 🍯 Honeypot data model
 
 - **`Company`** — a tenant. One row per customer.
-- **`Honeypot`** — one deployed OpenCanary instance, one `Company`.
-  Identity + last-seen bookkeeping only; this app never connects to it
-  proactively.
+- **`Honeypot`** — one deployed OpenCanary instance, attached to any
+  number of companies via `honeypot_companies` (a plain link table — see
+  "Attaching an existing honeypot/user" below), including zero (visible
+  to a superadmin only). Identity + last-seen bookkeeping only; this app
+  never connects to it proactively.
 - **`HoneypotEvent`** — one row per OpenCanary alert, close to
   OpenCanary's own JSON (`raw`), with the common filter fields promoted
-  to real columns. `company_id` is denormalized on so scoped queries
-  never join through `Honeypot`.
+  to real columns. No denormalized company column any more — since a
+  honeypot can belong to several companies, an event's scope is derived
+  by joining through `honeypot.companies` at query time
+  (`app.auth.scope`) instead.
 - **`CompanySnapshot`** — one row per company per day, backing the
   Dashboard's trend sparkline.
+
+### Attaching an existing honeypot/user, not just creating a new one
+
+Both `Honeypot`↔`Company` and `User`↔`Company` are many-to-many
+(`honeypot_companies`, a bare link table with no columns of its own;
+`CompanyMembership`, which carries `access_level` and so is a real
+table). A company's own page can therefore *attach* an already-existing
+honeypot or *grant* an already-existing user access, additively — never
+detaching either from wherever else they already are
+(`app.web.routes.companies.attach_existing_honeypot`/
+`attach_existing_user`, and the matching `detach_honeypot`/`detach_user`
+to remove one link only). Creating a genuinely new honeypot/user from
+scratch is still `/honeypots/new`/`/users/new`, unchanged.
+
+Deleting a `Company` now only ever removes *links* — its
+`CompanyMembership` rows and its `honeypot_companies` rows, both
+`ondelete=CASCADE` — never the honeypot or user account itself. A
+honeypot or user can end up attached to zero companies; that's a valid,
+if superadmin-only-visible (for a honeypot) or scoped-to-nothing (for a
+user), state.
 
 ### How events arrive — two ways, same table
 
@@ -338,9 +368,10 @@ process on an otherwise perfectly SSH-reachable honeypot.
 - **`app.audit_syslog`** — global, one target for the whole deployment
   (Settings → Integrations). Every `AuditLogEntry`. **Never** a
   honeypot alert.
-- **`app.services.honeypot_event_syslog`** — per-company, one target
-  per `Company`, that company's own Integrations tab. Only that
-  company's honeypot *alerts*. **Never** an audit entry.
+- **`app.services.honeypot_event_syslog`** — per-company, one target per
+  `Company`, that company's own Integrations tab. An alert from a
+  honeypot shared across companies goes to **every** one of its
+  companies' own targets, independently. **Never** an audit entry.
 - **The fleet-wide alert target** — "All honeypots" → Integrations,
   not backed by any `Company` row. Every honeypot's alerts, **in
   addition to** the per-company target if both are set — a central

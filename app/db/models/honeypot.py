@@ -45,7 +45,6 @@ from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
-    ForeignKey,
     Integer,
     LargeBinary,
     String,
@@ -55,6 +54,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.db.models.honeypot_company import honeypot_companies
 from app.db.models.honeypot_tag import Tag, honeypot_tags
 from app.db.pg_enum import pg_enum
 
@@ -73,10 +73,12 @@ class Honeypot(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
 
-    company_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True
+    # Many-to-many, optionally empty (an unassigned honeypot — superadmin
+    # visibility only). Replaces the old required single `company_id` FK —
+    # see `app.db.models.honeypot_company`/`app.auth.scope`.
+    companies: Mapped[list[Company]] = relationship(
+        secondary=honeypot_companies, back_populates="honeypots", lazy="selectin"
     )
-    company: Mapped[Company] = relationship(back_populates="honeypots", lazy="joined")
 
     # e.g. "acme-honey1" — the RPI name convention from the install
     # runbook (<firma>-honey<n>). Indexed: the list orders/searches by this.
@@ -94,7 +96,7 @@ class Honeypot(Base):
     secret_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     host_key_fingerprint: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
-    # Free-form, cross-cutting labels independent of `company` above.
+    # Free-form, cross-cutting labels independent of `companies` above.
     tags: Mapped[list[Tag]] = relationship(
         secondary=honeypot_tags, order_by="Tag.name", lazy="selectin"
     )

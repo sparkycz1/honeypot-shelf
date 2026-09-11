@@ -87,8 +87,8 @@ async def create_session(
 
 async def get_valid_session(db: AsyncSession, raw_token: str) -> UserSession | None:
     """Look up, validate, and (if still valid) slide the expiry of the
-    session for `raw_token`. Eager-loads `user.company` (`lazy="joined"` on
-    `User` already covers this — the explicit `selectinload(UserSession.user)`
+    session for `raw_token`. Eager-loads `user.memberships` (`lazy="selectin"`
+    on `User` already covers this — the explicit `selectinload(UserSession.user)`
     is what's needed here) since the caller (the auth middleware) needs it
     available after this session closes — see `app.auth.scope`."""
     result = await db.execute(

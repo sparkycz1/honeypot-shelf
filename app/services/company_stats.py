@@ -17,6 +17,7 @@ from typing import TypedDict
 from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.models.company import Company
 from app.db.models.honeypot import Honeypot
 
 
@@ -37,7 +38,7 @@ async def compute_company_stats(
     async def _count(*conditions: ColumnElement[bool]) -> int:
         query = select(func.count()).select_from(Honeypot)
         if company_id is not None:
-            query = query.where(Honeypot.company_id == company_id)
+            query = query.where(Honeypot.companies.any(Company.id == company_id))
         for condition in conditions:
             query = query.where(condition)
         return (await db.execute(query)).scalar_one()

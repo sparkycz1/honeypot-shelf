@@ -50,20 +50,7 @@
       </label>
 
       <div id="company-scope-fields">
-        <label for="company_id">{{ t(request, "users.field.company") }}</label>
-        <select id="company_id" name="company_id">
-          <option value="" disabled {{ 'selected' if not form.company_id else '' }}>{{ t(request, "users.field.choose_company") }}</option>
-          {% for company in companies %}
-            <option value="{{ company.id }}" {{ 'selected' if form.company_id == company.id | string else '' }}>{{ company.name }}</option>
-          {% endfor %}
-        </select>
-
-        <label for="access_level">{{ t(request, "users.field.access_level") }}</label>
-        <select id="access_level" name="access_level">
-          {% for level in access_levels %}
-            <option value="{{ level.value }}">{{ t(request, "users.field.access_level_read_write") if level.value == "read_write" else t(request, "users.field.access_level_read_only") }}</option>
-          {% endfor %}
-        </select>
+        {% include "users/_membership_fields.html" %}
       </div>
       <p class="hint">
         {{ t(request, "users.new.scope_hint") }}

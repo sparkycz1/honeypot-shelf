@@ -100,7 +100,12 @@ async def test_nav_shows_scheduling_and_api_docs_for_a_read_write_user(
     client, login_as, db_session_factory
 ):
     company = await create_company(db_session_factory)
-    await login_as(client, company_id=company.id, access_level=AccessLevel.READ_WRITE)
+    await login_as(
+        client,
+        company_id=company.id,
+        access_level=AccessLevel.READ_WRITE,
+        api_access_enabled=True,
+    )
     response = await client.get("/dashboard")
     assert response.status_code == 200
     assert 'href="/scheduling"' in response.text

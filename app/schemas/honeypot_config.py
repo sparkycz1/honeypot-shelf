@@ -22,7 +22,9 @@ class HoneypotExport(BaseModel):
     port: int = Field(default=22, ge=1, le=65535)
     username: str | None = Field(default=None, max_length=255)
     auth_method: AuthMethod | None = None
-    company: str
+    # Any number of companies, including none — a honeypot no longer
+    # requires exactly one (see app.db.models.company's module docstring).
+    companies: list[str] = Field(default_factory=list)
     location: str | None = None
     description: str | None = None
     runbook: str | None = None

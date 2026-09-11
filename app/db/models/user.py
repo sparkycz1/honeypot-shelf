@@ -17,25 +17,27 @@ just decides *how* that account proves who it is:
 `OIDC` accounts can't — the provider's own MFA (if any) is what backs that
 login instead.
 
-## RBAC: one company, one access level — no roles, no groups
+## RBAC: any number of companies, each with its own access level — no roles, no groups
 
-This is deliberately much flatter than debcontrol's role/permission matrix,
-per the product decision behind HoneyHive: **every non-superadmin user
-belongs to exactly one `Company`** (`company_id`, required) and holds
-exactly one `AccessLevel` on it — `READ` or `READ_WRITE`. There is nothing
-in between, no per-honeypot grants, and no custom roles to define. A
-`READ` user sees that company's honeypots/events/dashboard only; a
-`READ_WRITE` user can additionally manage that company's honeypots
-(register/rename/delete) and acknowledge/annotate events — see
-`app.auth.permissions` for the exact matrix.
+Still deliberately much flatter than debcontrol's role/permission matrix,
+but **not** single-company any more: a non-superadmin user holds zero or
+more `CompanyMembership` rows (`app.db.models.company_membership`), each
+naming one `Company` and one `AccessLevel` (`READ` or `READ_WRITE`) —
+independent per company, so the same person can be `READ_WRITE` at one
+company and `READ`-only at another. Zero memberships means logged-in but
+scoped to nothing. There is still nothing in between `READ`/`READ_WRITE`,
+no per-honeypot grants, and no custom roles to define. A `READ` membership
+sees that company's honeypots/events/dashboard only; `READ_WRITE`
+additionally manages that company's honeypots (register/rename/delete/
+attach/detach) and acknowledges/annotates events — see
+`app.auth.permissions`/`app.auth.scope` for the exact matrix.
 
-**`is_superadmin`** is the one deliberate exception: a superadmin has no
-`company_id` and no `access_level` of its own — it can see and manage
-every company, every honeypot, and the Users/Companies admin pages. It
-exists because HoneyHive itself (the operator running honeypots for many
-customer companies) needs a cross-tenant view; it is not part of the
-per-company READ/READ_WRITE model and is granted by another superadmin
-only.
+**`is_superadmin`** is the one deliberate exception: a superadmin holds no
+`CompanyMembership` row at all — it can see and manage every company,
+every honeypot, and the Users/Companies admin pages. It exists because
+Honeypot Shelf itself (the operator running honeypots for many customer
+companies) needs a cross-tenant view; it is not part of the per-company
+READ/READ_WRITE model and is granted by another superadmin only.
 """
 
 from __future__ import annotations
@@ -47,8 +49,6 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean,
-    CheckConstraint,
-    ForeignKey,
     Integer,
     LargeBinary,
     String,
@@ -62,7 +62,7 @@ from app.db.pg_enum import pg_enum
 
 if TYPE_CHECKING:
     from app.db.models.api_token import ApiToken
-    from app.db.models.company import Company
+    from app.db.models.company_membership import CompanyMembership
     from app.db.models.totp_recovery_code import TotpRecoveryCode
     from app.db.models.user_session import UserSession
     from app.db.models.webauthn_credential import WebAuthnCredential
@@ -85,19 +85,6 @@ class AccessLevel(enum.StrEnum):
 
 class User(Base):
     __tablename__ = "users"
-    __table_args__ = (
-        # Either a superadmin (no company/access_level) or a regular,
-        # company-scoped user (both set) — never a half-configured row.
-        # Enforced here, not just in application code, so a bug in a form
-        # handler can't silently create a user with a company but no access
-        # level (locked out of everything) or an access level but no
-        # company (scoped to nothing).
-        CheckConstraint(
-            "(is_superadmin AND company_id IS NULL AND access_level IS NULL) "
-            "OR (NOT is_superadmin AND company_id IS NOT NULL AND access_level IS NOT NULL)",
-            name="superadmin_xor_company_scope",
-        ),
-    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
 
@@ -137,13 +124,13 @@ class User(Base):
     # a superadmin, both required otherwise — enforced by the CheckConstraint
     # above. ---
     is_superadmin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    company_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("companies.id", ondelete="RESTRICT"), nullable=True
+    # One row per company this user has access to, each with its own
+    # `access_level` — see `app.db.models.company_membership`. A
+    # superadmin holds none; enforced in application code (the New/Edit
+    # user forms), not a DB constraint — see the module docstring.
+    memberships: Mapped[list[CompanyMembership]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", lazy="selectin"
     )
-    access_level: Mapped[AccessLevel | None] = mapped_column(
-        pg_enum(AccessLevel, name="access_level"), nullable=True
-    )
-    company: Mapped[Company | None] = relationship(back_populates="users", lazy="joined")
 
     # --- TOTP (see app.auth.totp) — available for LOCAL and LDAP, not OIDC ---
     totp_secret_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
@@ -192,11 +179,31 @@ class User(Base):
     )
 
     def can_write(self) -> bool:
-        """Superadmin or `READ_WRITE` on their own company — see
-        `app.auth.permissions` for how this is used alongside company
-        scoping (a non-superadmin can only ever write within
-        `self.company_id`)."""
-        return self.is_superadmin or self.access_level == AccessLevel.READ_WRITE
+        """Superadmin, or `READ_WRITE` on **at least one** company — the
+        generic "may this account write at all" signal used for nav-level
+        gating (Initialize, Scheduling's own landing page — neither is
+        scoped to one company). Per-company enforcement is a separate,
+        narrower check — see `app.auth.scope.has_company_access`/
+        `can_write_company` below, and `app.auth.permissions`."""
+        return self.is_superadmin or any(
+            m.access_level == AccessLevel.READ_WRITE for m in self.memberships
+        )
+
+    def company_ids(self) -> set[uuid.UUID]:
+        """Every company this user holds any membership in (empty for a
+        superadmin — see `app.auth.scope.visible_company_ids`, which is
+        what call sites should use: it also knows to treat a superadmin's
+        empty set as "no filter", not "no access")."""
+        return {m.company_id for m in self.memberships}
+
+    def can_write_company(self, company_id: uuid.UUID) -> bool:
+        """Superadmin, or `READ_WRITE` membership in this exact company."""
+        if self.is_superadmin:
+            return True
+        return any(
+            m.company_id == company_id and m.access_level == AccessLevel.READ_WRITE
+            for m in self.memberships
+        )
 
     @property
     def is_locked_out(self) -> bool:

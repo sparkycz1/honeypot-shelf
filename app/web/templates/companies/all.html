@@ -50,8 +50,8 @@
             </td>
             <td>{{ honeypot.ip_address }}</td>
             <td>
-              {% if honeypot.company %}
-                <a href="/companies/{{ honeypot.company.id }}">{{ honeypot.company.name }}</a>
+              {% if honeypot.companies %}
+                {% for company in honeypot.companies %}<a href="/companies/{{ company.id }}">{{ company.name }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
               {% else %}
                 <span class="hint">—</span>
               {% endif %}

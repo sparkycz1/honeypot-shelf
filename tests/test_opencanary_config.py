@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import re
 
+from app.db.models.company import Company
 from app.db.models.honeypot import AuthMethod, Honeypot
 from app.ssh.opencanary_config import (
     OPENCANARY_CONFIG_PATH,
@@ -152,8 +153,9 @@ def test_every_module_and_field_label_key_is_distinct_from_its_value():
 
 async def _create_pinned_honeypot(db_session_factory, company_id) -> Honeypot:
     async with db_session_factory() as db:
+        company = await db.get(Company, company_id)
         honeypot = Honeypot(
-            company_id=company_id,
+            companies=[company],
             name="acme-honey1",
             ip_address="192.0.2.10",
             port=22,

@@ -31,15 +31,18 @@
              value="{{ target_user.display_name or '' }}">
 
       <label for="auth_provider">{{ t(request, "users.field.auth_provider") }}</label>
-      <select id="auth_provider" name="auth_provider" required>
+      <select id="auth_provider" name="auth_provider" required
+              data-toggle-hidden="switch-to-local-password" data-toggle-hidden-unless-value="local">
         {% for provider in auth_providers %}
           <option value="{{ provider.value }}" {{ 'selected' if provider == target_user.auth_provider else '' }}>{{ provider.value }}</option>
         {% endfor %}
       </select>
 
-      <label for="password">{{ t(request, "users.edit.password_label") }}</label>
-      <input type="password" id="password" name="password" autocomplete="new-password" minlength="12">
-      <p class="hint">{{ t(request, "users.edit.password_hint") }}</p>
+      <div id="switch-to-local-password" {{ 'hidden' if target_user.auth_provider.value == 'local' else '' }}>
+        <label for="password">{{ t(request, "users.edit.password_label") }}</label>
+        <input type="password" id="password" name="password" autocomplete="new-password" minlength="12">
+        <p class="hint">{{ t(request, "users.edit.password_hint") }}</p>
+      </div>
 
       <label>
         <input type="checkbox" name="is_active" {{ 'checked' if target_user.is_active else '' }}>
@@ -62,20 +65,7 @@
         </label>
 
         <div id="company-scope-fields" {{ 'hidden' if target_user.is_superadmin else '' }}>
-          <label for="company_id">{{ t(request, "users.field.company") }}</label>
-          <select id="company_id" name="company_id">
-            <option value="" disabled {{ 'selected' if not target_user.company_id else '' }}>{{ t(request, "users.field.choose_company") }}</option>
-            {% for company in companies %}
-              <option value="{{ company.id }}" {{ 'selected' if target_user.company_id == company.id else '' }}>{{ company.name }}</option>
-            {% endfor %}
-          </select>
-
-          <label for="access_level">{{ t(request, "users.field.access_level") }}</label>
-          <select id="access_level" name="access_level">
-            {% for level in access_levels %}
-              <option value="{{ level.value }}" {{ 'selected' if target_user.access_level == level else '' }}>{{ t(request, "users.field.access_level_read_write") if level.value == "read_write" else t(request, "users.field.access_level_read_only") }}</option>
-            {% endfor %}
-          </select>
+          {% include "users/_membership_fields.html" %}
         </div>
         <p class="hint">{{ t(request, "users.edit.own_scope_hint") }}</p>
       </fieldset>

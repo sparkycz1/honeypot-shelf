@@ -12,7 +12,36 @@ from app.db.models.user import AccessLevel, AuthProvider
 MIN_PASSWORD_LENGTH = 12
 
 
-class UserCreate(BaseModel):
+class MembershipInput(BaseModel):
+    """One row of the New/Edit user form's repeated "company + access
+    level" fieldset — see `app.db.models.company_membership`."""
+
+    company_id: uuid.UUID
+    access_level: AccessLevel
+
+
+class _CompanyScopeMixin(BaseModel):
+    # --- RBAC (see app.db.models.user's module docstring) ---
+    # Exactly one of these two shapes: `is_superadmin=True` with `memberships`
+    # empty, or `is_superadmin=False` with at least one membership and no
+    # company repeated — a user can hold only one access level per company.
+    is_superadmin: bool = False
+    memberships: list[MembershipInput] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _check_company_scope(self) -> _CompanyScopeMixin:
+        if self.is_superadmin:
+            if self.memberships:
+                raise ValueError("A superadmin has no company memberships.")
+        elif not self.memberships:
+            raise ValueError("A non-superadmin user needs at least one company membership.")
+        company_ids = [m.company_id for m in self.memberships]
+        if len(company_ids) != len(set(company_ids)):
+            raise ValueError("Each company can only be granted one access level.")
+        return self
+
+
+class UserCreate(_CompanyScopeMixin):
     username: str = Field(min_length=1, max_length=64)
     display_name: str | None = Field(default=None, max_length=255)
     auth_provider: AuthProvider
@@ -21,14 +50,6 @@ class UserCreate(BaseModel):
     # password at all.
     password: str | None = Field(default=None, max_length=255)
     api_access_enabled: bool = False
-
-    # --- RBAC (see app.db.models.user's module docstring) ---
-    # Exactly one of these two shapes: `is_superadmin=True` with the other
-    # two left unset, or `is_superadmin=False` with both `company_id` and
-    # `access_level` set — mirrors the DB CheckConstraint.
-    is_superadmin: bool = False
-    company_id: uuid.UUID | None = None
-    access_level: AccessLevel | None = None
 
     @field_validator("username")
     @classmethod
@@ -57,17 +78,8 @@ class UserCreate(BaseModel):
             raise ValueError(f'"{self.auth_provider.value}" accounts don\'t set a password here.')
         return self
 
-    @model_validator(mode="after")
-    def _check_company_scope(self) -> UserCreate:
-        if self.is_superadmin:
-            if self.company_id is not None or self.access_level is not None:
-                raise ValueError("A superadmin has no company or access level.")
-        elif self.company_id is None or self.access_level is None:
-            raise ValueError("A non-superadmin user needs both a company and an access level.")
-        return self
 
-
-class UserUpdate(BaseModel):
+class UserUpdate(_CompanyScopeMixin):
     username: str = Field(min_length=1, max_length=64)
     display_name: str | None = Field(default=None, max_length=255)
     auth_provider: AuthProvider
@@ -76,10 +88,6 @@ class UserUpdate(BaseModel):
     password: str | None = Field(default=None, max_length=255)
     api_access_enabled: bool = False
     is_active: bool = True
-
-    is_superadmin: bool = False
-    company_id: uuid.UUID | None = None
-    access_level: AccessLevel | None = None
 
     @field_validator("username")
     @classmethod
@@ -98,12 +106,3 @@ class UserUpdate(BaseModel):
         if value and len(value) < MIN_PASSWORD_LENGTH:
             raise ValueError(f"Password must be at least {MIN_PASSWORD_LENGTH} characters.")
         return value
-
-    @model_validator(mode="after")
-    def _check_company_scope(self) -> UserUpdate:
-        if self.is_superadmin:
-            if self.company_id is not None or self.access_level is not None:
-                raise ValueError("A superadmin has no company or access level.")
-        elif self.company_id is None or self.access_level is None:
-            raise ValueError("A non-superadmin user needs both a company and an access level.")
-        return self

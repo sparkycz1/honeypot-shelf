@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.db.models.company import Company
 from app.db.models.honeypot import AuthMethod, Honeypot
 from app.db.models.user import AccessLevel
 from tests.conftest import create_company
@@ -15,8 +16,9 @@ pytestmark = pytest.mark.asyncio
 
 async def _create_pinned_honeypot(db_session_factory, company_id) -> Honeypot:
     async with db_session_factory() as db:
+        company = await db.get(Company, company_id)
         honeypot = Honeypot(
-            company_id=company_id,
+            companies=[company],
             name="acme-honey1",
             ip_address="192.0.2.10",
             port=22,

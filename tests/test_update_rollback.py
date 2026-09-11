@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.auth.api_tokens import create_api_token
+from app.db.models.company import Company
 from app.db.models.honeypot import AuthMethod, Honeypot
 from app.db.models.honeypot_update_run import HoneypotUpdateRun, UpdateRunStatus, UpgradeStrategy
 from app.db.models.user import AccessLevel, User
@@ -95,7 +96,7 @@ async def _make_honeypot_with_run(
     async with db_session_factory() as session:
         company = await create_company(db_session_factory)
         honeypot = Honeypot(
-            company_id=company.id,
+            companies=[await session.get(Company, company.id)],
             name="rollback-target",
             ip_address="10.9.9.20",
             port=22,
@@ -207,9 +208,10 @@ async def _create_honeypot_with_source_run(
     db_session_factory, *, snapshot: dict[str, str] | None
 ) -> tuple[uuid.UUID, uuid.UUID]:
     async with db_session_factory() as session:
-        company = await create_company(db_session_factory)
+        created_company = await create_company(db_session_factory)
+        company = await session.get(Company, created_company.id)
         honeypot = Honeypot(
-            company_id=company.id,
+            companies=[company],
             name="rollback-web",
             host_key_fingerprint="SHA256:fakefingerprint",
         )
@@ -272,7 +274,7 @@ async def test_rollback_endpoint_requires_write_access(client, login_as, db_sess
     async with db_session_factory() as session:
         honeypot = await session.get(Honeypot, honeypot_id)
         assert honeypot is not None
-        company_id = honeypot.company_id
+        company_id = honeypot.companies[0].id
 
     edit_page = await client.get(f"/honeypots/{honeypot_id}/edit")
     csrf_token = _csrf_from(edit_page)

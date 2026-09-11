@@ -73,12 +73,12 @@ async def _form_context(
     return {
         "actions": all_actions(),
         "honeypots": await _get_honeypots(db, user),
-        # A superadmin picks the owning company explicitly for an
-        # ALL_HONEYPOTS schedule (the form offers every company); a
-        # company-scoped user has only their own, so the form doesn't
-        # need to ask.
+        # A superadmin, or a user with more than one (or zero) company
+        # membership, picks the owning company explicitly for an
+        # ALL_HONEYPOTS schedule; a user with exactly one membership has
+        # it resolved implicitly, so the form doesn't need to ask.
         "is_superadmin": user.is_superadmin,
-        "own_company_id": user.company_id,
+        "own_company_ids": user.company_ids(),
         "form": form,
         "errors": errors,
     }
@@ -99,17 +99,39 @@ def _resolve_owner_company_id(
     user: User, target_honeypot: Honeypot | None, raw_form: dict[str, str]
 ) -> uuid.UUID | None:
     """The company a new/edited schedule belongs to: a honeypot-targeted
-    schedule always inherits its honeypot's company (the `owner_company_id`
-    form field, if any, is ignored — never trust the client to have kept
-    it in sync with the honeypot picker); an ALL_HONEYPOTS schedule uses
-    the submitted `owner_company_id` for a superadmin, or the current
-    user's own company otherwise."""
+    schedule inherits its honeypot's company when it has exactly one
+    (unambiguous, the common case); with zero or several, the submitted
+    `owner_company_id` is required and validated against that honeypot's
+    actual companies. An ALL_HONEYPOTS schedule uses the current user's
+    own company when they hold exactly one membership, otherwise the
+    submitted `owner_company_id` (validated the same way — must be one
+    they actually have) is required. `None` here always means "ambiguous,
+    nothing valid submitted" — `ScheduledTaskCreate`'s own model_validator
+    turns that into a "Pick a company..." form error."""
+
+    def _parsed(raw: str, allowed: set[uuid.UUID]) -> uuid.UUID | None:
+        if not raw:
+            return None
+        try:
+            parsed = uuid.UUID(raw)
+        except ValueError:
+            return None
+        return parsed if parsed in allowed else None
+
     if target_honeypot is not None:
-        return target_honeypot.company_id
+        honeypot_company_ids = {c.id for c in target_honeypot.companies}
+        if len(honeypot_company_ids) == 1:
+            return next(iter(honeypot_company_ids))
+        return _parsed(raw_form.get("owner_company_id", ""), honeypot_company_ids)
+
     if user.is_superadmin:
         raw = raw_form.get("owner_company_id", "")
         return uuid.UUID(raw) if raw else None
-    return user.company_id
+
+    user_company_ids = user.company_ids()
+    if len(user_company_ids) == 1:
+        return next(iter(user_company_ids))
+    return _parsed(raw_form.get("owner_company_id", ""), user_company_ids)
 
 
 @router.get("", dependencies=[_write])

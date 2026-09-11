@@ -8,6 +8,7 @@ from __future__ import annotations
 import pytest
 
 from app.auth.ssh_keys import InvalidSshPublicKeyError, parse_ssh_public_keys
+from app.db.models.company import Company
 from app.db.models.honeypot import Honeypot
 from app.db.models.user import AccessLevel
 from app.ssh.authorized_keys import build_authorized_keys_append_command
@@ -139,13 +140,13 @@ async def test_push_own_ssh_keys_dispatches_to_every_pinned_honeypot(
     async with db_session_factory() as db:
         db.add(
             Honeypot(
-                company_id=company.id,
+                companies=[await db.get(Company, company.id)],
                 name="acme-honey1",
                 host_key_fingerprint="SHA256:fakefingerprint",
             )
         )
         # Never pinned yet — must not be included in the push.
-        db.add(Honeypot(company_id=company.id, name="acme-honey2"))
+        db.add(Honeypot(companies=[await db.get(Company, company.id)], name="acme-honey2"))
         await db.commit()
 
     form = await client.get("/account")

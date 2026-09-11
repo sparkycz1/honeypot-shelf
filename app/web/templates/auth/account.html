@@ -36,8 +36,11 @@
       <dt>{{ t(request, "account.profile.username") }}</dt><dd>{{ user.username }}</dd>
       <dt>{{ t(request, "account.profile.access") }}</dt>
       <dd>
-        {% if user.is_superadmin %}{{ t(request, "account.profile.superadmin") }}{% else %}
-          {{ user.company.name }} — {{ t(request, "account.profile.read_write") if user.access_level.value == "read_write" else t(request, "account.profile.read_only") }}
+        {% if user.is_superadmin %}{{ t(request, "account.profile.superadmin") }}
+        {% elif user.memberships %}
+          {% for m in user.memberships %}{{ m.company.name }} ({{ t(request, "account.profile.read_write") if m.access_level.value == "read_write" else t(request, "account.profile.read_only") }}){% if not loop.last %}, {% endif %}{% endfor %}
+        {% else %}
+          {{ t(request, "users.field.no_access") }}
         {% endif %}
       </dd>
       <dt>{{ t(request, "account.profile.login_method") }}</dt><dd>{{ user.auth_provider.value }}</dd>
@@ -172,6 +175,7 @@
     </form>
   </section>
 
+  {% if user.api_access_enabled %}
   <section class="panel">
     <h2>{{ t(request, "account.api_tokens.heading") }}</h2>
     <p class="hint">{{ t(request, "account.api_tokens.hint") | safe }}</p>
@@ -218,19 +222,16 @@
       <p class="hint">{{ t(request, "account.api_tokens.none") }}</p>
     {% endif %}
 
-    {% if user.api_access_enabled %}
-      <form method="post" action="/account/api-tokens" class="form stack-gap" autocomplete="off">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <label for="token_name">{{ t(request, "account.api_tokens.name_label") }}</label>
-        <input type="text" id="token_name" name="name" maxlength="100" placeholder="monitoring script" required>
-        <label for="expires_in_days">{{ t(request, "account.api_tokens.expires_label") }}</label>
-        <input type="number" id="expires_in_days" name="expires_in_days" min="1" step="1">
-        <button type="submit" class="button">{{ t(request, "account.api_tokens.create") }}</button>
-      </form>
-    {% else %}
-      <p class="hint">{{ t(request, "account.api_tokens.not_enabled_hint") }}</p>
-    {% endif %}
+    <form method="post" action="/account/api-tokens" class="form stack-gap" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label for="token_name">{{ t(request, "account.api_tokens.name_label") }}</label>
+      <input type="text" id="token_name" name="name" maxlength="100" placeholder="monitoring script" required>
+      <label for="expires_in_days">{{ t(request, "account.api_tokens.expires_label") }}</label>
+      <input type="number" id="expires_in_days" name="expires_in_days" min="1" step="1">
+      <button type="submit" class="button">{{ t(request, "account.api_tokens.create") }}</button>
+    </form>
   </section>
+  {% endif %}
 
   {% if user.is_superadmin %}
     <section class="panel">

@@ -33,10 +33,9 @@ resolve the conflict by hand. Companies are the opposite case: matched-or-
 created by name is harmless (there's no credential/trust state on a
 company to lose), so an existing company is simply reused for membership.
 
-Unlike debcontrol (single-tenant), every honeypot belongs to exactly one
-company (`HoneypotExport.company`, required, not optional) — import always
-creates or reuses that company by name, never leaves a honeypot
-unattached.
+Unlike debcontrol (single-tenant), a honeypot can belong to any number of
+companies (`HoneypotExport.companies`, optionally empty) — import creates
+or reuses each named company, and attaches the honeypot to all of them.
 """
 
 from __future__ import annotations
@@ -79,11 +78,7 @@ async def export_honeypot_config(db: AsyncSession, user: User) -> HoneypotConfig
     ever creates brand-new rows or reuses a company by name, so there is
     nothing existing to check read access against. See
     `import_honeypot_config`."""
-    honeypot_result = await db.execute(
-        honeypots_visible_to(user)
-        .options(selectinload(Honeypot.company))
-        .order_by(Honeypot.name)
-    )
+    honeypot_result = await db.execute(honeypots_visible_to(user).order_by(Honeypot.name))
     honeypots = [
         HoneypotExport(
             name=h.name,
@@ -91,7 +86,7 @@ async def export_honeypot_config(db: AsyncSession, user: User) -> HoneypotConfig
             port=h.port,
             username=h.username,
             auth_method=h.auth_method,
-            company=h.company.name,
+            companies=sorted(c.name for c in h.companies),
             location=h.location,
             description=h.description,
             runbook=h.runbook,
@@ -169,7 +164,7 @@ async def import_honeypot_config(db: AsyncSession, payload: HoneypotConfigExport
     # the `companies` list itself, or only referenced from a honeypot's
     # `company` field) so every honeypot below has somewhere to attach to.
     wanted_company_names = {c.name for c in payload.companies} | {
-        m.company for m in payload.honeypots
+        name for m in payload.honeypots for name in m.companies
     }
     company_notes = {c.name: c.notes for c in payload.companies}
     for name in sorted(wanted_company_names):
@@ -202,7 +197,7 @@ async def import_honeypot_config(db: AsyncSession, payload: HoneypotConfigExport
             auth_method=auth_method,
             secret_encrypted=None,
             host_key_fingerprint=None,
-            company_id=companies_by_name[honeypot.company].id,
+            companies=[companies_by_name[name] for name in honeypot.companies],
             location=honeypot.location,
             description=honeypot.description,
             runbook=honeypot.runbook,

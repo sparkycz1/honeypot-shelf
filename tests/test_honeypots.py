@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import select
 
+from app.db.models.company import Company
 from app.db.models.honeypot import Honeypot
 from app.db.models.user import AccessLevel
 from tests.conftest import create_company
@@ -25,7 +26,7 @@ async def test_superadmin_can_create_a_honeypot(client, db_session_factory):
             "port": "22",
             "username": "pi",
             "auth_method": "ssh_key",
-            "company_id": str(company.id),
+            "company_ids": str(company.id),
             "location": "Server room",
             "csrf_token": _csrf_from(new_form),
         },
@@ -37,7 +38,7 @@ async def test_superadmin_can_create_a_honeypot(client, db_session_factory):
         honeypots = result.scalars().all()
         assert len(honeypots) == 1
         assert honeypots[0].name == "acme-honey1"
-        assert honeypots[0].company_id == company.id
+        assert honeypots[0].companies[0].id == company.id
 
 
 async def test_company_user_only_sees_own_companys_honeypots(
@@ -46,8 +47,8 @@ async def test_company_user_only_sees_own_companys_honeypots(
     company_a = await create_company(db_session_factory, name="Acme")
     company_b = await create_company(db_session_factory, name="Beta")
     async with db_session_factory() as db:
-        db.add(Honeypot(company_id=company_a.id, name="acme-honey1"))
-        db.add(Honeypot(company_id=company_b.id, name="beta-honey1"))
+        db.add(Honeypot(companies=[await db.get(Company, company_a.id)], name="acme-honey1"))
+        db.add(Honeypot(companies=[await db.get(Company, company_b.id)], name="beta-honey1"))
         await db.commit()
 
     await login_as(
@@ -65,7 +66,7 @@ async def test_honeypot_detail_404s_for_out_of_scope_company(
     company_a = await create_company(db_session_factory, name="Acme")
     company_b = await create_company(db_session_factory, name="Beta")
     async with db_session_factory() as db:
-        honeypot = Honeypot(company_id=company_b.id, name="beta-honey1")
+        honeypot = Honeypot(companies=[await db.get(Company, company_b.id)], name="beta-honey1")
         db.add(honeypot)
         await db.commit()
         await db.refresh(honeypot)
@@ -92,7 +93,7 @@ async def test_package_search_with_a_query_does_not_crash(client, db_session_fac
     search with a non-empty query. Caught by mypy, not by any prior test."""
     company = await create_company(db_session_factory)
     async with db_session_factory() as db:
-        honeypot = Honeypot(company_id=company.id, name="acme-honey1")
+        honeypot = Honeypot(companies=[await db.get(Company, company.id)], name="acme-honey1")
         db.add(honeypot)
         await db.commit()
 
@@ -108,7 +109,7 @@ async def test_list_select_all_checkbox_names_the_honeypot_checkboxes(client, db
     its own target via `data-select-all="honeypot_ids"`."""
     company = await create_company(db_session_factory)
     async with db_session_factory() as db:
-        db.add(Honeypot(company_id=company.id, name="acme-honey1"))
+        db.add(Honeypot(companies=[await db.get(Company, company.id)], name="acme-honey1"))
         await db.commit()
 
     response = await client.get("/honeypots")
@@ -121,8 +122,8 @@ async def test_list_select_all_checkbox_names_the_honeypot_checkboxes(client, db
 async def test_bulk_delete_honeypots(client, db_session_factory):
     company = await create_company(db_session_factory)
     async with db_session_factory() as db:
-        honeypot_a = Honeypot(company_id=company.id, name="acme-honey1")
-        honeypot_b = Honeypot(company_id=company.id, name="acme-honey2")
+        honeypot_a = Honeypot(companies=[await db.get(Company, company.id)], name="acme-honey1")
+        honeypot_b = Honeypot(companies=[await db.get(Company, company.id)], name="acme-honey2")
         db.add_all([honeypot_a, honeypot_b])
         await db.commit()
         await db.refresh(honeypot_a)
@@ -160,7 +161,7 @@ async def test_updates_and_settings_tabs_are_hidden_and_forbidden_for_read_only_
 ):
     company = await create_company(db_session_factory)
     async with db_session_factory() as db:
-        honeypot = Honeypot(company_id=company.id, name="acme-honey1")
+        honeypot = Honeypot(companies=[await db.get(Company, company.id)], name="acme-honey1")
         db.add(honeypot)
         await db.commit()
         await db.refresh(honeypot)
@@ -181,7 +182,7 @@ async def test_updates_and_settings_tabs_are_visible_for_read_write_user(
 ):
     company = await create_company(db_session_factory)
     async with db_session_factory() as db:
-        honeypot = Honeypot(company_id=company.id, name="acme-honey1")
+        honeypot = Honeypot(companies=[await db.get(Company, company.id)], name="acme-honey1")
         db.add(honeypot)
         await db.commit()
         await db.refresh(honeypot)

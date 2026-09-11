@@ -20,6 +20,7 @@ from app.auth.dependencies import require_api_superadmin
 from app.auth.login import count_active_superadmins
 from app.auth.security import hash_password
 from app.auth.sessions import revoke_all_sessions_for_user
+from app.db.models.company_membership import CompanyMembership
 from app.db.models.user import AuthProvider, User
 from app.db.session import get_db
 from app.schemas.user import MIN_PASSWORD_LENGTH, UserCreate, UserUpdate
@@ -36,9 +37,14 @@ def _user_to_dict(user: User) -> dict[str, object]:
         "display_name": user.display_name,
         "auth_provider": user.auth_provider.value,
         "is_superadmin": user.is_superadmin,
-        "company_id": str(user.company_id) if user.company_id else None,
-        "company_name": user.company.name if user.company else None,
-        "access_level": user.access_level.value if user.access_level else None,
+        "memberships": [
+            {
+                "company_id": str(m.company_id),
+                "company_name": m.company.name,
+                "access_level": m.access_level.value,
+            }
+            for m in user.memberships
+        ],
         "is_active": user.is_active,
         "api_access_enabled": user.api_access_enabled,
         "totp_enabled": user.totp_enabled,
@@ -49,7 +55,7 @@ def _user_to_dict(user: User) -> dict[str, object]:
 
 async def _get_user_or_404(user_id: uuid.UUID, db: AsyncSession) -> User:
     result = await db.execute(
-        select(User).options(selectinload(User.company)).where(User.id == user_id)
+        select(User).options(selectinload(User.memberships)).where(User.id == user_id)
     )
     user = result.scalar_one_or_none()
     if user is None:
@@ -67,7 +73,7 @@ async def _would_remove_last_superadmin(db: AsyncSession, target: User) -> bool:
 @router.get("", dependencies=[_manage])
 async def list_users_api(db: AsyncSession = Depends(get_db)) -> list[dict[str, object]]:
     result = await db.execute(
-        select(User).options(selectinload(User.company)).order_by(User.username)
+        select(User).options(selectinload(User.memberships)).order_by(User.username)
     )
     return [_user_to_dict(u) for u in result.scalars().all()]
 
@@ -88,10 +94,12 @@ async def create_user_api(
         password_hash=hash_password(payload.password) if payload.password else None,
         must_change_password=payload.auth_provider == AuthProvider.LOCAL,
         is_superadmin=payload.is_superadmin,
-        company_id=payload.company_id,
-        access_level=payload.access_level,
         api_access_enabled=payload.api_access_enabled,
     )
+    user.memberships = [
+        CompanyMembership(company_id=m.company_id, access_level=m.access_level)
+        for m in payload.memberships
+    ]
     db.add(user)
     try:
         await db.commit()
@@ -105,9 +113,9 @@ async def create_user_api(
     if user.is_superadmin:
         scope_label = "superadmin"
     else:
-        company_name = user.company.name if user.company else "?"
-        access_level = user.access_level.value if user.access_level else "?"
-        scope_label = f"{company_name}/{access_level}"
+        scope_label = ", ".join(
+            f"{m.company.name}/{m.access_level.value}" for m in user.memberships
+        )
     await log_event(
         db,
         request=request,
@@ -134,7 +142,9 @@ async def update_user_api(
     user = await _get_user_or_404(user_id, db)
 
     if user.id == current_user.id:
-        if payload.is_superadmin != user.is_superadmin or payload.company_id != user.company_id:
+        own_company_ids = {m.company_id for m in user.memberships}
+        new_company_ids = {m.company_id for m in payload.memberships}
+        if payload.is_superadmin != user.is_superadmin or own_company_ids != new_company_ids:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You can't change your own scope — ask another superadmin.",
@@ -166,8 +176,12 @@ async def update_user_api(
     user.display_name = payload.display_name
     user.auth_provider = payload.auth_provider
     user.is_superadmin = payload.is_superadmin
-    user.company_id = payload.company_id
-    user.access_level = payload.access_level
+    for existing in list(user.memberships):
+        await db.delete(existing)
+    user.memberships = [
+        CompanyMembership(company_id=m.company_id, access_level=m.access_level)
+        for m in payload.memberships
+    ]
     user.is_active = payload.is_active
     user.api_access_enabled = payload.api_access_enabled
     if becoming_local:

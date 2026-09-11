@@ -33,12 +33,12 @@ class HoneypotCreate(BaseModel):
     secret: str | None = Field(
         default=None, description="Password — only used when auth_method is 'password'."
     )
-    # Required, unlike debcontrol's optional group_id — every Honeypot
-    # belongs to exactly one Company (DB-enforced, not nullable). See
-    # app/web/routes/honeypots.py's create route for how this is resolved
-    # (implicitly the current user's own company, or an explicit choice
-    # for a superadmin).
-    company_id: uuid.UUID
+    # Any number of companies, including none (superadmin-only visibility
+    # until one is attached) — see app.db.models.company's module
+    # docstring. See app/web/routes/honeypots.py's create route for how
+    # this is resolved for a company-scoped account (only companies that
+    # account can write are ever offered/accepted).
+    company_ids: list[uuid.UUID] = Field(default_factory=list)
     location: str | None = Field(default=None, max_length=255)
     description: str | None = Field(default=None, max_length=1024)
     # Free-form, independent of company_id — see app.db.models.honeypot_tag.
@@ -68,7 +68,7 @@ class HoneypotUpdate(BaseModel):
         default=None,
         description="Password — leave empty to keep the current one unchanged.",
     )
-    company_id: uuid.UUID
+    company_ids: list[uuid.UUID] = Field(default_factory=list)
     location: str | None = Field(default=None, max_length=255)
     description: str | None = Field(default=None, max_length=1024)
     tags: list[str] = Field(default_factory=list)

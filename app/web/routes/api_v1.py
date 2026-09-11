@@ -151,8 +151,10 @@ def _honeypot_to_dict(honeypot: Honeypot) -> dict[str, object]:
         "port": honeypot.port,
         "username": honeypot.username,
         "auth_method": honeypot.auth_method.value if honeypot.auth_method else None,
-        "company": honeypot.company.name if honeypot.company else None,
-        "company_id": str(honeypot.company_id) if honeypot.company_id else None,
+        # A honeypot can belong to any number of companies now (including
+        # none) — "company"/"company_id" (singular) are gone; every API
+        # consumer reads "companies" instead.
+        "companies": [{"id": str(c.id), "name": c.name} for c in honeypot.companies],
         "description": honeypot.description,
         "runbook": honeypot.runbook,
         "tags": [tag.name for tag in honeypot.tags],
@@ -232,9 +234,7 @@ async def _get_honeypot_or_404(honeypot_id: uuid.UUID, db: AsyncSession, user: U
     second door into the same house, not a looser one" (see the module
     docstring), and that applies to visibility scoping too."""
     query = honeypots_visible_to(user)
-    result = await db.execute(
-        query.options(selectinload(Honeypot.company)).where(Honeypot.id == honeypot_id)
-    )
+    result = await db.execute(query.where(Honeypot.id == honeypot_id))
     honeypot = result.scalar_one_or_none()
     if honeypot is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Honeypot not found.")
@@ -252,17 +252,23 @@ async def _get_company_or_404(company_id: uuid.UUID, db: AsyncSession, user: Use
     return company
 
 
-async def _require_company_in_scope(db: AsyncSession, user: User, company_id: uuid.UUID) -> None:
-    """A company-scoped account may only file a honeypot into its own
-    company (every Honeypot requires exactly one Company — see
-    app/db/models/honeypot.py). A 403 rather than a 404: the caller
-    submitted this company id itself, so there is nothing left to
-    conceal."""
-    if not has_company_access(user, company_id, write=True):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail='"company_id" must name a company this account has write access to.',
-        )
+async def _require_companies_in_scope(
+    db: AsyncSession, user: User, company_ids: list[uuid.UUID]
+) -> list[Company]:
+    """A company-scoped account may only file a honeypot into companies it
+    can write — any number, including none (see
+    app/db/models/company.py's module docstring). A 403 rather than a
+    404: the caller submitted these ids itself, so there is nothing left
+    to conceal. Returns the resolved `Company` rows (also validates every
+    id actually exists)."""
+    for company_id in company_ids:
+        if not has_company_access(user, company_id, write=True):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail='"company_ids" must only name companies this account has write access to.',
+            )
+    result = await db.execute(select(Company).where(Company.id.in_(company_ids)))
+    return list(result.scalars().all())
 
 
 async def _visible_honeypots(db: AsyncSession, user: User) -> list[Honeypot]:
@@ -282,7 +288,7 @@ async def list_honeypots_api(
     tag: list[str] = Query(default=[]),
     tag_mode: str = "or",
 ) -> list[dict[str, object]]:
-    query = (honeypots_visible_to(user)).options(selectinload(Honeypot.company))
+    query = honeypots_visible_to(user)
     query = apply_tag_filter(query, tag, tag_mode if tag_mode == "and" else "or")
     result = await db.execute(query)
     return [_honeypot_to_dict(m) for m in result.scalars().all()]
@@ -494,7 +500,7 @@ async def create_honeypot_api(
     request: Request, payload: HoneypotCreate, db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_token_user),
 ) -> dict[str, object]:
-    await _require_company_in_scope(db, user, payload.company_id)
+    companies = await _require_companies_in_scope(db, user, payload.company_ids)
     honeypot = Honeypot(
         name=payload.name,
         ip_address=payload.ip_address,
@@ -502,7 +508,7 @@ async def create_honeypot_api(
         username=payload.username,
         auth_method=payload.auth_method,
         secret_encrypted=encrypt_secret(payload.secret) if payload.secret else None,
-        company_id=payload.company_id,
+        companies=companies,
         description=payload.description,
         runbook=payload.runbook,
     )
@@ -535,7 +541,15 @@ async def update_honeypot_api(
     user: User = Depends(get_api_token_user),
 ) -> dict[str, object]:
     honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
-    await _require_company_in_scope(db, user, payload.company_id)
+    companies = await _require_companies_in_scope(db, user, payload.company_ids)
+    # Preserve any company this honeypot is *also* attached to outside this
+    # token's write scope, invisible to (and unvalidated by) the call above
+    # — same reasoning as the web UI's edit form, never silently detach
+    # what this request couldn't see in the first place.
+    outside_scope = [
+        c for c in honeypot.companies if not has_company_access(user, c.id, write=True)
+    ]
+    companies = companies + [c for c in outside_scope if c not in companies]
 
     connection_target_changed = (
         payload.ip_address != honeypot.ip_address or payload.port != honeypot.port
@@ -546,7 +560,7 @@ async def update_honeypot_api(
     honeypot.port = payload.port
     honeypot.username = payload.username
     honeypot.auth_method = payload.auth_method
-    honeypot.company_id = payload.company_id
+    honeypot.companies = companies
     honeypot.description = payload.description
     honeypot.runbook = payload.runbook
     honeypot.is_active = payload.is_active
@@ -1438,7 +1452,7 @@ async def list_company_members_api(
     user: User = Depends(get_api_token_user),
 ) -> list[dict[str, object]]:
     company = await _get_company_or_404(company_id, db, user)
-    return [_honeypot_to_dict(m) for m in company.honeypots]
+    return [_honeypot_to_dict(h) for h in company.honeypots]
 
 
 @router.put("/companies/{company_id}", dependencies=[_manage_companies])
@@ -1481,17 +1495,21 @@ async def delete_company_api(
     company = await _get_company_or_404(company_id, db, user)
     company_name = company.name
     honeypot_count = len(company.honeypots)
-    # Cascades to delete every one of this company's Honeypots (and their
-    # events) — see app/web/routes/companies.py's delete_company for why
-    # (a Honeypot's company_id is required, unlike debcontrol's optional
-    # group_id, so there's no "orphan the honeypots" option here).
+    member_count = len(company.memberships)
+    # Only removes *links* — this company's `CompanyMembership` and
+    # `honeypot_companies` rows — never a honeypot or user account itself.
+    # See app/web/routes/companies.py's delete_company for the full
+    # reasoning.
     await db.delete(company)
     await db.commit()
     await log_event(
         db,
         request=request,
         action="company.delete",
-        summary=f'Deleted company "{company_name}" and its {honeypot_count} honeypot(s)',
+        summary=(
+            f'Deleted company "{company_name}" — detached {honeypot_count} honeypot(s) '
+            f"and removed {member_count} user membership(s)"
+        ),
         target_type="company",
         target_id=company_id,
         target_label=company_name,
@@ -1500,12 +1518,13 @@ async def delete_company_api(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-# Note: no POST/DELETE .../honeypots membership endpoints here — unlike
-# debcontrol's optional machine-group membership, every Honeypot requires
-# exactly one Company (DB-enforced), so reassigning one is part of
-# `PUT /api/v1/honeypots/{id}` (its `company_id` field), not a company-side
-# membership action. See app/web/routes/companies.py's company_detail for
-# the same reasoning on the web side.
+# Note: no POST/DELETE .../honeypots membership endpoints here (yet) — a
+# honeypot's company set can be changed via `PUT /api/v1/honeypots/{id}`
+# (its `company_ids` field, replacing the whole set), same as the web UI's
+# create/edit forms. The web UI's company detail page additionally offers
+# a one-at-a-time attach/detach action
+# (`app/web/routes/companies.py`'s `attach_existing_honeypot`/
+# `detach_honeypot`) with no REST equivalent yet.
 
 
 # --- "All honeypots" (the built-in virtual company) -----------------------------

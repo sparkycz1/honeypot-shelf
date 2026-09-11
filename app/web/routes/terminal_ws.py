@@ -15,7 +15,7 @@ by hand, the same two checks every other page gets for free:
    expiry/`is_active` semantics — nothing new here, just called from a
    different place).
 2. Write access (`User.can_write()`) on that session's user, plus company
-   scope on the specific honeypot (`app.auth.scope.has_company_access`) —
+   scope on the specific honeypot (`app.auth.scope.can_write_honeypot`) —
    the single most powerful thing this app can do (arbitrary command
    execution as whatever user/sudo rights the honeypot's configured
    account has).
@@ -64,7 +64,7 @@ from fastapi import APIRouter, WebSocket, status
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.audit import log_event
-from app.auth.scope import has_company_access
+from app.auth.scope import can_write_honeypot
 from app.auth.sessions import SESSION_COOKIE_NAME, get_valid_session
 from app.core.config import get_settings
 from app.db.models.honeypot import Honeypot
@@ -134,7 +134,7 @@ async def _authenticate(
         # follow (see `app.auth.scope`). The page shell at
         # `GET /honeypots/{id}/terminal` already 404s, but this socket
         # authenticates independently of it and must not rely on that.
-        if honeypot is None or not has_company_access(user, honeypot.company_id, write=True):
+        if honeypot is None or not can_write_honeypot(user, honeypot):
             await websocket.close(code=_POLICY_VIOLATION, reason="Honeypot not found.")
             return None
         if not honeypot.host_key_fingerprint:

@@ -37,12 +37,13 @@ class ScheduledTask(Base):
     "New scheduled task" form automatically.
 
     Unlike debcontrol, a schedule is always implicitly scoped to one
-    company — `target_company_id` (or, for a single-honeypot target,
-    `target_honeypot.company_id`) is who "owns" it, checked against the
+    company — `owner_company_id` (resolved from the target honeypot's own
+    company when it has exactly one, or an explicit choice otherwise — see
+    `app.scheduling.targets`) is who "owns" it, checked against the
     creating user the same way any other write is
     (`app.auth.scope.ensure_company_access`). "All honeypots" for a
-    non-superadmin means "all honeypots in *my* company", never the whole
-    fleet — see `app.scheduling.targets`.
+    non-superadmin means "every honeypot in *this schedule's* company",
+    never the whole fleet.
     """
 
     __tablename__ = "scheduled_tasks"

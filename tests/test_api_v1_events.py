@@ -10,6 +10,7 @@ import pytest
 from sqlalchemy import select
 
 from app.auth.api_tokens import create_api_token
+from app.db.models.company import Company
 from app.db.models.honeypot import Honeypot
 from app.db.models.honeypot_event import HoneypotEvent
 from app.db.models.user import AccessLevel, User
@@ -28,8 +29,8 @@ async def _bearer_user_and_events(
     company_b = await create_company(db_session_factory, name="Beta")
 
     async with db_session_factory() as db:
-        honeypot_a = Honeypot(company_id=company_a.id, name="acme-honey1")
-        honeypot_b = Honeypot(company_id=company_b.id, name="beta-honey1")
+        honeypot_a = Honeypot(companies=[company_a], name="acme-honey1")
+        honeypot_b = Honeypot(companies=[company_b], name="beta-honey1")
         db.add_all([honeypot_a, honeypot_b])
         await db.commit()
         await db.refresh(honeypot_a)
@@ -39,7 +40,6 @@ async def _bearer_user_and_events(
         db.add(
             HoneypotEvent(
                 honeypot_id=honeypot_a.id,
-                company_id=company_a.id,
                 event_type="4002",
                 occurred_at=now - timedelta(minutes=5),
                 raw={},
@@ -49,7 +49,6 @@ async def _bearer_user_and_events(
         db.add(
             HoneypotEvent(
                 honeypot_id=honeypot_b.id,
-                company_id=company_b.id,
                 event_type="3000",
                 occurred_at=now - timedelta(minutes=5),
                 raw={},
@@ -86,7 +85,7 @@ async def test_company_scoped_token_only_sees_its_own_companys_events(
     assert response.status_code == 200
     body = response.json()
     assert len(body["events"]) == 1
-    assert body["events"][0]["company_id"] == str(company_a.id)
+    assert body["events"][0]["companies"] == [{"id": str(company_a.id), "name": company_a.name}]
     assert body["events"][0]["event_label"] == "SSH login attempt"
 
 
@@ -120,7 +119,7 @@ async def test_export_csv_contains_the_scoped_event(client, login_as, db_session
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/csv")
     assert "SSH login attempt" in response.text
-    assert str(company_a.id) in response.text
+    assert company_a.name in response.text
 
 
 async def test_export_json_format(client, login_as, db_session_factory):
@@ -145,7 +144,9 @@ async def test_honeypot_id_filter(client, login_as, db_session_factory):
         client, login_as, db_session_factory, is_superadmin=True
     )
     async with db_session_factory() as db:
-        result = await db.execute(select(Honeypot).where(Honeypot.company_id == company_a.id))
+        result = await db.execute(
+            select(Honeypot).where(Honeypot.companies.any(Company.id == company_a.id))
+        )
         honeypot_a = result.scalar_one()
 
     response = await client.get(

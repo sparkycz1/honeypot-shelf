@@ -20,7 +20,7 @@ async def _make_honeypot(db_session_factory) -> Honeypot:
         company = Company(name="Acme")
         db.add(company)
         await db.flush()
-        honeypot = Honeypot(company_id=company.id, name="acme-honey1")
+        honeypot = Honeypot(companies=[company], name="acme-honey1")
         db.add(honeypot)
         await db.commit()
         await db.refresh(honeypot)
@@ -51,7 +51,6 @@ async def test_ingest_event_with_shared_token_is_accepted(anonymous_client, db_s
         assert len(events) == 1
         assert events[0].event_type == "SSH_LOGIN_ATTEMPT"
         assert events[0].src_ip == "203.0.113.7"
-        assert events[0].company_id == honeypot.company_id
 
         refreshed = await db.get(Honeypot, honeypot.id)
         assert refreshed.last_seen_at is not None
@@ -125,15 +124,16 @@ async def test_ingest_forwards_a_real_alert_to_the_companys_syslog_target(
         )
         db.add(company)
         await db.flush()
-        honeypot = Honeypot(company_id=company.id, name="acme-honey1")
+        honeypot = Honeypot(companies=[company], name="acme-honey1")
         db.add(honeypot)
         await db.commit()
         await db.refresh(honeypot)
 
     forwarded = []
 
-    async def fake_forward(db, company, honeypot, event):
-        forwarded.append((company.name, honeypot.name, event.event_type))
+    async def fake_forward(db, honeypot, event):
+        company_names = [c.name for c in honeypot.companies]
+        forwarded.append((company_names, honeypot.name, event.event_type))
 
     monkeypatch.setattr(
         "app.web.routes.ingest.forward_honeypot_event_to_syslog", fake_forward
@@ -149,4 +149,4 @@ async def test_ingest_forwards_a_real_alert_to_the_companys_syslog_target(
         },
     )
     assert response.status_code == 201
-    assert forwarded == [("Acme", "acme-honey1", "SSH_LOGIN_ATTEMPT")]
+    assert forwarded == [(["Acme"], "acme-honey1", "SSH_LOGIN_ATTEMPT")]

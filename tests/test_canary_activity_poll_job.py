@@ -28,7 +28,7 @@ async def test_poll_skips_internal_logtypes_but_keeps_real_alerts(db_session_fac
     company = await create_company(db_session_factory)
     async with db_session_factory() as db:
         honeypot = Honeypot(
-            company_id=company.id,
+            companies=[await db.get(Company, company.id)],
             name="acme-honey1",
             host_key_fingerprint="SHA256:fakefingerprint",
         )
@@ -88,7 +88,7 @@ async def test_poll_still_marks_the_honeypot_seen_when_only_internal_lines_found
     company = await create_company(db_session_factory)
     async with db_session_factory() as db:
         honeypot = Honeypot(
-            company_id=company.id,
+            companies=[await db.get(Company, company.id)],
             name="acme-honey2",
             host_key_fingerprint="SHA256:fakefingerprint",
         )
@@ -131,7 +131,7 @@ async def test_poll_does_not_mark_seen_when_the_read_itself_failed(
     company = await create_company(db_session_factory)
     async with db_session_factory() as db:
         honeypot = Honeypot(
-            company_id=company.id,
+            companies=[await db.get(Company, company.id)],
             name="acme-honey3",
             host_key_fingerprint="SHA256:fakefingerprint",
         )
@@ -173,7 +173,7 @@ async def test_poll_forwards_each_real_alert_to_the_companys_syslog_target(
         db.add(company)
         await db.flush()
         honeypot = Honeypot(
-            company_id=company.id,
+            companies=[await db.get(Company, company.id)],
             name="acme-honey4",
             host_key_fingerprint="SHA256:fakefingerprint",
         )
@@ -203,11 +203,11 @@ async def test_poll_forwards_each_real_alert_to_the_companys_syslog_target(
 
     forwarded = []
 
-    async def fake_forward(db, company, honeypot, event):
-        forwarded.append((company.name, honeypot.name, event.event_type))
+    async def fake_forward(db, honeypot, event):
+        forwarded.append(([c.name for c in honeypot.companies], honeypot.name, event.event_type))
 
     monkeypatch.setattr("app.tasks.jobs.forward_honeypot_event_to_syslog", fake_forward)
 
     await _poll_honeypot_canary_log(str(honeypot_id))
 
-    assert forwarded == [("Acme", "acme-honey4", "4002")]
+    assert forwarded == [(["Acme"], "acme-honey4", "4002")]

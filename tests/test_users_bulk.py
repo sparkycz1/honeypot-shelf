@@ -87,7 +87,7 @@ async def test_would_remove_last_superadmin_is_reused_by_the_bulk_route(db_sessi
         assert await _would_remove_last_superadmin(db, solo_admin) is False
 
 
-async def test_bulk_assign_company_reassigns_and_skips_superadmins(
+async def test_bulk_assign_company_grants_access_additively_and_skips_superadmins(
     client, db_session_factory, login_as
 ):
     company_a = await create_company(db_session_factory, name="Acme")
@@ -117,8 +117,11 @@ async def test_bulk_assign_company_reassigns_and_skips_superadmins(
 
     async with db_session_factory() as db:
         updated = await db.get(User, plain_user.id)
-        assert updated.company_id == company_b.id
-        assert updated.access_level == AccessLevel.READ_WRITE
+        levels = {m.company_id: m.access_level for m in updated.memberships}
+        # Additive — the original company_a/READ membership is untouched,
+        # company_b/READ_WRITE is granted alongside it.
+        assert levels[company_a.id] == AccessLevel.READ
+        assert levels[company_b.id] == AccessLevel.READ_WRITE
         untouched = await db.get(User, superadmin.id)
         assert untouched.is_superadmin is True
 

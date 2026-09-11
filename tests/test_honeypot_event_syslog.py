@@ -28,12 +28,11 @@ pytestmark = pytest.mark.asyncio
 def _make_trio() -> tuple[Company, Honeypot, HoneypotEvent]:
     company = Company(id=uuid.uuid4(), name="Acme")
     honeypot = Honeypot(
-        id=uuid.uuid4(), company_id=company.id, name="acme-honey1", ip_address="10.0.0.5"
+        id=uuid.uuid4(), companies=[company], name="acme-honey1", ip_address="10.0.0.5"
     )
     event = HoneypotEvent(
         id=uuid.uuid4(),
         honeypot_id=honeypot.id,
-        company_id=company.id,
         event_type="4002",
         occurred_at=datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC),
         src_ip="203.0.113.7",
@@ -46,13 +45,13 @@ def _make_trio() -> tuple[Company, Honeypot, HoneypotEvent]:
 
 
 def test_rfc5424_message_body_is_valid_json_with_alert_fields():
-    company, honeypot, event = _make_trio()
-    message = _rfc5424_message(event, honeypot, company)
+    _company, honeypot, event = _make_trio()
+    message = _rfc5424_message(event, honeypot)
     header, _, body = message.rpartition(" - ")
     assert header.startswith("<")
     parsed = json.loads(body)
     assert parsed["event"] == "honeypot_alert"
-    assert parsed["company"] == "Acme"
+    assert parsed["companies"] == ["Acme"]
     assert parsed["honeypot"] == "acme-honey1"
     assert parsed["type"] == "4002"
     assert parsed["src_ip"] == "203.0.113.7"
@@ -70,7 +69,7 @@ async def test_forward_noop_when_neither_target_configured(monkeypatch, db_sessi
     company.syslog_host = "siem.acme.example.com"
 
     async with db_session_factory() as db:
-        await forward_honeypot_event_to_syslog(db, company, honeypot, event)
+        await forward_honeypot_event_to_syslog(db, honeypot, event)
     assert calls == []
 
 
@@ -89,11 +88,11 @@ async def test_forward_sends_when_company_syslog_enabled(monkeypatch, db_session
     company.syslog_protocol = SyslogProtocol.UDP
 
     async with db_session_factory() as db:
-        await forward_honeypot_event_to_syslog(db, company, honeypot, event)
+        await forward_honeypot_event_to_syslog(db, honeypot, event)
     assert sent["host"] == "siem.acme.example.com"
     body = sent["message"].rpartition(" - ")[2]
     parsed = json.loads(body)
-    assert parsed["company"] == "Acme"
+    assert parsed["companies"] == ["Acme"]
 
 
 async def test_forward_also_sends_to_the_fleet_wide_target_when_configured(
@@ -119,7 +118,7 @@ async def test_forward_also_sends_to_the_fleet_wide_target_when_configured(
         app_settings.fleet_alert_syslog_host = "siem.fleet.example.com"
         await db.commit()
 
-        await forward_honeypot_event_to_syslog(db, company, honeypot, event)
+        await forward_honeypot_event_to_syslog(db, honeypot, event)
 
     assert set(sent) == {"siem.acme.example.com", "siem.fleet.example.com"}
 
@@ -141,7 +140,7 @@ async def test_forward_fleet_wide_only_when_company_target_not_configured(
         app_settings.fleet_alert_syslog_host = "siem.fleet.example.com"
         await db.commit()
 
-        await forward_honeypot_event_to_syslog(db, company, honeypot, event)
+        await forward_honeypot_event_to_syslog(db, honeypot, event)
 
     assert sent == ["siem.fleet.example.com"]
 
@@ -169,6 +168,6 @@ async def test_forward_a_failed_company_send_does_not_block_the_fleet_send(
         app_settings.fleet_alert_syslog_host = "siem.fleet.example.com"
         await db.commit()
 
-        await forward_honeypot_event_to_syslog(db, company, honeypot, event)
+        await forward_honeypot_event_to_syslog(db, honeypot, event)
 
     assert sent == ["siem.fleet.example.com"]

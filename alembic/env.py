@@ -18,6 +18,7 @@ from app.db.models import (  # noqa: F401 - registers models with metadata
     AuditChainState,
     AuditLogEntry,
     Company,
+    CompanyMembership,
     CompanySnapshot,
     Honeypot,
     HoneypotEvent,
@@ -25,6 +26,7 @@ from app.db.models import (  # noqa: F401 - registers models with metadata
     User,
     UserSession,
     WebAuthnCredential,
+    honeypot_companies,
 )
 
 config = context.config

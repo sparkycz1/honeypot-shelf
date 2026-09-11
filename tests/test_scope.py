@@ -12,8 +12,9 @@ import pytest
 from app.auth.scope import (
     ensure_company_access,
     has_company_access,
-    visible_company_id,
+    visible_company_ids,
 )
+from app.db.models.company_membership import CompanyMembership
 from app.db.models.user import AccessLevel, AuthProvider, User
 from tests.conftest import create_company
 
@@ -23,19 +24,23 @@ from tests.conftest import create_company
 
 
 def _user(*, is_superadmin=False, company_id=None, access_level=None) -> User:
+    memberships = (
+        [CompanyMembership(company_id=company_id, access_level=access_level)]
+        if company_id is not None
+        else []
+    )
     return User(
         username="x",
         auth_provider=AuthProvider.LOCAL,
         is_superadmin=is_superadmin,
-        company_id=company_id,
-        access_level=access_level,
+        memberships=memberships,
     )
 
 
 def test_superadmin_has_access_to_any_company():
     admin = _user(is_superadmin=True)
     assert has_company_access(admin, uuid.uuid4(), write=True)
-    assert visible_company_id(admin) is None
+    assert visible_company_ids(admin) is None
 
 
 def test_read_user_can_read_but_not_write_own_company():
@@ -59,10 +64,10 @@ def test_user_has_no_access_to_a_different_company():
     assert not has_company_access(user, other, write=True)
 
 
-def test_visible_company_id_is_the_users_own_company():
+def test_visible_company_ids_is_the_users_own_companies():
     company_id = uuid.uuid4()
     user = _user(company_id=company_id, access_level=AccessLevel.READ)
-    assert visible_company_id(user) == company_id
+    assert visible_company_ids(user) == {company_id}
 
 
 def test_ensure_company_access_raises_404_not_403():

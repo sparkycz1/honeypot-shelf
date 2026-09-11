@@ -55,14 +55,18 @@
     <textarea id="secret" name="secret" rows="2"
       placeholder="{{ t(request, 'honeypots.new.secret_placeholder') }}"></textarea>
 
-    {% if current_user.is_superadmin %}
-      <label for="company_id">{{ t(request, 'honeypots.edit.company') }}</label>
-      <select id="company_id" name="company_id" required>
-        <option value="" disabled {{ 'selected' if not form.company_id else '' }}>{{ t(request, 'honeypots.new.choose_company') }}</option>
+    {% if companies %}
+      <fieldset>
+        <legend>{{ t(request, 'honeypots.edit.company') }}</legend>
         {% for company in companies %}
-          <option value="{{ company.id }}" {{ 'selected' if form.company_id == company.id | string else '' }}>{{ company.name }}</option>
+          <label class="checkbox-row">
+            <input type="checkbox" name="company_ids" value="{{ company.id }}"
+                   {{ 'checked' if company.id in preselected_company_ids else '' }}>
+            {{ company.name }}
+          </label>
         {% endfor %}
-      </select>
+        <p class="hint">{{ t(request, 'honeypots.new.company_hint') }}</p>
+      </fieldset>
     {% endif %}
 
     <label for="location">{{ t(request, 'honeypots.edit.location') }}</label>

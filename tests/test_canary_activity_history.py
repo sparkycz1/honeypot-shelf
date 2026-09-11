@@ -20,8 +20,7 @@ _COMPANY_ID = uuid.uuid4()
 def _event(event_type: str, occurred_at: datetime, **kwargs: object) -> HoneypotEvent:
     return HoneypotEvent(
         honeypot_id=_HONEYPOT_ID,
-        company_id=_COMPANY_ID,
-        event_type=event_type,
+event_type=event_type,
         occurred_at=occurred_at,
         raw={},
         source="ssh_poll",

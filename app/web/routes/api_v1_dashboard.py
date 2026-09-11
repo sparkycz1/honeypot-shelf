@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_api_token_user
-from app.auth.scope import visible_company_id
+from app.auth.scope import visible_company_ids
 from app.db.models.company_snapshot import CompanySnapshot
 from app.db.models.user import User
 from app.db.session import get_db
@@ -50,9 +50,9 @@ async def dashboard_trends_api(
     (`app.tasks.jobs.purge_old_company_snapshots`) has left in the table,
     with no further filtering here (mirrors the web Dashboard)."""
     query = select(CompanySnapshot).order_by(CompanySnapshot.snapshot_date.asc())
-    company_id = visible_company_id(user)
-    if company_id is not None:
-        query = query.where(CompanySnapshot.company_id == company_id)
+    company_ids = visible_company_ids(user)
+    if company_ids is not None:
+        query = query.where(CompanySnapshot.company_id.in_(company_ids))
     result = await db.execute(query)
     snapshots = list(result.scalars().all())
     return {"snapshots": [_snapshot_to_dict(s) for s in snapshots]}

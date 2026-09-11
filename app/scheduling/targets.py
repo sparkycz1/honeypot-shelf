@@ -13,8 +13,9 @@ client-side JS to keep the irrelevant one from being submitted too.
 machines" meant the whole (single-tenant) fleet, `ALL_HONEYPOTS` here means
 "every honeypot in this schedule's own company", never across companies.
 That's set once at creation (`owner_company_id` = the target honeypot's
-company, or the company explicitly chosen for an `ALL_HONEYPOTS` schedule)
-and is what all scoping below checks against — simpler than debcontrol's
+company when it has exactly one, otherwise a company explicitly chosen —
+see `app/web/routes/scheduling.py`'s `_resolve_owner_company_id`) and is
+what all scoping below checks against — simpler than debcontrol's
 `allowed_group_ids` lookup, since there's nothing opt-in to resolve.
 """
 
@@ -26,6 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.scope import has_company_access
+from app.db.models.company import Company
 from app.db.models.honeypot import Honeypot
 from app.db.models.scheduled_task import ScheduledTask, ScheduleTargetType
 from app.db.models.user import User
@@ -57,7 +59,7 @@ async def resolve_target_honeypots(db: AsyncSession, task: ScheduledTask) -> lis
     schedule creation and the next time it fires."""
     if task.target_type == ScheduleTargetType.ALL_HONEYPOTS:
         result = await db.execute(
-            select(Honeypot).where(Honeypot.company_id == task.owner_company_id)
+            select(Honeypot).where(Honeypot.companies.any(Company.id == task.owner_company_id))
         )
         return list(result.scalars().all())
 

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.db.models.company import Company
 from app.db.models.honeypot import Honeypot
 from app.scheduling.actions import get_action
 from app.scheduling.builtin_actions import register_builtin_actions
@@ -18,8 +19,9 @@ pytestmark = pytest.mark.asyncio
 
 async def _pinned_honeypot(db_session_factory, company_id) -> Honeypot:
     async with db_session_factory() as db:
+        company = await db.get(Company, company_id)
         honeypot = Honeypot(
-            company_id=company_id, name="acme-honey1", host_key_fingerprint="SHA256:fake"
+            companies=[company], name="acme-honey1", host_key_fingerprint="SHA256:fake"
         )
         db.add(honeypot)
         await db.commit()
@@ -33,7 +35,7 @@ async def test_trigger_canary_log_poll_enqueues_only_pinned_honeypots(
     company = await create_company(db_session_factory)
     pinned = await _pinned_honeypot(db_session_factory, company.id)
     async with db_session_factory() as db:
-        unpinned = Honeypot(company_id=company.id, name="unpinned")
+        unpinned = Honeypot(companies=[await db.get(Company, company.id)], name="unpinned")
         db.add(unpinned)
         await db.commit()
 

@@ -27,8 +27,6 @@ from sqlalchemy.orm import aliased, selectinload
 from app.audit import log_event
 from app.auth.dependencies import get_current_user, require_write
 from app.auth.scope import (
-    companies_visible_to,
-    has_company_access,
     honeypots_visible_to,
     visible_honeypots_by_ids,
 )
@@ -165,15 +163,13 @@ async def _get_honeypot_or_404(honeypot_id: uuid.UUID, db: AsyncSession, user: U
     `user`'s company scope (`app.services.access_scope`). 404, never
     403, for the same reason `app/web/routes/ai.py`'s `_get_conversation`
     uses one: a 403 would confirm that a honeypot with that id exists."""
-    # Eager-load `company` — templates read `honeypot.company` and the async
-    # ORM can't lazy-load relationships outside of an `await` (it would
-    # raise MissingGreenlet during template rendering). (`Honeypot.company`
-    # is already `lazy="joined"` on the model — this `selectinload` is
-    # belt-and-suspenders against that ever changing.)
+    # `Honeypot.companies` is `lazy="selectin"` on the model already —
+    # templates read `honeypot.companies` and the async ORM can't
+    # lazy-load a relationship outside of an `await` (it would raise
+    # MissingGreenlet during template rendering), so this relies on that
+    # default loader strategy rather than an explicit `.options()` here.
     query = honeypots_visible_to(user)
-    result = await db.execute(
-        query.options(selectinload(Honeypot.company)).where(Honeypot.id == honeypot_id)
-    )
+    result = await db.execute(query.where(Honeypot.id == honeypot_id))
     honeypot = result.scalar_one_or_none()
     if honeypot is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Honeypot not found.")
@@ -181,12 +177,15 @@ async def _get_honeypot_or_404(honeypot_id: uuid.UUID, db: AsyncSession, user: U
 
 
 async def _get_companies(db: AsyncSession, user: User) -> list[Company]:
-    """The companies offered in the honeypot form's company `<select>` —
-    a superadmin sees every company; a company-scoped user only ever sees
-    (and the form only ever offers) their own single company."""
-    query = companies_visible_to(user)
-    result = await db.execute(query.order_by(Company.name))
-    return list(result.scalars().all())
+    """The companies offered in the honeypot create/edit form's
+    multi-select — every company for a superadmin; only the companies a
+    company-scoped user can *write* (not merely read) for anyone else,
+    since this is always a write-context form."""
+    result = await db.execute(select(Company).order_by(Company.name))
+    companies = list(result.scalars().all())
+    if user.is_superadmin:
+        return companies
+    return [c for c in companies if user.can_write_company(c.id)]
 
 
 async def _get_all_tags(db: AsyncSession) -> list[Tag]:
@@ -343,7 +342,7 @@ async def list_honeypots(
 ) -> Response:
     page = max(page, 1)
     tag_mode = tag_mode if tag_mode == "and" else "or"
-    query = honeypots_visible_to(current_user).options(selectinload(Honeypot.company))
+    query = honeypots_visible_to(current_user)
     if q.strip():
         query = query.where(honeypot_search_clause(q))
     query = apply_tag_filter(query, tag, tag_mode)
@@ -470,6 +469,7 @@ async def new_honeypot_form(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Response:
+    preselect_company_id = request.query_params.get("company_id", "")
     csrf_token, new_cookie = get_or_create_csrf_token(request)
     response = templates.TemplateResponse(
         request,
@@ -482,11 +482,13 @@ async def new_honeypot_form(
             "form": {
                 "name": request.query_params.get("name", ""),
                 "ip_address": request.query_params.get("ip_address", ""),
-                # Pre-selects the company `<select>` when linked from that
-                # company's own page ("Add honeypot") — still just a regular
-                # field the operator can change before submitting.
-                "company_id": request.query_params.get("company_id", ""),
             },
+            # Pre-checks one company when linked from that company's own
+            # page ("Add honeypot") — still just regular checkboxes the
+            # operator can change before submitting.
+            "preselected_company_ids": (
+                {uuid.UUID(preselect_company_id)} if preselect_company_id else set()
+            ),
             "csrf_token": csrf_token,
         },
     )
@@ -505,25 +507,20 @@ async def create_honeypot(
     username: str = Form(...),
     auth_method: AuthMethod = Form(...),
     secret: str = Form(""),
-    company_id: str = Form(""),
+    company_ids: list[uuid.UUID] = Form(default=[]),
     location: str = Form(""),
     description: str = Form(""),
     runbook: str = Form(""),
     tags: str = Form(""),
     current_user: User = Depends(get_current_user),
 ) -> Response:
-    # Every honeypot belongs to exactly one company (unlike debcontrol's
-    # optional group) — a company-scoped user's own company, always,
-    # ignoring whatever the form submitted for it (never trust the client
-    # over the session's own scope); a superadmin must pick one explicitly.
-    resolved_company_id = (
-        current_user.company_id
-        if not current_user.is_superadmin
-        else (uuid.UUID(company_id) if company_id else None)
-    )
+    # A honeypot can belong to any number of companies, including none
+    # (superadmin-visible only) — never trust the client's submitted list
+    # over the session's own write scope: a company-scoped account may
+    # only select companies it can actually write.
+    if not current_user.is_superadmin:
+        company_ids = [cid for cid in company_ids if current_user.can_write_company(cid)]
     try:
-        if resolved_company_id is None:
-            raise ValueError("Pick a company for this honeypot.")
         payload = HoneypotCreate(
             name=name,
             ip_address=ip_address,
@@ -531,7 +528,7 @@ async def create_honeypot(
             username=username,
             auth_method=auth_method,
             secret=secret or None,
-            company_id=resolved_company_id,
+            company_ids=company_ids,
             location=location or None,
             description=description or None,
             runbook=runbook or None,
@@ -562,6 +559,7 @@ async def create_honeypot(
                     "description": description,
                     "runbook": runbook,
                 },
+                "preselected_company_ids": set(company_ids),
                 "csrf_token": csrf_token,
             },
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -570,20 +568,10 @@ async def create_honeypot(
             set_csrf_cookie(response, new_cookie)
         return response
 
-    # A company-scoped account may only file a new honeypot into its own
-    # company — a superadmin may pick any company that exists.
-    if not has_company_access(current_user, payload.company_id, write=True):
-        await log_event(
-            db,
-            request=request,
-            action="honeypot.create",
-            summary=f'Rejected new honeypot "{name}": company outside this account\'s access',
-            outcome=AuditOutcome.DENIED,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Pick a company your account has access to.",
-        )
+    # Already narrowed to writable companies for a non-superadmin above —
+    # look the (validated) ids up as real rows to attach.
+    companies_result = await db.execute(select(Company).where(Company.id.in_(payload.company_ids)))
+    companies = list(companies_result.scalars().all())
 
     honeypot = Honeypot(
         name=payload.name,
@@ -592,7 +580,7 @@ async def create_honeypot(
         username=payload.username,
         auth_method=payload.auth_method,
         secret_encrypted=encrypt_secret(payload.secret) if payload.secret else None,
-        company_id=payload.company_id,
+        companies=companies,
         location=payload.location,
         description=payload.description,
         runbook=payload.runbook,
@@ -1526,6 +1514,7 @@ async def edit_honeypot_form(
             "active_tab": "settings",
             "auth_methods": list(AuthMethod),
             "companies": await _get_companies(db, current_user),
+            "selected_company_ids": {c.id for c in honeypot.companies},
             "all_tags": await _get_all_tags(db),
             "errors": [],
             "csrf_token": csrf_token,
@@ -1602,6 +1591,7 @@ async def run_onboarding_endpoint(
             "active_tab": "settings",
             "auth_methods": list(AuthMethod),
             "companies": await _get_companies(db, current_user),
+            "selected_company_ids": {c.id for c in honeypot.companies},
             "all_tags": await _get_all_tags(db),
             "errors": [],
             "onboarding_error": error,
@@ -1782,7 +1772,7 @@ async def update_honeypot(
     username: str = Form(...),
     auth_method: AuthMethod = Form(...),
     secret: str = Form(""),
-    company_id: str = Form(""),
+    company_ids: list[uuid.UUID] = Form(default=[]),
     location: str = Form(""),
     description: str = Form(""),
     runbook: str = Form(""),
@@ -1797,14 +1787,18 @@ async def update_honeypot(
 ) -> Response:
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
 
-    # A company-scoped account can't move a honeypot to a different
-    # company at all (its own is the only one it can pick); a superadmin
-    # may re-home it to any company that exists.
-    resolved_company_id = (
-        current_user.company_id
-        if not current_user.is_superadmin
-        else (uuid.UUID(company_id) if company_id else honeypot.company_id)
-    )
+    # A company-scoped account only ever sees/submits the companies it can
+    # write (see `_get_companies`) — merge that submission with whatever
+    # this honeypot is *also* attached to outside that account's scope
+    # (invisible to this form, so left untouched) rather than silently
+    # detaching it. A superadmin's submission fully replaces the set, same
+    # as before.
+    if current_user.is_superadmin:
+        resolved_company_ids = set(company_ids)
+    else:
+        writable_ids = {c.id for c in await _get_companies(db, current_user)}
+        outside_scope_ids = {c.id for c in honeypot.companies} - writable_ids
+        resolved_company_ids = (set(company_ids) & writable_ids) | outside_scope_ids
 
     try:
         payload = HoneypotUpdate(
@@ -1814,7 +1808,7 @@ async def update_honeypot(
             username=username,
             auth_method=auth_method,
             secret=secret or None,
-            company_id=resolved_company_id,
+            company_ids=list(resolved_company_ids),
             location=location or None,
             description=description or None,
             runbook=runbook or None,
@@ -1865,6 +1859,7 @@ async def update_honeypot(
                 "active_tab": "settings",
                 "auth_methods": list(AuthMethod),
                 "companies": await _get_companies(db, current_user),
+                "selected_company_ids": resolved_company_ids,
                 "all_tags": await _get_all_tags(db),
                 "errors": [str(exc)],
                 "csrf_token": csrf_token,
@@ -1876,14 +1871,6 @@ async def update_honeypot(
         if new_cookie:
             set_csrf_cookie(response, new_cookie)
         return response
-
-    # Same scope rule as creation: a company-scoped account can't move a
-    # honeypot to a company it can't see.
-    if not has_company_access(current_user, payload.company_id, write=True):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Pick a company your account has access to.",
-        )
 
     # Changing where/how we connect invalidates the trust and facts we
     # previously established for whatever was at the old address — force
@@ -1898,7 +1885,13 @@ async def update_honeypot(
     honeypot.port = payload.port
     honeypot.username = payload.username
     honeypot.auth_method = payload.auth_method
-    honeypot.company_id = payload.company_id
+    if payload.company_ids:
+        companies_result = await db.execute(
+            select(Company).where(Company.id.in_(payload.company_ids))
+        )
+        honeypot.companies = list(companies_result.scalars().all())
+    else:
+        honeypot.companies = []
     honeypot.location = payload.location
     honeypot.description = payload.description
     honeypot.runbook = payload.runbook

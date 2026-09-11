@@ -107,15 +107,18 @@ visudo -cf /etc/sudoers.d/{{ honeypot.username }}</code></pre>
     <textarea id="secret" name="secret" rows="2"
       placeholder="{% if honeypot.secret_encrypted %}{{ t(request, 'honeypots.edit.password_placeholder_keep') }}{% else %}{{ t(request, 'honeypots.edit.password_placeholder_new') }}{% endif %}"></textarea>
 
-    {% if current_user.is_superadmin %}
-      <label for="company_id">{{ t(request, 'honeypots.edit.company') }}</label>
-      <select id="company_id" name="company_id" required>
+    {% if companies %}
+      <fieldset>
+        <legend>{{ t(request, 'honeypots.edit.company') }}</legend>
         {% for company in companies %}
-          <option value="{{ company.id }}" {% if honeypot.company_id == company.id %}selected{% endif %}>
+          <label class="checkbox-row">
+            <input type="checkbox" name="company_ids" value="{{ company.id }}"
+                   {{ 'checked' if company.id in selected_company_ids else '' }}>
             {{ company.name }}
-          </option>
+          </label>
         {% endfor %}
-      </select>
+        <p class="hint">{{ t(request, 'honeypots.new.company_hint') }}</p>
+      </fieldset>
     {% endif %}
 
     <label for="location">{{ t(request, 'honeypots.edit.location') }}</label>

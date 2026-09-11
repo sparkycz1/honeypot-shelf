@@ -209,8 +209,8 @@
                 <dt>{{ t(request, 'honeypots.table.ip') }}</dt><dd>{{ honeypot.ip_address }}</dd>
                 <dt>{{ t(request, 'honeypots.table.company') }}</dt>
                 <dd>
-                  {% if honeypot.company %}
-                    <a href="/companies/{{ honeypot.company.id }}">{{ honeypot.company.name }}</a>
+                  {% if honeypot.companies %}
+                    {% for company in honeypot.companies %}<a href="/companies/{{ company.id }}">{{ company.name }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
                   {% else %}
                     <span class="hint">—</span>
                   {% endif %}
@@ -269,8 +269,8 @@
                 <td>{{ honeypot.ip_address }}</td>
                 <td>{{ honeypot.discovered_hostname or '—' }}</td>
                 <td>
-                  {% if honeypot.company %}
-                    <a href="/companies/{{ honeypot.company.id }}">{{ honeypot.company.name }}</a>
+                  {% if honeypot.companies %}
+                    {% for company in honeypot.companies %}<a href="/companies/{{ company.id }}">{{ company.name }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
                   {% else %}
                     <span class="hint">—</span>
                   {% endif %}

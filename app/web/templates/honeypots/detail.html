@@ -43,8 +43,8 @@
     <dd>{{ t(request, 'honeypots.detail.auth_method_ssh_key') if honeypot.auth_method.value == 'ssh_key' else t(request, 'honeypots.detail.auth_method_password') }}</dd>
     <dt>{{ t(request, 'honeypots.detail.company') }}</dt>
     <dd>
-      {% if honeypot.company %}
-        <a href="/companies/{{ honeypot.company.id }}">{{ honeypot.company.name }}</a>
+      {% if honeypot.companies %}
+        {% for company in honeypot.companies %}<a href="/companies/{{ company.id }}">{{ company.name }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
       {% else %}
         —
       {% endif %}

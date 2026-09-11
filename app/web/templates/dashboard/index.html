@@ -9,7 +9,12 @@
   <h1>{{ t(request, "nav.dashboard") }}</h1>
 
   <section class="panel">
-    <h2>{{ t(request, "dashboard.all_companies") if current_user.is_superadmin else current_user.company.name }}</h2>
+    <h2>
+      {% if current_user.is_superadmin %}{{ t(request, "dashboard.all_companies") }}
+      {% elif current_user.memberships | length == 1 %}{{ current_user.memberships[0].company.name }}
+      {% else %}{{ t(request, "dashboard.your_companies") }}
+      {% endif %}
+    </h2>
     <div class="stat-grid">
       <div class="stat-card">
         <span class="stat-value">{{ honeypot_stats.total }}</span>

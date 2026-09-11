@@ -1,0 +1,33 @@
+{# One row per existing Company — a <select> named "membership__<company_id>"
+   with "" (no access) / read / read_write. Expects `companies` and
+   `membership_levels` (dict[company_id, AccessLevel]) in context — see
+   app/web/routes/users.py's module docstring for why this isn't a
+   repeated add/remove fieldset. #}
+{% if companies %}
+  <table class="data-table membership-fields">
+    <thead>
+      <tr>
+        <th>{{ t(request, "users.field.company") }}</th>
+        <th>{{ t(request, "users.field.access_level") }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for company in companies %}
+        {% set current = membership_levels.get(company.id) %}
+        <tr>
+          <td>{{ company.name }}</td>
+          <td>
+            <select name="membership__{{ company.id }}">
+              <option value="" {{ 'selected' if not current else '' }}>{{ t(request, "users.field.no_access") }}</option>
+              {% for level in access_levels %}
+                <option value="{{ level.value }}" {{ 'selected' if current == level else '' }}>{{ t(request, "users.field.access_level_read_write") if level.value == "read_write" else t(request, "users.field.access_level_read_only") }}</option>
+              {% endfor %}
+            </select>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <p class="hint">{{ t(request, "users.field.no_companies_yet") }}</p>
+{% endif %}

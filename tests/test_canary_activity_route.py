@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from app.db.models.company import Company
 from app.db.models.honeypot import AuthMethod, Honeypot
 from app.db.models.honeypot_event import HoneypotEvent
 from tests.conftest import create_company
@@ -18,8 +19,9 @@ pytestmark = pytest.mark.asyncio
 
 async def _create_pinned_honeypot(db_session_factory, company_id) -> Honeypot:
     async with db_session_factory() as db:
+        company = await db.get(Company, company_id)
         honeypot = Honeypot(
-            company_id=company_id,
+            companies=[company],
             name="acme-honey1",
             ip_address="192.0.2.10",
             port=22,
@@ -54,8 +56,7 @@ async def test_activity_tab_shows_events_by_human_label(client, db_session_facto
         db.add(
             HoneypotEvent(
                 honeypot_id=honeypot.id,
-                company_id=company.id,
-                event_type="4002",
+event_type="4002",
                 occurred_at=now - timedelta(minutes=1),
                 src_ip="203.0.113.5",
                 raw={},

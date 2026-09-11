@@ -66,8 +66,10 @@ async def get_account_api(user: User = Depends(get_api_token_user)) -> dict[str,
         "display_name": user.display_name,
         "locale": user.locale or "en",
         "is_superadmin": user.is_superadmin,
-        "company_id": str(user.company_id) if user.company_id else None,
-        "access_level": user.access_level.value if user.access_level else None,
+        "memberships": [
+            {"company_id": str(m.company_id), "access_level": m.access_level.value}
+            for m in user.memberships
+        ],
     }
 
 

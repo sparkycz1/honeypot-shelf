@@ -11,7 +11,7 @@ from app.services.honeypot_events import EventSource, build_event, parse_occurre
 
 
 def _make_honeypot() -> Honeypot:
-    return Honeypot(id=uuid.uuid4(), company_id=uuid.uuid4(), name="acme-honey1")
+    return Honeypot(id=uuid.uuid4(), name="acme-honey1")
 
 
 def test_parse_occurred_at_parses_opencanarys_local_time_format():
@@ -43,7 +43,6 @@ def test_build_event_promotes_the_common_opencanary_fields():
     event = build_event(honeypot, payload, source=EventSource.SSH_POLL)
 
     assert event.honeypot_id == honeypot.id
-    assert event.company_id == honeypot.company_id
     assert event.event_type == "4002"
     assert event.src_ip == "203.0.113.9"
     assert event.src_port == 51234

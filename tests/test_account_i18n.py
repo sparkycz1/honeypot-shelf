@@ -12,7 +12,7 @@ pytestmark = pytest.mark.asyncio
 
 
 async def test_account_page_renders_in_czech(client, login_as):
-    await login_as(client, is_superadmin=True, locale="cs")
+    await login_as(client, is_superadmin=True, locale="cs", api_access_enabled=True)
 
     response = await client.get("/account")
 
@@ -27,7 +27,7 @@ async def test_account_page_renders_in_czech(client, login_as):
 
 
 async def test_account_page_renders_in_english(client, login_as):
-    await login_as(client, is_superadmin=True, locale="en")
+    await login_as(client, is_superadmin=True, locale="en", api_access_enabled=True)
 
     response = await client.get("/account")
 
