@@ -7,13 +7,11 @@ There are two ways to use Caddy with Honeypot Shelf:
 - **Bundled**: `docker-compose.caddy.yml` in this repo runs Caddy for you,
   wired to the `web` service automatically. Use this unless you already
   run a reverse proxy on this host.
-- **Standalone**: you already run your own Caddy instance (for other
-  sites, or because you prefer managing it outside this repo). Point it at
-  Honeypot Shelf's `127.0.0.1:8080` (or whatever `APP_PORT` you set in
-  `.env`). Once this is working, consider also setting
-  `APP_BIND_ADDRESS=127.0.0.1` in Honeypot Shelf's own `.env` (no
-  `docker-compose.yml` edit needed) so the app is only reachable through
-  this proxy, never directly on its own port.
+- **Standalone**: you already run your own Caddy instance (other sites, or
+  you prefer managing it outside this repo). Point it at Honeypot Shelf's
+  `127.0.0.1:8080` (or whatever `APP_PORT` you set). Once working,
+  consider setting `APP_BIND_ADDRESS=127.0.0.1` too (no `docker-compose.yml`
+  edit needed), so the app is only reachable through this proxy.
 
 ## 📦 Option A — the bundled Caddy
 
@@ -61,10 +59,10 @@ over the internal Docker network.
 curl -sIv https://your-domain.example.com/healthz 2>&1 | grep -Ei 'HTTP/|strict-transport|server:'
 ```
 
-You should see `HTTP/2` or `HTTP/3` in the response line (curl needs
-HTTP/3 support compiled in to show `HTTP/3`; otherwise it'll negotiate
-HTTP/2, which is still correct), an `HTTP/1.1 200`/`200` status, and the
-`Strict-Transport-Security` header. To confirm HTTP/3 specifically:
+You should see `HTTP/2` or `HTTP/3` in the response line (curl needs HTTP/3
+compiled in to show `HTTP/3`; otherwise it negotiates HTTP/2, still
+correct), a `200` status, and the `Strict-Transport-Security` header. To
+confirm HTTP/3 specifically:
 
 ```bash
 curl --http3 -sI https://your-domain.example.com/healthz
@@ -123,7 +121,7 @@ your-domain.example.com {
 ```
 
 If your Caddy instance is itself a container in a different Compose
-project, join it to Honeypot Shelf's Docker network so it can resolve the
-`web` service by name rather than going through the published `8080` port
-— the base `docker-compose.yml` publishes that port on every interface,
-so joining the network is the more locked-down option.
+project, join Honeypot Shelf's Docker network so it can resolve `web` by
+name instead of the published `8080` port — the base
+`docker-compose.yml` publishes that port on every interface, so joining
+the network is the more locked-down option.

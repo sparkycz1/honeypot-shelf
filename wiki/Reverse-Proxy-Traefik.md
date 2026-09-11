@@ -5,15 +5,14 @@
 Use this if you already run Traefik on the host where Honeypot Shelf's
 `docker compose up -d --build` (the base file, without
 `docker-compose.caddy.yml`) is running, exposing the app on
-`127.0.0.1:8080` (or whatever `APP_PORT` you set in `.env`). Once this is
-working, consider also setting `APP_BIND_ADDRESS=127.0.0.1` in
-Honeypot Shelf's own `.env` (no `docker-compose.yml` edit needed) so the app
-is only reachable through this proxy, never directly on its own port.
+`127.0.0.1:8080` (or whatever `APP_PORT` you set). Once working, consider
+also setting `APP_BIND_ADDRESS=127.0.0.1` (no `docker-compose.yml` edit
+needed) so the app is only reachable through this proxy.
 
 Two ways to wire Traefik up to a service: a static **file provider** entry
-pointing at an address, or **Docker labels** read via Traefik's Docker
-provider. The file provider is simpler when Honeypot Shelf and Traefik aren't
-in the same Compose project (the default here).
+pointing at an address, or **Docker labels** via Traefik's own Docker
+provider. The file provider is simpler when Honeypot Shelf and Traefik
+aren't in the same Compose project (the default here).
 
 ## ⚙️ Static config (`traefik.yml`)
 
@@ -90,11 +89,11 @@ http:
           - url: "http://127.0.0.1:8080"
 ```
 
-If Traefik itself runs inside Docker, `127.0.0.1` from its point of view
-is the Traefik *container*, not the host — either run Traefik with
+If Traefik runs inside Docker, `127.0.0.1` from its point of view is the
+Traefik *container*, not the host — either run Traefik with
 `network_mode: host`, or use the host's Docker-bridge gateway address
-(commonly `172.17.0.1`, verify with `ip addr show docker0`) instead of
-`127.0.0.1` in the service URL above.
+(commonly `172.17.0.1`, check `ip addr show docker0`) in the service URL
+above.
 
 ## 🏷️ Alternative: Docker label-based discovery
 
@@ -114,9 +113,9 @@ labels:
   - traefik.http.services.Honeypot Shelf.loadbalancer.server.port=8080
 ```
 
-This requires exposing the Docker socket to the Traefik container, which
-is a meaningfully larger trust boundary than the file-provider approach
-above — only do this if you already accept that trade-off for your other
+This requires exposing the Docker socket to the Traefik container — a
+meaningfully larger trust boundary than the file-provider approach above
+— only do this if you already accept that trade-off for your other
 services.
 
 ## 🔎 Verifying

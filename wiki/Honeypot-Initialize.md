@@ -2,77 +2,70 @@
 
 *A blank Raspberry Pi walks in a plain SD card and walks out a convincing liar.*
 
-The **Initialize** page (top nav, visible to anyone with write access —
+**Initialize** (top nav, visible to anyone with write access —
 company-scoped `READ_WRITE` or superadmin) provisions a **brand new**
 Raspberry Pi OS 13 (Debian trixie) device into a working OpenCanary
 honeypot over SSH, in one run: base + admin-tool packages, a Python venv
 with OpenCanary/scapy/pcapy-ng, the `opencanary.service` systemd unit,
 locale (English + Czech, matching this app's own two) and timezone
 (Europe/Prague), a full `apt` upgrade, the team's `vim`/`bash.bashrc`
-config, the device's hostname/`/etc/hosts` entry, at most one of
-[NetBird](https://netbird.io) or [WireGuard](https://www.wireguard.com)
-(per the VPN field below — see [Architecture](Architecture.md)'s "VPN
-connectivity" section for how this relates to Honeypot Shelf's own,
-independent VPN choice in Settings → VPN), generating OpenCanary's own config
-(`opencanaryd --copyconfig`), and — confirmed against
-[OpenCanary's own wiki](https://github.com/thinkst/opencanary/wiki) as the
-only two modules that need it — the host-side setup **portscan** and
-**smb** each need beyond just flipping `enabled` in that config (see
-"Modules prepared, not enabled" below). Adapted from the team's own
-Ansible playbook — see `app.ssh.initialize`'s module docstring for exactly
-what changed and why this runs as one shell script instead of a real
-`ansible-playbook` invocation (same reasoning as the "Run initial setup"
-onboarding step below).
+config, hostname/`/etc/hosts`, at most one of [NetBird](https://netbird.io)
+or [WireGuard](https://www.wireguard.com) (see [Architecture](Architecture.md)'s
+"VPN connectivity" section for how this relates to Honeypot Shelf's own,
+independent VPN choice in Settings → VPN), generating OpenCanary's config
+(`opencanaryd --copyconfig`), and host-side prep for the two modules that
+need it beyond `enabled: true` (see "Modules prepared, not enabled"
+below — confirmed against
+[OpenCanary's own wiki](https://github.com/thinkst/opencanary/wiki)).
+Adapted from the team's own Ansible playbook — see `app.ssh.initialize`'s
+module docstring for why this runs as one shell script instead of a real
+`ansible-playbook` invocation.
 
 **Run history**: `/initialize/history` keeps the last 50 runs (device,
-outcome, who ran it, and its full output) — the WebSocket output above is
-otherwise gone the moment the run page is closed, so this is what to check
-after a failed provisioning without having had to keep that tab open.
+outcome, who ran it, full output) — the run page's own live output is
+otherwise gone the moment its tab closes.
 
 **You see it happen, live**: the run page opens a WebSocket
-(`app.web.routes.initialize_ws`) the moment it loads — a banner at the top
-tracks which phase is currently running ("Installing packages", "Upgrading
-the system", ...), and the script's actual output streams into the panel
-below it line by line as it's produced, the same "watch it happen" feel as
-the interactive SSH terminal. A run can take up to an hour on a slow Pi
-(the `apt full-upgrade` and compiling `pcapy-ng` are the long parts) — the
-socket stays open the whole time.
+(`app.web.routes.initialize_ws`) on load — a banner tracks the current
+phase ("Installing packages", "Upgrading the system", ...) while the
+script's output streams in line by line, the same feel as the interactive
+SSH terminal. A run can take up to an hour on a slow Pi (`apt
+full-upgrade` and compiling `pcapy-ng` are the long parts) — the socket
+stays open the whole time.
 
-**This is a separate, earlier step from onboarding a `Honeypot` already
-in Honeypot Shelf** ([Architecture.md](Architecture.md)'s onboarding
+**A separate, earlier step from onboarding a `Honeypot` already in
+Honeypot Shelf** ([Architecture.md](Architecture.md)'s onboarding
 paragraph, the "Run initial setup" button on a honeypot's Settings tab):
-Initialize targets a device that isn't in Honeypot Shelf's database at all
-yet — there's no honeypot row, no pinned host key, nothing to onboard.
-Once it succeeds, add the device the normal way
-([Installation](Installation.md)/`/honeypots/new`), which discovers and
-pins its host key the usual, non-TOFU way, then (optionally) run its own
-"Run initial setup" to hand SSH management over to Honeypot Shelf's shared
-`honeyhive` identity.
+Initialize targets a device with no row in Honeypot Shelf yet — no pinned
+host key, nothing to onboard. Once it succeeds, add the device the normal
+way ([Installation](Installation.md)/`/honeypots/new`), which discovers
+and pins its host key the usual, non-TOFU way, then (optionally) run its
+own "Run initial setup" to hand SSH management over to Honeypot Shelf's
+shared `honeyhive` identity.
 
 ## Fields
 
 | Field | Notes |
 |---|---|
 | IP address | The device's current IP — no DNS lookup, no discovery. |
-| Device name | Set as the device's hostname and `/etc/hosts` entry. Must be a valid hostname (letters/digits/hyphens). |
+| Device name | Set as hostname and `/etc/hosts` entry. Must be a valid hostname (letters/digits/hyphens). |
 | User | `root`, or any other account already reachable over SSH. Anything other than `root` runs the whole script via `sudo`. |
-| SSH port | Defaults to 22 — the port used for *this run only*, to reach the device as it is right now. |
-| New SSH port | Defaults to **22222**. As the very last step, on success, the device's own sshd is moved to this port (see "SSH moves to a new port on success" below); use it, not the port above, when adding the device as a honeypot afterward. Editable per run — e.g. set it to the same value as "SSH port" above to leave a device's SSH port unchanged on a re-run. |
-| Authentication | Honeypot Shelf's own shared identity key (assumed already authorized on the device — e.g. preseeded via RPi Imager; see Settings for the public key) or a one-time password. Neither the password nor any of the VPN fields below is ever stored — all of them are used for this one run only. |
-| VPN | None (default), NetBird, or WireGuard — the device's own connection, independent of Honeypot Shelf's own VPN choice in Settings → VPN (see [Architecture](Architecture.md)). Picking one reveals its own fields below; picking neither installs neither package. |
-| NetBird setup key | Optional (shown when VPN = NetBird). NetBird installs either way; a setup key also joins the device to your network right away (`netbird up --setup-key ...`). Get one from your NetBird management console. |
-| NetBird management URL | Optional (shown when VPN = NetBird). Blank = NetBird Cloud (the public management service); set this only for a self-hosted management server. |
-| WireGuard config | Required when VPN = WireGuard. The device's own peer config — the same `.conf` your WireGuard server admin (or its own UI) already hands out for any client. Written to `/etc/wireguard/wg0.conf` and brought up with `wg-quick up wg0` (and `systemctl enable wg-quick@wg0`, so it survives a reboot). |
+| SSH port | Defaults to 22 — used for *this run only*, to reach the device as it is right now. |
+| New SSH port | Defaults to **22222**. As the last step, on success, sshd moves to this port (see "SSH moves to a new port on success" below) — use it, not the port above, when adding the device afterward. Editable per run — e.g. set it equal to "SSH port" to leave a device's port unchanged on a re-run. |
+| Authentication | Honeypot Shelf's shared identity key (assumed already authorized — e.g. preseeded via RPi Imager; see Settings for the public key) or a one-time password. Neither the password nor any VPN field below is ever stored — used for this one run only. |
+| VPN | None (default), NetBird, or WireGuard — the device's own connection, independent of Honeypot Shelf's own VPN choice in Settings → VPN (see [Architecture](Architecture.md)). Picking one reveals its own fields; picking neither installs neither package. |
+| NetBird setup key | Optional (VPN = NetBird). NetBird installs either way; a setup key also joins the device to your network right away (`netbird up --setup-key ...`). Get one from your NetBird management console. |
+| NetBird management URL | Optional (VPN = NetBird). Blank = NetBird Cloud; set only for a self-hosted management server. |
+| WireGuard config | Required (VPN = WireGuard). The device's own peer config — the same `.conf` your WireGuard server (or its UI) hands any client. Written to `/etc/wireguard/wg0.conf`, brought up with `wg-quick up wg0` and `systemctl enable wg-quick@wg0` (survives a reboot). |
 
 ## Host-key trust is deliberately trust-on-first-use here
 
 Every other SSH connection this app makes uses **strict pinned host-key
 verification** — no blind trust on first use (see `app.ssh.client`'s
-module docstring). Initialize is a narrow, explicit exception: since the
-device isn't in Honeypot Shelf at all yet, there is no prior fingerprint to
-compare the one it presents against. The fingerprint is shown back after
-the run so an operator can note it down and verify it independently if
-they want to; nothing about it is stored anywhere. The normal "Add
+module docstring). Initialize is a narrow exception: the device isn't in
+Honeypot Shelf yet, so there's no prior fingerprint to compare against.
+The fingerprint is shown back after the run to note down and verify
+independently if wanted — nothing about it is stored. The normal "Add
 honeypot" flow that follows uses the real discover-then-confirm flow, not
 this one.
 
@@ -82,135 +75,113 @@ Second-to-last (right before the port change below), Initialize installs
 Honeypot Shelf's own shared identity public key, plus every current
 superadmin's personal SSH public key(s) (My account → SSH public keys —
 see [Architecture](Architecture.md#superadmin-personal-ssh-keys)), onto
-the account it connected as. This means both Honeypot Shelf and every
-superadmin can reach the freshly provisioned device directly afterward
-without needing the one-time password/key this run itself used —
-particularly useful when "Password" was the authentication method above,
-since that one-time password is never stored anywhere once the run ends.
-Skipped (never fails the run) if there's nothing to install; safe to
-re-run — every key is added idempotently, never removing or overwriting
-one already there, by hand or otherwise.
+the account it connected as — so both Honeypot Shelf and every superadmin
+can reach the freshly provisioned device directly afterward, without the
+one-time password/key this run used (useful especially when
+"Password" was the authentication method, since that password is never
+stored once the run ends). Skipped harmlessly if there's nothing to
+install; safe to re-run — every key is added idempotently, never removing
+or overwriting one already there, by hand or otherwise.
 
 ## Passwordless sudo is granted up front
 
-Right alongside the SSH keys above, Initialize also grants the connecting
-account the exact scoped, passwordless sudo `app.ssh.readiness`'s
-"missing requirements" banner otherwise asks an operator to fix by hand
-afterward: `apt-get` (checking/running updates), `shutdown` (reboot/power
-actions), `dmidecode` (the RAM speed fact), `systemctl` (the Honeypot
-Config tab's module editor) — plus `flatpak`/`snap` if either is present.
-Skipped for a `root` connection (root never needs sudo granted to
-itself). This is the same grant `app.ssh.onboarding` gives its own
-dedicated `honeyhive` user — a freshly Initialized device no longer shows
-up in Honeypot Shelf already failing every readiness check (and, in turn,
-things that quietly depend on the same sudo, like the Honeypot Config
-tab's "Apply" button) the way one used to before this existed.
+Alongside the SSH keys above, Initialize grants the connecting account
+the exact scoped, passwordless sudo `app.ssh.readiness`'s "missing
+requirements" banner otherwise asks an operator to fix by hand: `apt-get`
+(checking/running updates), `shutdown` (reboot/power actions), `dmidecode`
+(the RAM speed fact), `systemctl` (the Honeypot Config tab's module
+editor) — plus `flatpak`/`snap` if present. Skipped for a `root`
+connection. Same grant `app.ssh.onboarding` gives its own dedicated
+`honeyhive` user — a freshly Initialized device no longer shows up
+already failing every readiness check.
 
 ## The device reboots, and Initialize waits for it to come back
 
-The very last step reboots the device — a full clean boot, rather than
-trusting everything the script just did is already in its final running
-state. Initialize doesn't just trigger the reboot and declare victory: it
-polls the device's new SSH port (over the same trust-on-first-use host-key
-probe the run started with, never a real login) until it answers again,
-for up to a few minutes, before reporting success — so "Initialize
-succeeded" means the device actually came back up, not just that the
-script ran to its last line. If it presents a *different* host key than
-before the reboot, that's reported as a problem rather than silently
-accepted (see [Architecture](Architecture.md) for the full timing this
-uses). If it simply never comes back within the wait window (a slow SD
-card, a first-boot fsck), the run is reported as failed with that
-explanation — check the device by hand.
+The last step reboots the device — a full clean boot, not trusting
+everything the script just did is already in its final running state.
+Initialize polls the device's new SSH port (same trust-on-first-use
+host-key probe, never a real login) until it answers again, for up to a
+few minutes, before reporting success — so "Initialize succeeded" means
+the device actually came back up. A *different* host key across the
+reboot is reported as a problem, never silently accepted (see
+[Architecture](Architecture.md) for the full timing). If it never comes
+back within the wait window (a slow SD card, a first-boot fsck), the run
+is reported failed with that explanation — check the device by hand.
 
 ## SSH moves to a new port on success
 
-The very last step of a run moves the device's own sshd off the default
-port 22 to the "New SSH port" field above (**22222** by default,
-`app.ssh.initialize.NEW_SSH_PORT`), via a drop-in file
-(`/etc/ssh/sshd_config.d/honeyhive-ssh-port.conf`) rather than editing the
-distro's own `sshd_config` — idempotent (re-running Initialize just
-overwrites the same file) and leaves the maintained file untouched. It's
-last of all for a reason: every earlier step (packages, the venv,
-OpenCanary's config, ...) has already fully succeeded by the time this
-runs, all still over the *original* connection on the "SSH port" field's
-own port — restarting sshd doesn't drop that already-open session, only
-new connections see the new port. `sshd -t` validates the merged config
-first; since the whole script is `set -e`, a config problem aborts here
-*before* sshd is ever restarted, so this can never lock an operator out
-of a device mid-run.
+The last step moves sshd off port 22 to the "New SSH port" field
+(**22222** by default, `app.ssh.initialize.NEW_SSH_PORT`), via a drop-in
+file (`/etc/ssh/sshd_config.d/honeyhive-ssh-port.conf`) rather than
+editing the distro's own `sshd_config` — idempotent, leaves the
+maintained file untouched. It's last for a reason: every earlier step has
+already fully succeeded over the *original* connection by the time this
+runs — restarting sshd doesn't drop that already-open session, only new
+connections see the new port. `sshd -t` validates the merged config
+first; the whole script is `set -e`, so a config problem aborts *before*
+sshd restarts — this can never lock an operator out mid-run.
 
 **Use the new port, not 22, when adding the device as a honeypot**
-afterward (`/honeypots/new`'s own "Port" field) — the form and run page
-both call this out. A re-run of Initialize against a device already moved
-to the new port still works: it simply connects on whichever port you
-give it this time (22222, by then) and re-applies the same drop-in file,
-a no-op.
+afterward (`/honeypots/new`'s "Port" field) — the form and run page both
+call this out. A re-run against a device already moved to the new port
+still works: it connects on whichever port you give it and re-applies the
+drop-in file, a no-op.
 
 ## Non-root sudo
 
 Connecting as `root` needs no sudo. Otherwise:
 
-- With a password (password auth chosen): supplied to `sudo -S`.
-- With the shared key (no password known to this app): `sudo -n`, which
-  only works if the account already has passwordless sudo — the
-  Raspberry Pi OS default for its initial user. A device without that
-  needs either password auth instead, or NOPASSWD sudo granted by hand
-  first.
+- With a password: supplied to `sudo -S`.
+- With the shared key: `sudo -n`, which only works if the account already
+  has passwordless sudo — the Raspberry Pi OS default for its initial
+  user. Otherwise use password auth, or grant NOPASSWD sudo by hand first.
 
 ## A tmpfs ramdisk for OpenCanary's own log
 
 Before generating the config, Initialize sets up a 512&nbsp;MB tmpfs at
-`/mnt/tmpfs` (an `/etc/fstab` entry + mounting it immediately — idempotent,
-safe on a re-run) and best-effort repoints OpenCanary's file logger at
-`/mnt/tmpfs/opencanary.log`. This is what the [Honeypot Config
-tab](Architecture.md)'s read-only-root toggle assumes exists — once `/` is
-read-only, OpenCanary still needs somewhere to write its own log, and a
-ramdisk both works and, as a bonus, is one less thing writing to the SD
+`/mnt/tmpfs` (an `/etc/fstab` entry + mounting it, idempotent) and
+best-effort repoints OpenCanary's file logger there. This is what the
+[Honeypot Config tab](Architecture.md)'s read-only-root toggle assumes
+exists — once `/` is read-only, OpenCanary still needs somewhere to
+write, and a ramdisk both works and is one less thing hitting the SD
 card. The Logs tab's "Honeypot logs" shortcut points at this same path.
 
 ## Modules prepared, not enabled
 
 `opencanaryd --copyconfig` generates `/etc/opencanaryd/opencanary.conf`
 (skipped if it already exists — a re-run never clobbers a hand-edited
-config). Every module ships however `--copyconfig` defaults it —
-**disabled** — same as any other module; Initialize never flips
-`"<module>.enabled"` to `true` for you. What it does do, for the two
-modules that need real host-OS setup beyond that (confirmed against
-OpenCanary's own wiki — every other module is a self-contained listener,
-nothing further to prepare):
+config). Every module ships **disabled** by default; Initialize never
+flips `"<module>.enabled"` to `true`. What it does do, for the two
+modules that need real host-OS setup beyond that (every other module is a
+self-contained listener, nothing further to prepare):
 
-- **portscan** — Debian 12+ dropped file-based kernel logging in favor of
-  journald-only, and defaults to the nftables-backed `iptables` binary;
-  neither works with the portscan module as shipped. Fixed by loading
-  rsyslog's `imjournal` module (bridges journald back to a plain
-  `/var/log/kern.log`) and switching the `iptables` alternative to
-  `iptables-legacy` — see
+- **portscan** — Debian 12+ dropped file-based kernel logging for
+  journald-only, and defaults to nftables-backed `iptables`; neither
+  works with the module as shipped. Fixed by loading rsyslog's
+  `imjournal` module (bridges journald back to `/var/log/kern.log`) and
+  switching the `iptables` alternative to `iptables-legacy` — see
   [OpenCanary's wiki](https://github.com/thinkst/opencanary/wiki/OpenCanary-Wiki#portscan-not-working-on-debian-12).
-- **smb** — Samba itself is installed and configured with a `full_audit`
-  VFS module (`/etc/samba/smb.conf`) that logs file access to syslog
-  facility `local7`, which rsyslog then routes to a plain
-  `/var/log/samba-audit.log` OpenCanary tails — see
+- **smb** — Samba is installed and configured with a `full_audit` VFS
+  module (`/etc/samba/smb.conf`) logging file access to syslog facility
+  `local7`, which rsyslog routes to `/var/log/samba-audit.log` OpenCanary
+  tails — see
   [OpenCanary's wiki](https://github.com/thinkst/opencanary/wiki/Opencanary-and-Samba).
-  **Samba's own `smbd`/`nmbd` systemd services are left disabled** —
-  prepared, not live; nothing listens on the network from this until an
-  operator deliberately enables both those services and the `smb` module.
+  **`smbd`/`nmbd` are left disabled** — prepared, not live; nothing
+  listens until an operator deliberately enables both services and the
+  `smb` module.
 
-Both modules' relevant config keys (`portscan.iptables_path`,
-`smb.auditfile`) are already pointed at the right paths — enabling either
-module afterward is all that's left to do, and doesn't need the Terminal
-tab or a manual `opencanary.conf` edit: once the device is added as a
-`Honeypot`, its own Config tab has a full module editor (every module,
-not just these two — see [Architecture](Architecture.md)) that ticks
-`"<module>.enabled"`, restarts `opencanary`, and (for Samba) starts
-`smbd`/`nmbd` for you.
+Both modules' config keys (`portscan.iptables_path`, `smb.auditfile`) are
+already pointed at the right paths — enabling either module afterward
+needs no Terminal-tab edit: once the device is a `Honeypot`, its Config
+tab has a full module editor (every module, not just these two — see
+[Architecture](Architecture.md)) that ticks `"<module>.enabled"`,
+restarts `opencanary`, and (for Samba) starts `smbd`/`nmbd`.
 
 ## What it doesn't do
 
-- **Doesn't create a `Honeypot` row.** Standalone tool — add the device
-  separately afterward.
+- **Doesn't create a `Honeypot` row.** Add the device separately afterward.
 - **Doesn't enable any OpenCanary module** — see "Modules prepared, not
-  enabled" above and the Honeypot Config tab's module editor
-  ([Architecture](Architecture.md)) for actually turning one on.
+  enabled" above and the Config tab's module editor.
 - **Doesn't wire up event forwarding** — see
   [Honeypot Onboarding](Honeypot-Onboarding.md) for `POST
   /api/ingest/{honeypot_id}/events`, which needs the `Honeypot` row this

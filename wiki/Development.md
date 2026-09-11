@@ -8,9 +8,9 @@
 uv sync                # installs into .venv, including dev dependencies
 ```
 
-The app itself has no supported bare-metal run path (see
-[Installation](Installation.md)) — tests run against in-memory SQLite, not
-a real Postgres, so `uv sync` alone is enough for lint/type-check/tests.
+No bare-metal run path (see [Installation](Installation.md)) — but tests run
+against in-memory SQLite, not real Postgres, so `uv sync` alone is enough
+for lint/type-check/tests.
 
 ## Commands
 
@@ -36,9 +36,9 @@ see `tests/conftest.py`.
 uv run alembic revision --autogenerate -m "Add honeypot.notes"
 ```
 
-**Always read the generated file** — autogenerate misses some things
-(renamed columns look like a drop + an add; server-side defaults on an
-existing table need a data migration if the column isn't nullable). Then:
+**Always read the generated file** — autogenerate misses things (a renamed
+column looks like a drop + an add; a server-side default on an existing
+table needs a data migration if the column isn't nullable). Then:
 
 ```bash
 uv run alembic upgrade head
@@ -77,9 +77,8 @@ an oversight, not a feature — see `app/i18n/__init__.py`'s docstring).
 docker compose up -d --build
 ```
 
-is the only supported way — see [Installation](Installation.md). There's
-no `uvicorn app.main:app --reload` path documented yet, since the app
-expects real Postgres/Redis and there's no docker-compose override for a
-hot-reloading dev container in this scaffold; add one
-(`docker-compose.override.yml` mounting `./app` and running
-`uvicorn --reload`) if that workflow turns out to matter.
+is the only supported way — see [Installation](Installation.md). No
+`uvicorn app.main:app --reload` path yet (the app needs real Postgres/
+Redis, and there's no hot-reload compose override); add one
+(`docker-compose.override.yml` mounting `./app`, running `uvicorn
+--reload`) if that workflow turns out to matter.

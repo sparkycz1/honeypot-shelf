@@ -14,21 +14,19 @@ site-specific and credential material that doesn't belong in this repo).
 OpenCanary has no built-in "POST events to a URL" output — its `logger`
 config only writes to a local file, syslog, or a handful of other sinks
 (see [OpenCanary's own docs](https://github.com/thinkst/opencanary/wiki)).
-Honeypot Shelf's ingest endpoint below is one way to bridge that: a small
-forwarder running *on* (or reachable from) the Pi that reads OpenCanary's
-own JSON log output and re-POSTs each event.
+Honeypot Shelf's ingest endpoint below bridges that: a small forwarder
+running *on* (or reachable from) the Pi that reads OpenCanary's own JSON
+log output and re-POSTs each event.
 
-**Setting up a forwarder is optional, not required, for events to show
-up in Honeypot Shelf.** Once a honeypot's host key is pinned, Honeypot Shelf itself
-also reads whatever's new in OpenCanary's own log over the same SSH
-management connection every other periodic sweep uses — no forwarder, no
-extra config on the Pi at all. See that honeypot's own **Activity** tab,
-and [Architecture.md](Architecture.md#-honeypot-data-model)'s "How events
-actually arrive" section for how the two mechanisms relate
-(`HoneypotEvent.source` records which one produced each row). The
-push-based endpoint below is still worth setting up if you want events to
-land with less latency than the poll interval, or from a honeypot
-Honeypot Shelf doesn't otherwise manage over SSH.
+**Setting up a forwarder is optional.** Once a honeypot's host key is
+pinned, Honeypot Shelf itself also reads whatever's new in OpenCanary's
+log over the same SSH management connection every other periodic sweep
+uses — no forwarder, no extra Pi config at all. See that honeypot's own
+**Activity** tab, and [Architecture.md](Architecture.md#-honeypot-data-model)'s
+"How events arrive" section for how the two relate (`HoneypotEvent.source`
+records which one produced each row). The push-based endpoint below is
+still worth setting up for lower latency than the poll interval, or for a
+honeypot Honeypot Shelf doesn't otherwise manage over SSH.
 
 ## `POST /api/ingest/{honeypot_id}/events`
 
@@ -68,14 +66,14 @@ curl -X POST "https://honeyhive.example.com/api/ingest/<honeypot-uuid>/events" \
 
 ## Shape of a forwarder
 
-The simplest option: point OpenCanary's `logger` config at a local file (or
-a named pipe), and run a small `systemd` unit that tails it and re-POSTs
-each JSON line — a few dozen lines of Python (`requests`, or even `curl` in
-a loop) is enough; it doesn't need to be more sophisticated than "read a
-line, POST it, move on," since Honeypot Shelf is the system of record and a
-dropped/retried event is harmless (no idempotency key is required — a
-duplicate just shows up as two rows). Batch the sync steps yourself if
-volume ever makes one-`curl`-per-event too chatty on a slow uplink.
+Point OpenCanary's `logger` config at a local file (or named pipe), and
+run a small `systemd` unit that tails it and re-POSTs each JSON line — a
+few dozen lines of Python (`requests`, or even `curl` in a loop) is
+enough. It doesn't need to be more sophisticated than "read a line, POST
+it, move on" — Honeypot Shelf is the system of record and a
+dropped/retried event is harmless (no idempotency key needed; a duplicate
+just shows up as two rows). Batch it yourself if volume makes
+one-`curl`-per-event too chatty on a slow uplink.
 
 Two things worth being deliberate about when writing that forwarder,
 regardless of language:

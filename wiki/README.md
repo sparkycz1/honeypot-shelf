@@ -30,9 +30,9 @@ enabled, and it lives in its own separate git repository
    git commit -m "Import wiki pages"
    git push
    ```
-6. From then on, treat `<repo>.wiki.git` as the source of truth for the
-   wiki and keep this folder in sync manually (or drop this folder from
-   the main repo once the wiki is live — your call).
+6. From then on, treat `<repo>.wiki.git` as the source of truth and keep
+   this folder in sync by hand (or drop it once the wiki is live — your
+   call).
 
 ## 📑 Pages
 

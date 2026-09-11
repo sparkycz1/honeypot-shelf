@@ -5,10 +5,9 @@
 Use this if you already run nginx on the host where Honeypot Shelf's
 `docker compose up -d --build` (the base file, without
 `docker-compose.caddy.yml`) is running, exposing the app on
-`127.0.0.1:8080` (or whatever `APP_PORT` you set in `.env`). Once this is
-working, consider also setting `APP_BIND_ADDRESS=127.0.0.1` in
-Honeypot Shelf's own `.env` (no `docker-compose.yml` edit needed) so the app
-is only reachable through this proxy, never directly on its own port.
+`127.0.0.1:8080` (or whatever `APP_PORT` you set). Once working, consider
+also setting `APP_BIND_ADDRESS=127.0.0.1` (no `docker-compose.yml` edit
+needed) so the app is only reachable through this proxy.
 
 ## ✅ Prerequisites
 

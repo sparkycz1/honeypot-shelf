@@ -12,22 +12,22 @@ python scripts/setup.py
 
 `scripts/setup.py` is a self-contained, pure-stdlib wizard (needs only a
 system `python3` and Docker — nothing from this project's own virtualenv):
-it generates every secret (`SECRET_KEY`, `ENCRYPTION_KEY`,
+generates every secret (`SECRET_KEY`, `ENCRYPTION_KEY`,
 `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `INFORM_TOKEN`, `INGEST_TOKEN`),
 asks a handful of questions (timezone, whether to use the bundled Caddy
-reverse proxy and its domain/email if so, whether to add the optional VPN
-sidecar (`docker-compose.vpn.yml` — no provider/setup key/config asked
-here, that's all done from Settings → VPN once the app is running, see
+reverse proxy and its domain/email, whether to add the optional VPN
+sidecar (`docker-compose.vpn.yml` — no provider/key/config asked here,
+that's all Settings → VPN once the app is running, see
 [Architecture](Architecture.md)'s "VPN connectivity" section), whether the
-app's own port should only accept local connections, the facts/
-reachability check intervals, event retention, the superadmin password —
-or auto-generates one — and the host port), writes `.env`, applies the
+app's port should only accept local connections, the facts/reachability
+check intervals, event retention, the superadmin password — or
+auto-generates one — and the host port), writes `.env`, applies the
 Alembic migration, brings the stack up, waits for it to become healthy,
-and creates the first superadmin account (`admin`). Re-running it against
-an existing `.env` just tops that file up with any new `.env.example`
-variables and restarts the stack (auto-detecting whether Caddy/the VPN
-sidecar were previously running, same as [`scripts/upgrade.sh`](#updating)
-does) — it won't regenerate secrets or touch your data.
+and creates the first superadmin account (`admin`). Re-running against an
+existing `.env` just tops it up with any new `.env.example` variables and
+restarts the stack (auto-detecting whether Caddy/the VPN sidecar were
+running, same as [`scripts/upgrade.sh`](#updating) does) — never
+regenerates secrets or touches your data.
 
 Once it finishes, log in and create at least one `Company` and one
 `Honeypot` from the Companies/Honeypots pages (both superadmin-only) —
@@ -54,10 +54,9 @@ Then:
 docker compose up -d --build
 ```
 
-`alembic/versions/` already ships the initial schema migration
-(`1aabc66480ab_initial_schema.py`) — the one-shot `migrate` service applies
-it automatically (`alembic upgrade head`) before `web`/`worker`/`beat`
-start. If you've changed a model since and need a new migration, see
+`alembic/versions/` already ships the initial schema migration; the
+one-shot `migrate` service applies it automatically (`alembic upgrade
+head`) before `web`/`worker`/`beat` start. Need a new migration? See
 [Development.md](Development.md#adding-a-migration).
 
 The app listens on `APP_PORT` (default `8080`, plain HTTP, all interfaces
@@ -96,23 +95,21 @@ that.
 
 > [!WARNING]
 > Two features are browser-disabled outright on plain HTTP, for any origin
-> other than `http://localhost` — not just restricted, entirely absent from
-> `window`/`navigator`, with no server-side workaround: **WebAuthn/
-> passkeys** (My account → Passkeys shows "This browser doesn't support
-> passkeys" even in a browser that does, once it notices) and **the
-> honeypot terminal's clipboard copy/paste** (Ctrl+C/Ctrl+V and right-click
-> copy; native Ctrl+V paste still works, since that doesn't go through the
-> Clipboard API). Both need a real "secure context" — reached over HTTPS
-> (an `https://` reverse proxy, Caddy or otherwise) or accessed as
-> `http://localhost` on the machine Honeypot Shelf itself runs on. A plain HTTP
-> LAN IP/hostname (e.g. `http://192.168.1.x:8080`) satisfies neither, no
-> matter how the app itself or its host firewall is configured.
+> other than `http://localhost` — entirely absent from `window`/
+> `navigator`, no server-side workaround: **WebAuthn/passkeys** (My
+> account → Passkeys shows "This browser doesn't support passkeys" even in
+> a browser that does) and **the honeypot terminal's clipboard copy/paste**
+> (Ctrl+C/Ctrl+V and right-click copy; native Ctrl+V still works, since
+> that skips the Clipboard API). Both need a real "secure context" —
+> HTTPS (an `https://` reverse proxy, Caddy or otherwise) or
+> `http://localhost` on the machine Honeypot Shelf runs on. A plain HTTP
+> LAN IP/hostname (`http://192.168.1.x:8080`) satisfies neither, no matter
+> how the app or host firewall is configured.
 >
-> **No public domain needed to fix this on a LAN-only deployment.** A
-> browser treats any `https://` origin as a secure context regardless of
-> whether the certificate is trusted — a self-signed one is enough, at the
-> cost of a one-time "this connection isn't private, proceed anyway"
-> click per client. The bundled Caddy (below) can mint one itself: in
+> **No public domain needed on a LAN-only deployment.** A browser treats
+> any `https://` origin as secure regardless of certificate trust — a
+> self-signed one is enough, at the cost of a one-time "proceed anyway"
+> click per client. The bundled Caddy can mint one itself: in
 > `./Caddyfile`, replace the site address with `tls internal` —
 > ```
 > :443 {
@@ -122,29 +119,24 @@ that.
 > ```
 > then `docker compose -f docker-compose.yml -f docker-compose.caddy.yml up
 > -d --build` and open `https://<this-host's-LAN-IP>`. `DOMAIN`/`ACME_EMAIL`
-> aren't needed for this path. To make the browser warning go away
-> permanently instead of clicking through it every time, install Caddy's
-> local CA on each client (`docker compose exec caddy caddy trust` prints
-> where to find it) — optional, purely cosmetic, WebAuthn/clipboard work
-> either way once the page has loaded over `https://`.
+> aren't needed here. To stop the browser warning permanently, install
+> Caddy's local CA on each client (`docker compose exec caddy caddy trust`
+> prints where to find it) — cosmetic only, WebAuthn/clipboard work either
+> way once the page loads over `https://`.
 >
-> **Already have HTTPS via a reverse proxy (bundled Caddy, your own, or one
-> on a different host) and still seeing this?** The app itself also needs
-> to know the request arrived as HTTPS — otherwise it builds/verifies URLs
-> and origins as if it were still plain HTTP even though the browser used
-> HTTPS, which fails WebAuthn with "Unexpected client data origin" and
-> breaks OIDC login the same way. This is what `TRUSTED_PROXY_IPS` (see
-> `.env.example`, default `*`) fixes — already on by default for every
-> setup described above. See `app/core/proxy_headers.py` and
+> **Already have HTTPS via a reverse proxy and still seeing this?** The
+> app also needs to know the request arrived as HTTPS — otherwise it
+> builds/verifies URLs as if still plain HTTP, failing WebAuthn
+> ("Unexpected client data origin") and OIDC login the same way. Fixed by
+> `TRUSTED_PROXY_IPS` (`.env.example`, default `*`) — already on for every
+> setup above. See `app/core/proxy_headers.py` and
 > [Architecture](Architecture.md#authentication--rbac) for the full story.
 >
 > **Audit log / rate limiter showing the proxy's IP instead of the real
-> client's?** That's a separate correction (`X-Forwarded-For`, not
-> `X-Forwarded-Proto`) with a different, off-by-default setting —
-> `TRUST_FORWARDED_FOR` (see `.env.example`) — precisely because trusting
-> it from just anyone would let an attacker defeat the login rate limiter
-> by spoofing a different "source" on every attempt. Turn it on once
-> `TRUSTED_PROXY_IPS` is narrowed to your real proxy's address (not `*`).
+> client's?** A separate, off-by-default fix — `TRUST_FORWARDED_FOR`
+> (`.env.example`) — trusting it from anyone would let an attacker defeat
+> the login rate limiter by spoofing a new "source" every attempt. Turn it
+> on once `TRUSTED_PROXY_IPS` is narrowed to your real proxy (not `*`).
 
 ## Custom logo & favicon
 
@@ -163,10 +155,9 @@ A filesystem path needs the file mounted into the container first —
 uncomment the `branding` volume on the `web` service in
 `docker-compose.yml`, drop the file(s) into a local `./branding/`
 directory, and point `LOGO_SOURCE`/`FAVICON_SOURCE` at
-`/app/branding/<filename>`. Any common image format works (SVG, PNG,
-etc.). Restart `web` after changing either. See `.env.example` and
-`app/web/branding.py` for exactly how a URL vs. a local path is told
-apart.
+`/app/branding/<filename>`. Any common image format works. Restart `web`
+after changing either — see `.env.example`/`app/web/branding.py` for how
+a URL vs. a local path is told apart.
 
 ## Updating
 
@@ -190,19 +181,15 @@ the matching overlay file(s) automatically — nothing to pass by hand.
 `stop.sh` stops every container (`docker compose stop` — nothing removed,
 your data stays exactly as it was); `start.sh` starts them again. Both
 auto-detect whether Caddy and/or the VPN sidecar are part of this
-deployment the same way `upgrade.sh` does — by each container's own
-Compose service label, not anything in `.env` — so it's the same one
-command whichever of `docker-compose.yml` alone,
-`+ docker-compose.caddy.yml`, `+ docker-compose.vpn.yml`, or both overlays
-together you're actually running; nothing to remember or pass by hand.
-`start.sh` refuses to run (with a pointer to `scripts/setup.py` instead)
-if it finds no existing Honeypot Shelf containers at all — it only starts a
-stack that's already been set up once, it doesn't create one.
+deployment (by each container's own Compose service label, not `.env`),
+so it's the same one command regardless of which overlay file(s) you're
+actually running. `start.sh` refuses to run (pointing at `scripts/
+setup.py` instead) if it finds no existing containers — it only starts a
+stack already set up once, it doesn't create one.
 
-For a one-off restart of just one service instead of the whole stack
-(e.g. after editing `Caddyfile`), `docker compose restart <service>`
-still works as usual — these two scripts are for stopping/starting
-*everything* together.
+For a one-off restart of a single service (e.g. after editing
+`Caddyfile`), plain `docker compose restart <service>` still works —
+these two scripts are for stopping/starting *everything* together.
 
 ## Backups
 
@@ -215,31 +202,28 @@ Writes one timestamped directory under `./backups/` (override with
 from nothing on a fresh host:
 
 - `db.sql.gz` — a `pg_dump` of the whole database, taken live via
-  Postgres's own MVCC snapshot (the stack does **not** need to be stopped
-  for this).
+  Postgres's own MVCC snapshot (the stack does **not** need to be stopped).
 - `env.backup` — a copy of `.env`. In particular `ENCRYPTION_KEY`: every
   encrypted secret in the database (honeypot passwords/private keys,
   LDAP/OIDC client secrets, NetBird/WireGuard config, TOTP secrets — see
   [Architecture](Architecture.md#secrets-at-rest)) is encrypted with it,
-  so a database restored under a *different* `ENCRYPTION_KEY` turns those
-  into permanently unreadable ciphertext — there is no way to recover them
-  after the fact, not even by hand. (Unlike debcontrol, Honeypot Shelf keeps no
-  separate shared SSH identity volume to back up — every honeypot's own
-  credential already lives in the database, covered by `db.sql.gz`.)
+  so a database restored under a *different* key turns those permanently
+  unreadable — no recovery after the fact, not even by hand. (Unlike
+  debcontrol, Honeypot Shelf keeps no separate SSH identity volume to back
+  up — every honeypot's credential already lives in the DB, covered by
+  `db.sql.gz`.)
 
 Old backup directories are pruned automatically — anything older than
 `BACKUP_RETENTION_DAYS` (default 14, override in `.env`) is deleted at the
-end of every run, so this is safe to leave running unattended forever
-without slowly filling the disk.
+end of every run, safe to leave running unattended forever.
 
 **The backup directory holds secrets in the clear** (`env.backup`, and
-every value the database dump can decrypt once combined with it) — it's
-created `chmod 600`-ish (group/other access stripped) but that only
-protects against other local accounts on the same host. Copy it somewhere
-access-controlled and ideally off this host (object storage, another
-server's own backup job pulling over `rsync`/`scp`, ...) rather than
-trusting a local disk alone; losing the host and its `./backups/`
-directory together is the same as never having backed up at all.
+every value the DB dump can decrypt combined with it) — created `chmod
+600`-ish but that only protects against other local accounts on the same
+host. Copy it somewhere access-controlled and off this host (object
+storage, another server's backup job pulling over `rsync`/`scp`, ...)
+rather than trusting a local disk alone; losing the host and `./backups/`
+together is the same as never having backed up at all.
 
 ### Automating it with cron
 
