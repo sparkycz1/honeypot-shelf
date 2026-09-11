@@ -30,6 +30,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 from app.db.pg_enum import pg_enum
+from app.services.syslog_transport import DEFAULT_SYSLOG_PORT, SyslogProtocol
 
 SINGLETON_ID = 1
 
@@ -53,20 +54,6 @@ class VpnProvider(enum.StrEnum):
     NONE = "none"
     NETBIRD = "netbird"
     WIREGUARD = "wireguard"
-
-
-class SyslogProtocol(enum.StrEnum):
-    """Transport for `app.audit_syslog` — UDP and TCP are plaintext (RFC 6587
-    octet-counting framing for TCP; UDP needs none, one datagram per
-    message); TLS wraps the same TCP framing in a TLS session, for sending
-    to a SIEM (e.g. Wazuh) over an untrusted network."""
-
-    UDP = "udp"
-    TCP = "tcp"
-    TLS = "tls"
-
-
-DEFAULT_SYSLOG_PORT = 514
 
 
 class AppSettings(Base):

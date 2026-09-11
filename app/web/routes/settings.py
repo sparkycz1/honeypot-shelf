@@ -26,15 +26,14 @@ from app.db.models.app_settings import (
     DEFAULT_LDAP_USER_SEARCH_FILTER,
     DEFAULT_OIDC_SCOPES,
     DEFAULT_OIDC_USERNAME_CLAIM,
-    DEFAULT_SYSLOG_PORT,
     AppSettings,
-    SyslogProtocol,
     VpnProvider,
 )
 from app.db.models.audit_log import AuditOutcome
 from app.db.models.honeypot import AuthMethod, Honeypot
 from app.db.session import get_db
 from app.services import netbird, wireguard
+from app.services.syslog_transport import DEFAULT_SYSLOG_PORT, SyslogProtocol
 from app.ssh.identity import (
     activate_pending_identity,
     discard_pending_identity,

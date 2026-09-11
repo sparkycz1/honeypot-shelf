@@ -13,6 +13,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import select
 
+from app.db.models.company import Company
 from app.db.models.honeypot import Honeypot
 from app.db.models.honeypot_event import HoneypotEvent
 from app.ssh.canary_activity import LogPollResult
@@ -156,3 +157,57 @@ async def test_poll_does_not_mark_seen_when_the_read_itself_failed(
         assert refreshed is not None
         assert refreshed.opencanary_log_offset == 0
         assert refreshed.last_seen_at is None
+
+
+async def test_poll_forwards_each_real_alert_to_the_companys_syslog_target(
+    db_session_factory, monkeypatch
+):
+    """Same company-scoped syslog forwarding the push-ingest path gets
+    (see tests/test_ingest.py) — the SSH-poll path must forward too,
+    since it's just as valid a way for a real alert to arrive."""
+    monkeypatch.setattr("app.db.session.AsyncSessionLocal", db_session_factory)
+    async with db_session_factory() as db:
+        company = Company(
+            name="Acme", syslog_enabled=True, syslog_host="siem.acme.example.com"
+        )
+        db.add(company)
+        await db.flush()
+        honeypot = Honeypot(
+            company_id=company.id,
+            name="acme-honey4",
+            host_key_fingerprint="SHA256:fakefingerprint",
+        )
+        db.add(honeypot)
+        await db.commit()
+        await db.refresh(honeypot)
+        honeypot_id = honeypot.id
+
+    fake_result = LogPollResult(
+        events=[
+            {"logtype": 1001, "local_time": "2026-01-01 12:00:00.000000"},  # internal noise
+            {
+                "logtype": 4002,
+                "local_time": "2026-01-01 12:00:02.000000",
+                "src_host": "203.0.113.7",
+            },  # a real alert
+        ],
+        new_offset=99,
+    )
+
+    async def fake_poll_log(
+        honeypot: object, secret: object, timeout_seconds: int
+    ) -> LogPollResult:
+        return fake_result
+
+    monkeypatch.setattr("app.tasks.jobs.poll_log", fake_poll_log)
+
+    forwarded = []
+
+    async def fake_forward(company, honeypot, event):
+        forwarded.append((company.name, honeypot.name, event.event_type))
+
+    monkeypatch.setattr("app.tasks.jobs.forward_honeypot_event_to_syslog", fake_forward)
+
+    await _poll_honeypot_canary_log(str(honeypot_id))
+
+    assert forwarded == [("Acme", "acme-honey4", "4002")]

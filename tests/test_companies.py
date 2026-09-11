@@ -148,3 +148,73 @@ async def test_users_list_filters_by_company(client, db_session_factory):
     assert response.status_code == 200
     assert "acme-user" in response.text
     assert "beta-user" not in response.text
+
+
+async def test_company_integrations_tab_updates_syslog_target(client, db_session_factory):
+    from tests.conftest import create_company
+
+    company = await create_company(db_session_factory)
+    form = await client.get(f"/companies/{company.id}/integrations")
+    assert form.status_code == 200
+
+    response = await client.post(
+        f"/companies/{company.id}/integrations",
+        data={
+            "csrf_token": _csrf_from(form),
+            "syslog_enabled": "1",
+            "syslog_host": "siem.acme.example.com",
+            "syslog_port": "6514",
+            "syslog_protocol": "tls",
+        },
+    )
+    assert response.status_code == 303
+
+    async with db_session_factory() as db:
+        refreshed = await db.get(Company, company.id)
+        assert refreshed is not None
+        assert refreshed.syslog_enabled is True
+        assert refreshed.syslog_host == "siem.acme.example.com"
+        assert refreshed.syslog_port == 6514
+        assert refreshed.syslog_protocol.value == "tls"
+
+
+async def test_company_integrations_enabled_without_host_is_rejected(
+    client, db_session_factory
+):
+    from tests.conftest import create_company
+
+    company = await create_company(db_session_factory)
+    form = await client.get(f"/companies/{company.id}/integrations")
+
+    response = await client.post(
+        f"/companies/{company.id}/integrations",
+        data={
+            "csrf_token": _csrf_from(form),
+            "syslog_enabled": "1",
+            "syslog_host": "",
+            "syslog_port": "514",
+            "syslog_protocol": "udp",
+        },
+    )
+    assert response.status_code == 200
+    assert "server host" in response.text.lower() or "host/ip" in response.text.lower()
+
+    async with db_session_factory() as db:
+        refreshed = await db.get(Company, company.id)
+        assert refreshed is not None
+        assert refreshed.syslog_enabled is False
+
+
+async def test_company_integrations_is_superadmin_only(
+    anonymous_client, login_as, db_session_factory
+):
+    from app.db.models.user import AccessLevel
+    from tests.conftest import create_company
+
+    company = await create_company(db_session_factory)
+    await login_as(
+        anonymous_client, company_id=company.id, access_level=AccessLevel.READ_WRITE
+    )
+
+    response = await anonymous_client.get(f"/companies/{company.id}/integrations")
+    assert response.status_code == 403

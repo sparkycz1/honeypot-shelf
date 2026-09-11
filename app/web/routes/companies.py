@@ -37,6 +37,7 @@ from app.services.honeypot_actions import (
     trigger_check_updates,
     trigger_updates,
 )
+from app.services.syslog_transport import DEFAULT_SYSLOG_PORT, SyslogProtocol
 from app.ssh.power import PowerAction
 from app.web.honeypot_search import honeypot_search_clause
 from app.web.routes.honeypots import _HONEYPOT_LIST_PAGE_SIZE
@@ -60,13 +61,16 @@ ALL_HONEYPOTS_CONFIRM_PHRASE = "ALL HONEYPOTS"
 
 def _company_tabs(request: Request, company: Company) -> list[tuple[str, str, str]]:
     """The (key, label, url) tabs shown on every one of this company's own
-    pages. Just "Overview" — a single company's own page deliberately shows
+    pages. "Overview" — a single company's own page deliberately shows
     only its users and its honeypots (see the product decision in
     CLAUDE.md/wiki/Home.md); the fleet-wide bulk update/power tools stay on
-    "All honeypots" (`companies/all.html`), not here."""
+    "All honeypots" (`companies/all.html`), not here — and "Integrations",
+    this company's own syslog target for its honeypot alerts (see
+    `app.services.honeypot_event_syslog`)."""
     base = f"/companies/{company.id}"
     return [
         ("overview", t(request, "honeypots.tabs.overview"), base),
+        ("integrations", t(request, "companies.tabs.integrations"), f"{base}/integrations"),
     ]
 
 
@@ -489,6 +493,110 @@ async def company_detail(
     if new_cookie:
         set_csrf_cookie(response, new_cookie)
     return response
+
+
+@router.get("/{company_id}/integrations")
+async def company_integrations(
+    request: Request,
+    company_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """This company's own syslog target for its honeypot *alerts* only —
+    see `app.services.honeypot_event_syslog`'s module docstring for why
+    this is per-company rather than living on the global Settings ->
+    Integrations page alongside the audit-log target
+    (`app.audit_syslog`)."""
+    company = await _get_company_or_404(company_id, db, current_user)
+    csrf_token, new_cookie = get_or_create_csrf_token(request)
+    response = templates.TemplateResponse(
+        request,
+        "companies/integrations.html",
+        {
+            "company": company,
+            "tabs": _company_tabs(request, company),
+            "active_tab": "integrations",
+            "csrf_token": csrf_token,
+            "syslog_protocols": list(SyslogProtocol),
+            "errors": [],
+        },
+    )
+    if new_cookie:
+        set_csrf_cookie(response, new_cookie)
+    return response
+
+
+@router.post("/{company_id}/integrations", dependencies=[Depends(verify_csrf)])
+async def update_company_integrations(
+    request: Request,
+    company_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    syslog_enabled: str = Form(""),
+    syslog_host: str = Form(""),
+    syslog_port: str = Form(str(DEFAULT_SYSLOG_PORT)),
+    syslog_protocol: str = Form(SyslogProtocol.UDP.value),
+) -> Response:
+    company = await _get_company_or_404(company_id, db, current_user)
+    errors: list[str] = []
+
+    host = syslog_host.strip()
+    try:
+        protocol = SyslogProtocol(syslog_protocol)
+    except ValueError:
+        errors.append("Unknown syslog protocol.")
+        protocol = company.syslog_protocol
+
+    try:
+        port = int(syslog_port.strip() or str(DEFAULT_SYSLOG_PORT))
+        if not (0 < port <= 65535):
+            raise ValueError
+    except ValueError:
+        errors.append("Port must be a whole number between 1 and 65535.")
+        port = company.syslog_port
+
+    if bool(syslog_enabled) and not host:
+        errors.append("Enabling syslog forwarding needs a server host/IP.")
+
+    if errors:
+        csrf_token, new_cookie = get_or_create_csrf_token(request)
+        response = templates.TemplateResponse(
+            request,
+            "companies/integrations.html",
+            {
+                "company": company,
+                "tabs": _company_tabs(request, company),
+                "active_tab": "integrations",
+                "csrf_token": csrf_token,
+                "syslog_protocols": list(SyslogProtocol),
+                "errors": errors,
+            },
+        )
+        if new_cookie:
+            set_csrf_cookie(response, new_cookie)
+        return response
+
+    company.syslog_enabled = bool(syslog_enabled)
+    company.syslog_host = host or None
+    company.syslog_port = port
+    company.syslog_protocol = protocol
+    await db.commit()
+
+    await log_event(
+        db,
+        request=request,
+        action="company.syslog.update",
+        summary=(
+            f'Updated honeypot-alert syslog forwarding for "{company.name}" '
+            f"({'enabled, ' + protocol.value if company.syslog_enabled else 'disabled'})"
+        ),
+        target_type="company",
+        target_id=company.id,
+        target_label=company.name,
+    )
+    return RedirectResponse(
+        url=f"/companies/{company.id}/integrations", status_code=status.HTTP_303_SEE_OTHER
+    )
 
 
 async def _visible_batch_runs(

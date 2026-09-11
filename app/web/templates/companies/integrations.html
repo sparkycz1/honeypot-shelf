@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% from "partials/_tabnav.html" import render as render_tabnav %}
+
+{% block title %}{{ t(request, "companies.integrations.title") }} — {{ company.name }} — HoneyHive{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>{{ company.name }}</h1>
+  </div>
+
+  {{ render_tabnav(tabs, active_tab) }}
+
+  {% if errors %}
+    <div class="alert alert-error">
+      {% for error in errors %}<p>{{ error }}</p>{% endfor %}
+    </div>
+  {% endif %}
+
+  <section class="panel">
+    <h2>{{ t(request, "companies.integrations.syslog.heading") }}</h2>
+    <p class="hint">
+      {{ t(request, "companies.integrations.syslog.hint") }}
+    </p>
+    <form method="post" action="/companies/{{ company.id }}/integrations" class="form" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label for="syslog_enabled">
+        <input type="checkbox" id="syslog_enabled" name="syslog_enabled" value="1"
+               {% if company.syslog_enabled %}checked{% endif %}>
+        {{ t(request, "settings.integrations.enabled") }}
+      </label>
+      <label for="syslog_host">{{ t(request, "settings.integrations.syslog.server_host") }}</label>
+      <input type="text" id="syslog_host" name="syslog_host" maxlength="255"
+             placeholder="siem.{{ company.name | lower | replace(' ', '-') }}.example.com"
+             value="{{ company.syslog_host or '' }}">
+      <label for="syslog_port">{{ t(request, "settings.integrations.syslog.port") }}</label>
+      <input type="number" id="syslog_port" name="syslog_port" min="1" max="65535"
+             value="{{ company.syslog_port }}">
+      <label for="syslog_protocol">{{ t(request, "settings.integrations.syslog.protocol") }}</label>
+      <select id="syslog_protocol" name="syslog_protocol">
+        {% for protocol in syslog_protocols %}
+          <option value="{{ protocol.value }}" {% if company.syslog_protocol == protocol %}selected{% endif %}>
+            {% if protocol.value == 'udp' %}{{ t(request, "settings.integrations.syslog.protocol_udp") }}
+            {% elif protocol.value == 'tcp' %}{{ t(request, "settings.integrations.syslog.protocol_tcp") }}
+            {% else %}{{ t(request, "settings.integrations.syslog.protocol_tcp_tls") }}{% endif %}
+          </option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="button">{{ t(request, "common.save") }}</button>
+    </form>
+  </section>
+{% endblock %}

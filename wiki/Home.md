@@ -96,7 +96,15 @@ section for what's left (mainly: no CI workflow file).
 - **Alerting**: out of scope for v1 — this is a management/overview tool,
   not a notification system. (`AppSettings.syslog_*` forwarding to a SIEM
   such as Wazuh, copied from debcontrol, still exists as an escape hatch
-  for anyone who wants alerting via their own tooling instead.)
+  for anyone who wants alerting via their own tooling instead — audit log
+  entries only, never a honeypot alert; see the next bullet for those.)
+- **Honeypot alerts get their own, per-company syslog target** —
+  `Company.syslog_*` (`app.services.honeypot_event_syslog`), configured
+  on each Company's own Integrations tab, separate from the global,
+  audit-only target above. A multi-tenant deployment routes each
+  company's own alert traffic to that company's own SIEM this way,
+  rather than one shared target seeing every company's alerts. Every
+  syslog message this app sends — both targets — is JSON.
 - **Audit log / Settings visibility**: superadmin-only.
 - **Event retention**: `EVENT_RETENTION_DAYS` defaults to 90 days.
 - **Audit log retention**: `AppSettings.audit_log_retention_days` also
