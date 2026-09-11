@@ -1,11 +1,14 @@
 # <img src="app/web/static/img/logo.svg" width="32" height="32" align="center" alt=""> Honeypot Shelf
 
-![License](https://img.shields.io/badge/license-MIT-blue)
+[![CI](https://github.com/sparkycz1/honeypot-shelf/actions/workflows/ci.yml/badge.svg)](https://github.com/sparkycz1/honeypot-shelf/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue)](LICENSE)
 ![Python](https://img.shields.io/badge/python-3.14-blue?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/web-FastAPI-009688?logo=fastapi&logoColor=white)
 ![Task queue](https://img.shields.io/badge/task%20queue-Celery-37814A?logo=celery&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/db-PostgreSQL%2018-336791?logo=postgresql&logoColor=white)
 ![Docker Compose](https://img.shields.io/badge/deploy-Docker%20Compose-2496ED?logo=docker&logoColor=white)
+![Dependabot](https://img.shields.io/badge/dependabot-enabled-025E8C?logo=dependabot&logoColor=white)
+![Security: ruff + pip-audit](https://img.shields.io/badge/security-ruff%20%2B%20pip--audit-4B8BBE)
 
 Management and monitoring overview for a fleet of
 [OpenCanary](https://github.com/thinkst/opencanary) honeypots deployed at
@@ -86,4 +89,8 @@ See [.github/SECURITY.md](.github/SECURITY.md) — supported versions and how to
 
 ## 📄 License
 
-[MIT](LICENSE)
+[PolyForm Noncommercial 1.0.0](LICENSE) — free for any noncommercial
+purpose (personal, research, nonprofit/educational/public use, ...).
+Commercial use isn't a permitted purpose under this license and needs a
+separate agreement with the licensor first — open an issue or reach out
+directly.

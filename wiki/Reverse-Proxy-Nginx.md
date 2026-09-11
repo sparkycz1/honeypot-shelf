@@ -1,5 +1,7 @@
 # 🔒 Reverse proxy: nginx
 
+*Already run nginx? It can front this too — it just needs to know about WebSockets.*
+
 Use this if you already run nginx on the host where Honeypot Shelf's
 `docker compose up -d --build` (the base file, without
 `docker-compose.caddy.yml`) is running, exposing the app on

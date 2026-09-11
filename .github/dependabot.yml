@@ -20,8 +20,7 @@ updates:
     labels:
       - "dependencies"
 
-  # No workflows exist yet, but this keeps any future GitHub Actions
-  # pinned-version usage covered from day one instead of being forgotten.
+  # Pinned action versions in .github/workflows/ci.yml.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

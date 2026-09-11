@@ -1,5 +1,7 @@
 # 🏗️ Architecture
 
+*Every honeypot lies for a living — this is the part of the app that has to tell the truth.*
+
 ## 🧱 Stack
 
 | Layer | Choice | Notes |
@@ -262,60 +264,45 @@ works, no code changes anywhere else in this app.
 
 ### NetBird — built
 
-**Why a sidecar, not NetBird inside `web`/`worker` directly**: creating
-the WireGuard interface NetBird uses under the hood needs
-`CAP_NET_ADMIN` + `/dev/net/tun` — capabilities this project's
-containers deliberately don't have (every container here runs as its own
-unprivileged user; see the `Dockerfile`'s `USER app`). Instead, the
-optional `docker-compose.vpn.yml` overlay (same convention as
-`docker-compose.caddy.yml` — see [Installation](Installation.md)) adds
-one small privileged `vpn` sidecar container that runs *only* the NetBird
-daemon (`netbird service run --daemon-addr unix:///var/run/netbird/sock
---log-file /var/log/netbird/client.log`, both paths on a named volume
-shared with `web`/`worker`), and `web`/`worker` join **its entire network
-namespace** (`network_mode: "service:vpn"`) rather than each
-independently trying to reach it. They never gain any elevated privilege
-of their own — they just borrow the sidecar's already-tunneled network
-stack, the same way any VPN-sidecar pattern (gluetun, wireguard-easy,
-...) works for other Docker Compose stacks. They still reach `db`/`redis`
-by service name as before (Docker's embedded DNS resolves that through
-whichever network the sidecar itself is attached to, the default one
-every service already shares) — and if you also run
-`docker-compose.caddy.yml`, its `Caddyfile` keeps working unmodified,
-because the `vpn` service claims `web`'s old DNS alias once `web` stops
-having a network identity of its own (see that overlay file's own
-comments for exactly why).
+**Why a sidecar, not NetBird inside `web`/`worker` directly**: the
+WireGuard interface NetBird creates under the hood needs `CAP_NET_ADMIN`
++ `/dev/net/tun`, which this project's containers deliberately don't
+have (every container runs as its own unprivileged user — see the
+`Dockerfile`'s `USER app`). The optional `docker-compose.vpn.yml` overlay
+(same convention as `docker-compose.caddy.yml`) instead adds one small
+privileged `vpn` sidecar running *only* the NetBird daemon, and
+`web`/`worker` join **its entire network namespace**
+(`network_mode: "service:vpn"`) — borrowing its already-tunneled network
+stack rather than gaining any privilege of their own, the same pattern
+gluetun/wireguard-easy use elsewhere. They still reach `db`/`redis` by
+service name as before; if you also run `docker-compose.caddy.yml`, its
+`Caddyfile` keeps working unmodified since `vpn` claims `web`'s old DNS
+alias once `web` stops having a network identity of its own.
 
-`app.services.netbird` (the control layer, living in `web`) never talks
-to the sidecar container directly — no Docker socket access, deliberately,
-since that would be root-equivalent. It only ever shells out to the
-`netbird` CLI (installed in the same image `web`/`worker`/the sidecar all
-share — see the `Dockerfile`; fetched straight from NetBird's GitHub
-release tarball, not the `.deb`, which tries to install a SysV init
-service this image has no init system to run), pointed at the sidecar's
-daemon over the shared socket via `--daemon-addr`. Without the overlay
-applied, the socket simply isn't there and every function in that module
-fails with a clear "can't reach the daemon" error rather than crashing
-the app — the whole feature is opt-in and harmless to leave unconfigured.
+`app.services.netbird` (in `web`) never talks to the sidecar container
+directly — no Docker socket access, deliberately, since that's
+root-equivalent. It only shells out to the `netbird` CLI (installed in
+the shared image, fetched from NetBird's own release tarball rather than
+the `.deb`, which wants a SysV init this image doesn't have), pointed at
+the sidecar's daemon over a shared socket. Without the overlay applied,
+that socket simply isn't there and every call fails with a clear "can't
+reach the daemon" error — the whole feature is opt-in and harmless to
+leave unconfigured.
 
-**Settings → VPN**'s NetBird section saves the setup key (encrypted, same
-as every other stored secret in this app — LDAP bind password, a
-honeypot's own password) and management URL, and connects in one action —
-a setup key is single-use on NetBird's own side anyway, so there's rarely
-a reason to save one without immediately using it. Connect/disconnect/
-restart are plain POSTs; status and the log tail are htmx-polled partials
-(`partials/netbird_status.html`/`netbird_log.html`, `every 5s`/`10s`),
-the same live-panel pattern the honeypot detail page's facts/status
-panels already use. `app.main`'s lifespan reconnects automatically on
-every `web` restart if a provider was left active (`AppSettings.
-vpn_provider`) — otherwise a redeploy would silently leave a VPN-only
-honeypot unreachable until someone noticed and clicked Connect again.
+**Settings → VPN** saves the setup key (encrypted, same as every other
+stored secret) and management URL, and connects in one action — a setup
+key is single-use on NetBird's own side anyway. Connect/disconnect/
+restart are plain POSTs; status and the log tail are htmx-polled
+partials, same live-panel pattern the honeypot detail page's facts/status
+panels use. `app.main`'s lifespan reconnects automatically on every
+`web` restart if a provider was left active (`AppSettings.vpn_provider`)
+— otherwise a redeploy would silently leave a VPN-only honeypot
+unreachable until someone noticed.
 
-This is a **different** NetBird connection from the one already on the
-[Initialize](Honeypot-Initialize.md) form — that one joins the *honeypot
-being provisioned* to your network; this one joins *Honeypot Shelf's own
-management-plane containers*. A deployment can use either independently,
-but only the combination of both actually reaches a honeypot that has no
+This is a **different** NetBird connection from the one on the
+[Initialize](Honeypot-Initialize.md) form — that one joins the honeypot
+*being provisioned*; this one joins Honeypot Shelf's own management-plane
+containers. Both together are what's needed to reach a honeypot with no
 other route to it.
 
 ### WireGuard — built

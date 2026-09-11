@@ -1,5 +1,7 @@
 # 🌱 Initialize
 
+*A blank Raspberry Pi walks in a plain SD card and walks out a convincing liar.*
+
 The **Initialize** page (top nav, visible to anyone with write access —
 company-scoped `READ_WRITE` or superadmin) provisions a **brand new**
 Raspberry Pi OS 13 (Debian trixie) device into a working OpenCanary

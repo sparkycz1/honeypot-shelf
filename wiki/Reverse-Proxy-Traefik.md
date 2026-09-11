@@ -1,5 +1,7 @@
 # 🔒 Reverse proxy: Traefik
 
+*Already run Traefik? Point a router at it and move on.*
+
 Use this if you already run Traefik on the host where Honeypot Shelf's
 `docker compose up -d --build` (the base file, without
 `docker-compose.caddy.yml`) is running, exposing the app on

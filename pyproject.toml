@@ -4,7 +4,7 @@ version = "0.28.1"
 description = "Management and monitoring overview for a fleet of OpenCanary honeypots, across multiple companies"
 readme = "README.md"
 requires-python = ">=3.14"
-license = { text = "Proprietary" }
+license = { text = "PolyForm-Noncommercial-1.0.0" }
 
 dependencies = [
     "fastapi>=0.141.1",
