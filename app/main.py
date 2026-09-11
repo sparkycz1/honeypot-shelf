@@ -175,7 +175,19 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
         docs_url=None,
         redoc_url=None,
-        openapi_url="/openapi.json",
+        # Disabled here too (`None`) — `app/web/routes/api_docs.py` defines
+        # its own `GET /openapi.json` instead, gated the same way `GET
+        # /api` is (write access AND `User.api_access_enabled`), since
+        # FastAPI's own built-in route accepts no `Depends` to add that
+        # check to. Ported from debcontrol (see that project's own
+        # `app/web/routes/api_docs.py` docstring for the full reasoning) —
+        # this app's own `/api` was already gated, but `/openapi.json`
+        # itself was only ever session-login-gated (by the auth
+        # middleware, same as any other page), letting any logged-in user
+        # — including a READ-only company account, or a write account with
+        # `api_access_enabled=False` — fetch the complete endpoint map
+        # regardless.
+        openapi_url=None,
     )
     app.openapi = lambda: _custom_openapi(app)  # type: ignore[method-assign]
 

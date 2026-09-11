@@ -950,7 +950,10 @@ async def _check_honeypot_reachability(honeypot_id: str) -> dict[str, Any]:
         return {"ok": True, "reachable": outcome.reachable}
 
 
-@celery_app.task(name="app.tasks.jobs.check_honeypot_reachability")
+@celery_app.task(
+    name="app.tasks.jobs.check_honeypot_reachability",
+    time_limit=get_settings().ssh_connect_timeout + 15,
+)
 def check_honeypot_reachability(honeypot_id: str) -> dict[str, Any]:
     return asyncio.run(_check_honeypot_reachability(honeypot_id))
 
