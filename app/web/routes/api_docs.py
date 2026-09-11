@@ -30,18 +30,59 @@ complete map of every endpoint, parameter, and permission this app has —
 handing that to anyone with network access, logged in or not, would be a
 reconnaissance gift. Once inside, "Authorize" in the UI takes one of this
 account's own API tokens (see `/account`) for actually trying requests.
+
+On top of the session-login check and `require_write` (a `READ` company
+account never sees this page at all — a settled product decision, see
+`wiki/Home.md`), both routes also require `User.api_access_enabled` — the
+separate, per-account flag (granted independently of access level, on the
+Users page) that gates actually creating an API token
+(`POST /account/api-tokens`). A write-tier account without it can't use
+anything either page offers anyway (there's no token to "Authorize" with),
+so there is no reason it should still be able to browse the full
+endpoint/parameter map either — same reconnaissance reasoning as the
+login-wall/write-gate above, just narrowed further. Ported from
+debcontrol, which had already tightened this the same way.
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
 
-from app.auth.dependencies import require_write
+from app.auth.dependencies import get_current_user, require_write
+from app.db.models.user import User
 from app.web.templating import templates
 
 router = APIRouter()
 
 
+def _require_api_access(current_user: User) -> None:
+    if not current_user.api_access_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="An administrator hasn't granted this account API access.",
+        )
+
+
 @router.get("/api", include_in_schema=False, dependencies=[Depends(require_write)])
-async def api_docs(request: Request) -> Response:
+async def api_docs(
+    request: Request, current_user: User = Depends(get_current_user)
+) -> Response:
+    _require_api_access(current_user)
     return templates.TemplateResponse(request, "api_docs.html", {})
+
+
+@router.get(
+    "/openapi.json", include_in_schema=False, dependencies=[Depends(require_write)]
+)
+async def openapi_schema(
+    request: Request, current_user: User = Depends(get_current_user)
+) -> Response:
+    """FastAPI's own `openapi_url` is disabled (see `app.main.create_app`)
+    in favor of this route, purely so the same `require_write`/
+    `api_access_enabled` checks `GET /api` uses can gate it too — FastAPI's
+    built-in route accepts no `Depends`. `request.app.openapi()` is
+    `_custom_openapi` (also set up in `app.main`), cached after the first
+    call like FastAPI's own default."""
+    _require_api_access(current_user)
+    return JSONResponse(request.app.openapi())

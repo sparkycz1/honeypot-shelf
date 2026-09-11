@@ -7,7 +7,6 @@ import contextlib
 import csv
 import io
 import json
-import logging
 import re
 import uuid
 from datetime import UTC, datetime
@@ -107,8 +106,6 @@ _BULK_POWER_CONFIRM_PHRASE = "SELECTED HONEYPOTS"
 HONEYPOTS_VIEW_COOKIE_NAME = "honeypots_view"
 _HONEYPOTS_VIEW_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365
 _HONEYPOT_VIEW_MODES = ("table", "list", "cards")
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/honeypots")
 # debcontrol gates updates/power/terminal behind their own separate
@@ -1330,23 +1327,44 @@ async def refresh_monitoring_endpoint(
     """"Refresh now" on the Monitoring tab — forces both an immediate
     CPU/RAM/OpenCanary sample and an immediate reachability check (the
     tab's two independent data sources, see `_build_monitoring_context`),
-    waits for both synchronously (same "enqueue, then block on the Celery
-    result" shape `refresh_facts_endpoint` already uses), then re-renders
-    the same partial the auto-poll panel does."""
+    waits for both concurrently (same "enqueue, then block on the Celery
+    result" shape `refresh_facts_endpoint` already uses, just gathered
+    rather than sequential since neither job depends on the other), then
+    re-renders the same partial the auto-poll panel does."""
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
     settings = get_settings()
 
     monitoring_result = tasks.sample_honeypot_monitoring.delay(str(honeypot.id))
     reachability_result = tasks.check_honeypot_reachability.delay(str(honeypot.id))
-    for async_result in (monitoring_result, reachability_result):
-        try:
-            await asyncio.to_thread(
-                async_result.get, timeout=settings.ssh_connect_timeout + 5
-            )
-        except CeleryTimeoutError:
-            logger.warning("refresh_monitoring_endpoint: a background job timed out")
-        except Exception:
-            logger.warning("refresh_monitoring_endpoint: a background job failed", exc_info=True)
+    error: str | None = None
+    try:
+        results = await asyncio.gather(
+            asyncio.to_thread(
+                monitoring_result.get, timeout=settings.ssh_connect_timeout + 5
+            ),
+            asyncio.to_thread(
+                reachability_result.get, timeout=settings.ssh_connect_timeout + 5
+            ),
+        )
+        for result in results:
+            if isinstance(result, dict) and not result.get("ok"):
+                error = str(result.get("error") or "Unknown error.")
+    except CeleryTimeoutError:
+        error = "The background job did not respond in time."
+    except Exception as exc:
+        error = str(exc)
+
+    await log_event(
+        db,
+        request=request,
+        action="honeypot.monitoring.refresh",
+        summary=f'Refreshed monitoring for "{honeypot.name}"',
+        outcome=AuditOutcome.SUCCESS if error is None else AuditOutcome.FAILURE,
+        target_type="honeypot",
+        target_id=honeypot.id,
+        target_label=honeypot.name,
+        details={"error": error} if error else None,
+    )
 
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
     context = await _build_monitoring_context(honeypot, range_key, db)
@@ -2821,12 +2839,29 @@ async def refresh_activity_endpoint(
     settings = get_settings()
 
     async_result = tasks.poll_honeypot_canary_log.delay(str(honeypot.id))
+    error: str | None = None
     try:
-        await asyncio.to_thread(async_result.get, timeout=settings.ssh_connect_timeout + 5)
+        result = await asyncio.to_thread(
+            async_result.get, timeout=settings.ssh_connect_timeout + 5
+        )
+        if isinstance(result, dict) and not result.get("ok"):
+            error = str(result.get("error") or "Unknown error.")
     except CeleryTimeoutError:
-        logger.warning("refresh_activity_endpoint: the background job timed out")
-    except Exception:
-        logger.warning("refresh_activity_endpoint: the background job failed", exc_info=True)
+        error = "The background job did not respond in time."
+    except Exception as exc:
+        error = str(exc)
+
+    await log_event(
+        db,
+        request=request,
+        action="honeypot.activity.refresh",
+        summary=f'Refreshed activity for "{honeypot.name}"',
+        outcome=AuditOutcome.SUCCESS if error is None else AuditOutcome.FAILURE,
+        target_type="honeypot",
+        target_id=honeypot.id,
+        target_label=honeypot.name,
+        details={"error": error} if error else None,
+    )
 
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
     context = await _build_activity_context(honeypot, range_key, db)
