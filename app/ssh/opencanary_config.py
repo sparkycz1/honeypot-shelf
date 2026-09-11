@@ -354,6 +354,29 @@ def module_enabled(config: dict[str, Any], module: ConfigModule) -> bool:
     return bool(_get_nested(config, module.enabled_key))
 
 
+# Every module with a real on/off switch — "general" is config-only, never
+# a toggleable service, so it's never a tag. Used by
+# app.services.honeypot_tags.sync_module_tags to know the full vocabulary
+# of tags it owns (so it can tell those apart from a manually-added tag it
+# must never touch) without hardcoding the module list a second time.
+TOGGLEABLE_MODULE_KEYS: frozenset[str] = frozenset(
+    module.key for module in OPENCANARY_MODULES if module.enabled_key is not None
+)
+
+
+def enabled_module_tag_names(config: dict[str, Any]) -> list[str]:
+    """This config's currently-enabled modules, as tag names (each
+    `ConfigModule.key` — already a short lowercase slug, valid as-is per
+    `app.services.honeypot_tags.normalize_tag_names`'s own rules) — what
+    the Honeypot Config tab's module editor tags the honeypot with on
+    every successful save. Order matches `OPENCANARY_MODULES`."""
+    return [
+        module.key
+        for module in OPENCANARY_MODULES
+        if module.enabled_key is not None and module_enabled(config, module)
+    ]
+
+
 def apply_form_to_config(
     config: dict[str, Any], form: dict[str, str]
 ) -> dict[str, Any]:

@@ -25,6 +25,17 @@
       {{ t(request, 'honeypots.config.readonly_hint_post') }}
     </p>
 
+    {% if readonly_saved %}
+      <div class="alert alert-ok">
+        <p>
+          {{ t(request, 'honeypots.config.readonly_enable_saved') if readonly_saved == 'enable' else t(request, 'honeypots.config.readonly_disable_saved') }}
+          {% if honeypot.host_key_fingerprint %}
+            <a href="/honeypots/{{ honeypot.id }}/power/reboot">{{ t(request, 'honeypots.config.readonly_reboot_now') }}</a>
+          {% endif %}
+        </p>
+      </div>
+    {% endif %}
+
     {% if readonly_state %}
       <p>
         {{ t(request, 'honeypots.config.currently_booted') }}
