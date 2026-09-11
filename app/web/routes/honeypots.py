@@ -11,6 +11,7 @@ import re
 import uuid
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlencode
 
 # NOT the builtin `TimeoutError` — `celery.exceptions.TimeoutError` does not
 # subclass it, so catching the builtin around `AsyncResult.get(timeout=...)`
@@ -63,6 +64,7 @@ from app.services.honeypot_tags import (
     parse_tag_names_from_text,
     remove_tags_from_honeypots,
     set_honeypot_tags,
+    sync_module_tags,
 )
 from app.services.opencanary_logtypes import logtype_label
 from app.services.saved_views import (
@@ -3003,23 +3005,36 @@ async def honeypot_config_tab(
     honeypot_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    readonly_saved: str = "",
+    readonly_error: str = "",
 ) -> Response:
     """Honeypot config — the read-only root filesystem toggle (see
     `app.ssh.readonly`) and the OpenCanary module editor (see
     `app.ssh.opencanary_config`). Two independent live SSH round trips on
-    every load, same as the Logs tab; nothing here is persisted."""
+    every load, same as the Logs tab; nothing here is persisted.
+
+    `readonly_saved` (`"enable"`/`"disable"`, or empty) and `readonly_error`
+    ride in on the redirect from `set_honeypot_readonly_endpoint` below —
+    that POST's own success/failure used to just redirect to a plain
+    `/config` with nothing riding along, so neither a successful toggle
+    (which only ever changes what the *next* boot looks like — see
+    `app.ssh.readonly`'s module docstring, `readonly_state` below reflects
+    the currently-booted state and never visibly changes right after) nor
+    a real failure (e.g. a missing sudoers grant) was ever distinguishable
+    from a silent no-op. Confirmed live as a real "it does nothing" bug
+    report."""
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
     settings = get_settings()
 
     readonly_state: str | None = None
     opencanary_config: dict[str, Any] | None = None
-    error: str | None = None
+    error: str | None = readonly_error or None
     if not honeypot.host_key_fingerprint:
-        error = "Confirm the server's key fingerprint on the Overview tab first."
+        error = error or "Confirm the server's key fingerprint on the Overview tab first."
     else:
-        readonly_state, readonly_error = await _load_readonly_state(honeypot, settings)
+        readonly_state, readonly_load_error = await _load_readonly_state(honeypot, settings)
         opencanary_config, config_error = await _load_opencanary_config(honeypot, settings)
-        error = readonly_error or config_error
+        error = error or readonly_load_error or config_error
 
     csrf_token, new_cookie = get_or_create_csrf_token(request)
     response = templates.TemplateResponse(
@@ -3031,6 +3046,7 @@ async def honeypot_config_tab(
             "active_tab": "config",
             "csrf_token": csrf_token,
             "readonly_state": readonly_state,
+            "readonly_saved": readonly_saved if readonly_saved in ("enable", "disable") else "",
             "opencanary_config": opencanary_config,
             "opencanary_modules": OPENCANARY_MODULES,
             "field_value": field_value,
@@ -3088,6 +3104,12 @@ async def save_honeypot_opencanary_config_endpoint(
                     if result.get("ok"):
                         saved = True
                         opencanary_config = updated_config
+                        # Tag the honeypot with exactly its now-enabled
+                        # modules ("ftp", "http", "ssh", ...), untagging
+                        # whichever got turned off — never touching a
+                        # manually-added tag. See that function's own
+                        # docstring for how it tells the two apart.
+                        await sync_module_tags(db, honeypot, updated_config)
                     else:
                         error = str(result.get("error") or "Unknown error.")
             except CeleryTimeoutError:
@@ -3183,7 +3205,19 @@ async def set_honeypot_readonly_endpoint(
         details={"error": error} if error else None,
     )
 
-    redirect_url = f"/honeypots/{honeypot.id}/config"
+    # Both the success and the error case used to just redirect to a plain
+    # `/config` with nothing riding along — the GET handler's own `error`
+    # only ever reflects *that request's own* status-read failures, never
+    # what this POST's toggle attempt itself did. A real toggle failure
+    # (e.g. the sudoers grant missing "raspi-config") and a genuine success
+    # both rendered as the exact same page, indistinguishable from a
+    # silent no-op — confirmed live as a real "it does nothing" bug report.
+    query = (
+        {"readonly_error": error}
+        if error
+        else {"readonly_saved": "enable" if enable_bool else "disable"}
+    )
+    redirect_url = f"/honeypots/{honeypot.id}/config?{urlencode(query)}"
     if request.headers.get("HX-Request") == "true":
         return Response(status_code=status.HTTP_200_OK, headers={"HX-Redirect": redirect_url})
     return RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)

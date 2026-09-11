@@ -417,11 +417,26 @@ trivially reversible the same way. Status is read live (`findmnt -n -o
 FSTYPE /` — `overlay` means currently booted read-only). **Takes effect
 on next reboot**, not immediately, and must be disabled before running
 system updates (`apt` can't write to a read-only root) — see that tab's
-own hint text. [Initialize](Honeypot-Initialize.md) sets up the
-`/mnt/tmpfs` ramdisk this depends on (OpenCanary's own log still needs
-somewhere to write) but never enables the toggle itself — that stays a
-separate, deliberate, per-honeypot action once a device is fully
-provisioned.
+own hint text; the Config tab now also shows an explicit "saved, reboot
+to apply" banner (with a one-click reboot link) right after a toggle,
+since neither `readonly_state` (the currently-*booted* state) nor
+anything else on the page used to visibly change — a real toggle and a
+silent failure looked identical, confirmed live as a genuine "does
+nothing" bug. **Not literal read-only**: the vendor's own
+`enable_overlayfs` (verified against `/usr/bin/raspi-config` itself, not
+assumed) installs the `overlayroot` package with `overlayroot=tmpfs` on
+the kernel command line — a RAM write layer over the real, read-only
+root. Every write still succeeds at runtime (`/var/log/kern.log`,
+`/var/log/samba-audit.log`, journald's own `/var/log/journal` if
+present, anything) — it's only discarded on the next reboot, which is
+exactly the intended trade-off, not a compatibility gap with anything
+[Initialize](Honeypot-Initialize.md) sets up. `/mnt/tmpfs` (also
+Initialize) stays worth having independently of this toggle — it spares
+the SD card from OpenCanary's own log writes on every boot even for a
+honeypot that never enables read-only root at all. **Also needs
+`raspi-config` in the managed honeypot's sudoers grant** (see the module
+editor's own note below — same "Fix it"/readiness-banner flow picks it
+up on an already-onboarded honeypot).
 
 **The OpenCanary module editor** (`app.ssh.opencanary_config`) is a
 category-by-category form over every module in OpenCanary's own default
@@ -440,11 +455,21 @@ module's toggle needs more than opencanaryd itself — enables+starts or
 disables+stops Samba's `smbd`/`nmbd` to match `smb.enabled`. No module is
 ever force-enabled by Initialize or this editor's own defaults; flipping
 a module on is always a deliberate, explicit save. **Needs the managed
-honeypot's sudoers grant to include `systemctl`** (added to
-`app.ssh.onboarding.build_onboarding_command`'s sudoers line, checked by
-`app.ssh.readiness`'s `systemctl_sudo_ok` probe) — a honeypot onboarded
-before this feature existed needs the existing "Fix it"/readiness-banner
-flow run once to pick up the new grant.
+honeypot's sudoers grant to include `systemctl` and `raspi-config`**
+(added to `app.ssh.onboarding.build_onboarding_command`'s sudoers line,
+checked by `app.ssh.readiness`'s `systemctl_sudo_ok`/
+`raspi_config_sudo_ok` probes) — a honeypot onboarded before either
+feature existed needs the existing "Fix it"/readiness-banner flow run
+once to pick up the new grant(s); the read-only-root toggle above needs
+`raspi-config` specifically, the module editor needs `systemctl`.
+
+**Every successful save also tags the honeypot with its now-enabled
+modules** (`app.services.honeypot_tags.sync_module_tags` — "ftp", "http",
+"ssh", ...) and untags whichever module got turned off, per explicit
+request. Never touches a tag outside that fixed vocabulary
+(`app.ssh.opencanary_config.TOGGLEABLE_MODULE_KEYS`) — a tag added by
+hand (`prod`, a site name, anything) survives every future save
+regardless of what modules change.
 
 ## 🍯 Honeypot data model
 

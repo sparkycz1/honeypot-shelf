@@ -227,3 +227,72 @@ async def test_save_modules_requires_write_access(client, login_as, db_session_f
         data={"csrf_token": "x"},
     )
     assert response.status_code == 403
+
+
+async def test_save_modules_tags_the_honeypot_with_enabled_modules_and_untags_disabled(
+    client, db_session_factory, celery_calls
+):
+    """Regression guard for an explicit feature request: saving the module
+    editor should tag the honeypot with exactly its enabled modules,
+    untag whichever got turned off, and never touch a manually-added tag
+    (here, "prod")."""
+    from sqlalchemy import select
+
+    from app.db.models.honeypot_tag import Tag, honeypot_tags
+    from app.services.honeypot_tags import set_honeypot_tags
+
+    company = await create_company(db_session_factory)
+    honeypot = await _create_pinned_honeypot(db_session_factory, company.id)
+    async with db_session_factory() as db:
+        db_honeypot = await db.get(Honeypot, honeypot.id)
+        assert db_honeypot is not None
+        # Already tagged "http" (as if a previous save enabled it) and
+        # "prod" (added by hand) — http should be dropped once its module
+        # is off in the new config, "prod" must survive untouched.
+        await set_honeypot_tags(db, db_honeypot, ["http", "prod"])
+        await db.commit()
+
+    celery_calls.result_for["app.tasks.jobs.read_honeypot_opencanary_config"] = {
+        "ok": True,
+        "config": {"ftp.enabled": False, "http.enabled": True, "ssh.enabled": True},
+    }
+    celery_calls.result_for["app.tasks.jobs.write_honeypot_opencanary_config"] = {"ok": True}
+
+    form = await client.get(f"/honeypots/{honeypot.id}/config")
+    match = re.search(r'name="csrf_token" value="([^"]+)"', form.text)
+    assert match
+    csrf_token = match.group(1)
+
+    response = await client.post(
+        f"/honeypots/{honeypot.id}/config/modules",
+        data={
+            "csrf_token": csrf_token,
+            "ftp.enabled": "on",  # turning ftp ON
+            # http.enabled deliberately omitted — an unchecked checkbox
+            # never submits at all, turning http OFF.
+            "ssh.enabled": "on",  # left ON
+        },
+    )
+    assert response.status_code == 200
+
+    async with db_session_factory() as db:
+        result = await db.execute(
+            select(Tag.name)
+            .select_from(honeypot_tags)
+            .join(Tag, Tag.id == honeypot_tags.c.tag_id)
+            .where(honeypot_tags.c.honeypot_id == honeypot.id)
+        )
+        names = set(result.scalars().all())
+
+    assert names == {"ftp", "ssh", "prod"}
+
+
+def test_enabled_module_tag_names_only_lists_toggled_on_modules():
+    from app.ssh.opencanary_config import enabled_module_tag_names
+
+    config = {"ftp.enabled": True, "http.enabled": False, "ssh.enabled": True}
+    names = enabled_module_tag_names(config)
+    assert "ftp" in names
+    assert "ssh" in names
+    assert "http" not in names
+    assert "general" not in names  # config-only, never a toggleable service

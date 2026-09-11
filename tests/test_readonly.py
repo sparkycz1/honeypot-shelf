@@ -127,9 +127,61 @@ async def test_enable_readonly_dispatches_task_and_redirects(
         follow_redirects=False,
     )
     assert response.status_code == 303
-    assert response.headers["location"] == f"/honeypots/{honeypot.id}/config"
+    assert response.headers["location"] == f"/honeypots/{honeypot.id}/config?readonly_saved=enable"
     names = celery_calls.names
     assert "app.tasks.jobs.set_honeypot_readonly" in names
     call = next(c for c in celery_calls if c[0] == "app.tasks.jobs.set_honeypot_readonly")
     assert call[1][0] == str(honeypot.id)
     assert call[2] == {"enable": True}
+
+
+async def test_readonly_toggle_success_shows_a_banner_after_redirect(
+    client, db_session_factory, celery_calls
+):
+    """Regression guard: a successful toggle used to redirect to a plain
+    `/config` with no indication anything happened — since the toggle
+    itself only ever changes what the *next* boot looks like, the page
+    looked identical to a silent no-op. See app.web.routes.honeypots.
+    honeypot_config_tab's own comment on `readonly_saved`/`readonly_error`."""
+    company = await create_company(db_session_factory)
+    honeypot = await _create_pinned_honeypot(db_session_factory, company.id)
+
+    form = await client.get(f"/honeypots/{honeypot.id}/config")
+    match = re.search(r'name="csrf_token" value="([^"]+)"', form.text)
+    assert match
+    csrf_token = match.group(1)
+
+    response = await client.post(
+        f"/honeypots/{honeypot.id}/config/readonly",
+        data={"enable": "true", "csrf_token": csrf_token},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert "takes effect after the device reboots" in response.text
+
+
+async def test_readonly_toggle_failure_is_surfaced_after_redirect_not_lost(
+    client, db_session_factory, celery_calls
+):
+    """Same class of bug as the success case above, but for a genuine
+    failure (e.g. a missing sudoers grant) — it used to vanish on redirect
+    too, indistinguishable from success or a no-op."""
+    company = await create_company(db_session_factory)
+    honeypot = await _create_pinned_honeypot(db_session_factory, company.id)
+    celery_calls.result_for["app.tasks.jobs.set_honeypot_readonly"] = {
+        "ok": False,
+        "error": "raspi-config exited 1: sudo: a password is required",
+    }
+
+    form = await client.get(f"/honeypots/{honeypot.id}/config")
+    match = re.search(r'name="csrf_token" value="([^"]+)"', form.text)
+    assert match
+    csrf_token = match.group(1)
+
+    response = await client.post(
+        f"/honeypots/{honeypot.id}/config/readonly",
+        data={"enable": "true", "csrf_token": csrf_token},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert "sudo: a password is required" in response.text

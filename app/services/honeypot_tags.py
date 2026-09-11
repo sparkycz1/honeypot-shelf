@@ -8,12 +8,14 @@ from __future__ import annotations
 import re
 import uuid
 from collections.abc import Iterable
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.honeypot import Honeypot
 from app.db.models.honeypot_tag import Tag, honeypot_tags
+from app.ssh.opencanary_config import TOGGLEABLE_MODULE_KEYS, enabled_module_tag_names
 
 MAX_TAG_LENGTH = 64
 
@@ -177,3 +179,36 @@ async def remove_tags_from_honeypots(
     )
     await db.flush()
     await _delete_orphaned_tags(db, tag_ids)
+
+
+async def sync_module_tags(db: AsyncSession, honeypot: Honeypot, config: dict[str, Any]) -> None:
+    """Called after every successful OpenCanary module-config save
+    (`app.web.routes.honeypots.save_honeypot_opencanary_config_endpoint`)
+    — tags the honeypot with exactly its currently-enabled modules
+    (`ftp`, `http`, `ssh`, ...) and untags whichever module tags no longer
+    apply, per explicit request: "auto-tag by enabled service, untag what
+    got turned off, but never touch a manually-added tag."
+
+    Works by set difference against `TOGGLEABLE_MODULE_KEYS` — the full,
+    fixed vocabulary of tag names this function is allowed to own —
+    rather than simply overwriting `honeypot.tags` with the enabled-module
+    list (`set_honeypot_tags` *replaces* the whole tag set, which would
+    silently wipe any tag an operator added by hand): a tag outside that
+    vocabulary is by definition never something this function put there,
+    so it's left alone regardless of what's enabled/disabled this time.
+    """
+    current_result = await db.execute(
+        select(Tag.name)
+        .select_from(honeypot_tags)
+        .join(Tag, Tag.id == honeypot_tags.c.tag_id)
+        .where(honeypot_tags.c.honeypot_id == honeypot.id)
+    )
+    current_names = set(current_result.scalars().all())
+    manual_names = current_names - TOGGLEABLE_MODULE_KEYS
+
+    enabled_names = set(enabled_module_tag_names(config))
+    new_names = manual_names | enabled_names
+    if new_names == current_names:
+        return  # nothing to change — avoid a pointless write/refresh
+
+    await set_honeypot_tags(db, honeypot, sorted(new_names))

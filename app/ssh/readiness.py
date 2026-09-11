@@ -1,7 +1,8 @@
 """Post-onboarding readiness check — did the app's own setup requirements
 (`ncurses-term`, and this account's scoped sudo for apt/shutdown/
-dmidecode/flatpak+snap — see `app.ssh.onboarding.build_onboarding_command`)
-actually take, or did installing/granting one of them fail or get skipped
+dmidecode/systemctl/raspi-config/flatpak+snap — see
+`app.ssh.onboarding.build_onboarding_command`) actually take, or did
+installing/granting one of them fail or get skipped
 (no network at onboarding time, a hand-onboarded honeypot that predates one
 of these requirements, ...)? Read-only: every check here is a plain
 `dpkg -s`/`sudo -n ... --version`-style probe — nothing is installed or
@@ -33,6 +34,7 @@ _SECTION_MARKERS = (
     "SHUTDOWN_SUDO",
     "DMIDECODE_SUDO",
     "SYSTEMCTL_SUDO",
+    "RASPI_CONFIG_SUDO",
     "FLATPAK_SNAP_PRESENT",
     "FLATPAK_SNAP_SUDO",
 )
@@ -53,6 +55,9 @@ READINESS_COMMAND = (
     "echo ===SYSTEMCTL_SUDO===; "
     '[ "$is_root" = 1 ] && echo ok || '
     "(sudo -n systemctl --version >/dev/null 2>&1 && echo ok || echo missing); "
+    "echo ===RASPI_CONFIG_SUDO===; "
+    '[ "$is_root" = 1 ] && echo ok || '
+    "(sudo -n raspi-config --version >/dev/null 2>&1 && echo ok || echo missing); "
     "echo ===FLATPAK_SNAP_PRESENT===; "
     "(command -v flatpak >/dev/null 2>&1 || command -v snap >/dev/null 2>&1) "
     "&& echo yes || echo no; "
@@ -74,6 +79,7 @@ class ReadinessResult(TypedDict):
     shutdown_sudo_ok: bool
     dmidecode_sudo_ok: bool
     systemctl_sudo_ok: bool
+    raspi_config_sudo_ok: bool
     flatpak_or_snap_present: bool
     flatpak_snap_sudo_ok: bool
 
@@ -97,6 +103,7 @@ def parse_readiness_output(raw: str) -> ReadinessResult:
         shutdown_sudo_ok=sections.get("SHUTDOWN_SUDO") == "ok",
         dmidecode_sudo_ok=sections.get("DMIDECODE_SUDO") == "ok",
         systemctl_sudo_ok=sections.get("SYSTEMCTL_SUDO") == "ok",
+        raspi_config_sudo_ok=sections.get("RASPI_CONFIG_SUDO") == "ok",
         flatpak_or_snap_present=sections.get("FLATPAK_SNAP_PRESENT") == "yes",
         flatpak_snap_sudo_ok=sections.get("FLATPAK_SNAP_SUDO") == "ok",
     )
@@ -111,6 +118,11 @@ _REQUIREMENT_LABELS: tuple[tuple[str, str], ...] = (
     (
         "systemctl_sudo_ok",
         "passwordless sudo for systemctl (needed for the Honeypot Config tab's module editor)",
+    ),
+    (
+        "raspi_config_sudo_ok",
+        "passwordless sudo for raspi-config (needed for the Honeypot Config tab's "
+        "read-only-root toggle)",
     ),
     ("ncurses_term_installed", "ncurses-term (needed for full-color terminal output)"),
 )
