@@ -28,7 +28,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.db.models.honeypot import Honeypot
+from app.db.models.honeypot_event import HoneypotEvent
 from app.db.session import get_db
+from app.services.honeypot_event_syslog import forward_honeypot_event_to_syslog
 from app.services.honeypot_events import EventSource, build_event
 from app.services.live_updates import KIND_ACTIVITY, publish_honeypot_event
 from app.services.opencanary_logtypes import is_internal_logtype
@@ -77,6 +79,7 @@ async def ingest_event(
     # aren't a real alert — skip storing a HoneypotEvent for one, same as
     # the SSH-poll path (app.tasks.jobs._poll_honeypot_canary_log).
     event_id: str | None = None
+    event: HoneypotEvent | None = None
     if not is_internal_logtype(payload.get("logtype")):
         event = build_event(honeypot, payload, source=EventSource.PUSH)
         db.add(event)
@@ -84,4 +87,6 @@ async def ingest_event(
 
     await db.commit()
     await publish_honeypot_event(str(honeypot_id), KIND_ACTIVITY)
+    if event is not None:
+        await forward_honeypot_event_to_syslog(honeypot.company, honeypot, event)
     return {"status": "accepted", "event_id": event_id}

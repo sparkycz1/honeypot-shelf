@@ -1,5 +1,5 @@
 """Forward audit log entries to an external syslog server (e.g. a SIEM),
-configured on the Settings page (`AppSettings.syslog_*`).
+configured on Settings → Integrations (`AppSettings.syslog_*`).
 
 Best-effort, fire-and-forget: the `AuditLogEntry` row already written by
 `app.audit.log_event` is always the source of truth (hash-chained,
@@ -7,25 +7,32 @@ queryable, exportable) — this is only ever a live mirror of it, and a
 delivery failure here must never affect the action being audited or raise
 back into the caller. See `log_event`'s call into `forward_to_syslog`.
 
-Supports plain UDP, plain TCP, and TCP-over-TLS ("encrypted syslog", for
-sending to a SIEM over a network you don't fully trust). Messages are
-RFC 5424 formatted; the two TCP modes use RFC 6587 octet-counting framing
-(`"<length> <message>"`) so the receiver can split a stream into messages —
-UDP needs no framing, since one datagram is already one message.
+This is HoneyHive's **global** syslog target — every audit log entry
+(every human-initiated mutation across the whole app: honeypot/company/
+user CRUD, logins, settings changes, ...), regardless of company. It
+never carries honeypot *alerts* (OpenCanary events) — those never go
+through `app.audit.log_event` at all (see that module's own docstring on
+what gets audited), and have their own, separate, per-company syslog
+target instead (`app.services.honeypot_event_syslog`, configured on each
+Company's own page) — see that module's docstring for why a single global
+target isn't the right shape for alert traffic in a multi-tenant
+deployment.
 
-All socket I/O is blocking (`socket`/`ssl` are simplest for one-shot sends
-like this — no long-lived connection to manage) so it always runs off the
-event loop via `asyncio.to_thread`, same pattern as `app.auth.ldap`'s
-synchronous `ldap3` calls.
+Actual transport (UDP/TCP/TCP-over-TLS, RFC 5424 framing) lives in
+`app.services.syslog_transport`, shared with the per-company forwarder
+below. Every message this app sends to syslog is a compact JSON object
+as the RFC 5424 MSG part — not free-text `key="value"` pairs — so a
+receiver's own parser (or `jq`) never needs a bespoke grammar for it.
 """
 
 from __future__ import annotations
 
-import asyncio
+import json
 import logging
 import socket
-import ssl
 from typing import TYPE_CHECKING
+
+from app.services.syslog_transport import send_syslog
 
 if TYPE_CHECKING:
     from app.db.models.app_settings import AppSettings
@@ -33,7 +40,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("HoneyHive.audit_syslog")
 
-_SOCKET_TIMEOUT_SECONDS = 3
 _FACILITY_USER = 1  # RFC 5424 facility 1, "user-level messages".
 
 
@@ -51,40 +57,24 @@ def _rfc5424_message(entry: AuditLogEntry) -> str:
     timestamp = entry.created_at.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
     hostname = socket.gethostname() or "-"
     msg_id = (entry.action or "-").replace(" ", "_")[:32]
-    detail = (
-        f'actor="{entry.actor or "-"}" ip="{entry.ip_address or "-"}" '
-        f'outcome="{entry.outcome.value}" '
-        f'target="{entry.target_type or "-"}:{entry.target_id or "-"}" '
-        f'summary="{entry.summary}"'
-    )
+    payload = {
+        "event": "audit",
+        "id": str(entry.id),
+        "timestamp": timestamp,
+        "action": entry.action,
+        "actor": entry.actor,
+        "ip": entry.ip_address,
+        "outcome": entry.outcome.value,
+        "target_type": entry.target_type,
+        "target_id": entry.target_id,
+        "target_label": entry.target_label,
+        "summary": entry.summary,
+        "details": entry.details,
+    }
+    body = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     # "HoneyHive" is the APP-NAME field; "-" (no PROCID), then MSGID, then
-    # "-" for STRUCTURED-DATA (none), then the message itself.
-    return f"<{pri}>1 {timestamp} {hostname} HoneyHive - {msg_id} - {detail}"
-
-
-def _send_sync(app_settings: AppSettings, message: str) -> None:
-    from app.db.models.app_settings import SyslogProtocol  # local import: avoid a module cycle
-
-    host = app_settings.syslog_host
-    port = app_settings.syslog_port
-    if not host:
-        return
-
-    if app_settings.syslog_protocol == SyslogProtocol.UDP:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-            sock.settimeout(_SOCKET_TIMEOUT_SECONDS)
-            sock.sendto(message.encode("utf-8"), (host, port))
-        return
-
-    body = message.encode("utf-8")
-    framed = str(len(body)).encode("ascii") + b" " + body
-    with socket.create_connection((host, port), timeout=_SOCKET_TIMEOUT_SECONDS) as sock:
-        if app_settings.syslog_protocol == SyslogProtocol.TLS:
-            context = ssl.create_default_context()
-            with context.wrap_socket(sock, server_hostname=host) as tls_sock:
-                tls_sock.sendall(framed)
-        else:
-            sock.sendall(framed)
+    # "-" for STRUCTURED-DATA (none), then the JSON message itself.
+    return f"<{pri}>1 {timestamp} {hostname} HoneyHive - {msg_id} - {body}"
 
 
 async def forward_to_syslog(app_settings: AppSettings, entry: AuditLogEntry) -> None:
@@ -95,7 +85,12 @@ async def forward_to_syslog(app_settings: AppSettings, entry: AuditLogEntry) -> 
         return
     message = _rfc5424_message(entry)
     try:
-        await asyncio.to_thread(_send_sync, app_settings, message)
+        await send_syslog(
+            app_settings.syslog_host,
+            app_settings.syslog_port,
+            app_settings.syslog_protocol,
+            message,
+        )
     except OSError:
         logger.warning(
             "Failed to forward audit entry to syslog %s:%s",

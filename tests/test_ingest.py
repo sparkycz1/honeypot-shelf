@@ -110,3 +110,43 @@ async def test_ingest_accepts_but_does_not_store_an_internal_logtype(
 
         refreshed = await db.get(Honeypot, honeypot.id)
         assert refreshed.last_seen_at is not None
+
+
+async def test_ingest_forwards_a_real_alert_to_the_companys_syslog_target(
+    anonymous_client, db_session_factory, monkeypatch
+):
+    """A real alert (never an internal logtype — see the test above) gets
+    forwarded to this honeypot's own company's syslog target, if
+    configured — app.services.honeypot_event_syslog, distinct from the
+    global audit-only target."""
+    async with db_session_factory() as db:
+        company = Company(
+            name="Acme", syslog_enabled=True, syslog_host="siem.acme.example.com"
+        )
+        db.add(company)
+        await db.flush()
+        honeypot = Honeypot(company_id=company.id, name="acme-honey1")
+        db.add(honeypot)
+        await db.commit()
+        await db.refresh(honeypot)
+
+    forwarded = []
+
+    async def fake_forward(company, honeypot, event):
+        forwarded.append((company.name, honeypot.name, event.event_type))
+
+    monkeypatch.setattr(
+        "app.web.routes.ingest.forward_honeypot_event_to_syslog", fake_forward
+    )
+
+    response = await anonymous_client.post(
+        f"/api/ingest/{honeypot.id}/events",
+        headers={"Authorization": "Bearer test-only-ingest-token-not-for-real-use-0000000"},
+        json={
+            "logtype": "SSH_LOGIN_ATTEMPT",
+            "local_time": "2026-01-01 12:00:00.000000",
+            "src_host": "203.0.113.7",
+        },
+    )
+    assert response.status_code == 201
+    assert forwarded == [("Acme", "acme-honey1", "SSH_LOGIN_ATTEMPT")]

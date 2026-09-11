@@ -13,10 +13,12 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String, func
+from sqlalchemy import Boolean, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.db.pg_enum import pg_enum
+from app.services.syslog_transport import DEFAULT_SYSLOG_PORT, SyslogProtocol
 
 if TYPE_CHECKING:
     from app.db.models.honeypot import Honeypot
@@ -31,6 +33,24 @@ class Company(Base):
     # Free-text, shown on the company's own page — site/contact notes, not
     # structured data.
     notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+
+    # --- Per-company syslog forwarding of this company's own honeypot
+    # *alerts* only (app.services.honeypot_event_syslog) — deliberately
+    # separate from AppSettings.syslog_* (app.audit_syslog), which is
+    # global and carries audit log entries, never honeypot alerts. Lets a
+    # multi-tenant deployment route each company's own alert traffic to
+    # that company's own SIEM/syslog server, rather than one shared
+    # target for the whole fleet. Same shape/transport
+    # (app.services.syslog_transport) as the global target, just scoped
+    # to one company and to alerts instead of audit entries. ---
+    syslog_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    syslog_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    syslog_port: Mapped[int] = mapped_column(Integer, default=DEFAULT_SYSLOG_PORT, nullable=False)
+    syslog_protocol: Mapped[SyslogProtocol] = mapped_column(
+        pg_enum(SyslogProtocol, name="syslog_protocol"),
+        default=SyslogProtocol.UDP,
+        nullable=False,
+    )
 
     users: Mapped[list[User]] = relationship(back_populates="company")
     honeypots: Mapped[list[Honeypot]] = relationship(

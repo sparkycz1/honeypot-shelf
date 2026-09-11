@@ -533,6 +533,46 @@ reachability and from OpenCanary having emitted any events recently, and
 useful specifically for catching an OpenCanary process that's dead while
 the honeypot itself is still perfectly SSH-reachable.
 
+### Two syslog targets, deliberately never the same one
+
+This app forwards two completely different kinds of traffic to syslog,
+each to its own, independently-configured target — never mixed, and
+never both to the same place by default:
+
+- **`app.audit_syslog`** — global, one target for the whole deployment,
+  configured on Settings → Integrations (`AppSettings.syslog_*`). Carries
+  every `AuditLogEntry` (every human-initiated mutation across the whole
+  app — honeypot/company/user CRUD, logins, settings changes, ...) as it's
+  written. **Never** a honeypot alert.
+- **`app.services.honeypot_event_syslog`** — per-company, one target per
+  `Company` (`Company.syslog_*`), configured on that company's own
+  Integrations tab. Carries only that company's own honeypot *alerts*
+  (real OpenCanary events — `is_internal_logtype` noise never even
+  becomes a `HoneypotEvent` row, so it was never a candidate to forward
+  in the first place), the instant one arrives via either ingestion path
+  (`app.web.routes.ingest.ingest_event` or `app.tasks.jobs.
+  _poll_honeypot_canary_log`). **Never** an audit log entry.
+
+Why split by company rather than one shared alert target: this is a
+multi-tenant deployment — company A's SOC shouldn't see company B's
+alert traffic (or vice versa), and each may already run its own SIEM.
+`HoneypotEvent.company_id` is denormalized onto the row precisely so this
+lookup ("which target does *this* alert go to") never needs a join back
+through `Honeypot` — see that model's own docstring.
+
+Both share the same low-level transport
+(`app.services.syslog_transport` — UDP/TCP/TCP-over-TLS, RFC 6587
+octet-counting framing for the two TCP modes, `SyslogProtocol` used by
+both `AppSettings` and `Company`'s columns via the same Postgres enum
+type) and the same message convention: **the RFC 5424 MSG part is always
+a compact JSON object**, never free-text `key="value"` pairs — a
+receiver's own parser (or `jq`) never needs a bespoke grammar for either
+target. Both are best-effort/fire-and-forget: the DB row (an
+`AuditLogEntry`, or a `HoneypotEvent`) is always the source of truth,
+this is only ever a live mirror of it, and a delivery failure at either
+target is logged and swallowed, never allowed to affect the action/event
+that triggered it.
+
 ### Live updates over WebSocket, and "Refresh now"
 
 Every honeypot-scoped page (Overview, Monitoring, Activity, Updates)

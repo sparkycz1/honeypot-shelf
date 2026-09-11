@@ -51,6 +51,7 @@ from app.db.models.honeypot_reachability_sample import HoneypotReachabilitySampl
 from app.db.models.honeypot_service import HoneypotService
 from app.db.models.honeypot_update_run import HoneypotUpdateRun, UpdateRunStatus, UpgradeStrategy
 from app.services.company_stats import compute_company_stats
+from app.services.honeypot_event_syslog import forward_honeypot_event_to_syslog
 from app.services.honeypot_events import EventSource, build_event
 from app.services.honeypot_status import offline_cutoff
 from app.services.live_updates import (
@@ -1305,8 +1306,10 @@ async def _poll_honeypot_canary_log(honeypot_id: str) -> dict[str, Any]:
             for payload in result.events
             if not is_internal_logtype(payload.get("logtype"))
         ]
-        for payload in alert_events:
-            session.add(build_event(honeypot, payload, source=EventSource.SSH_POLL))
+        new_rows = [
+            build_event(honeypot, payload, source=EventSource.SSH_POLL) for payload in alert_events
+        ]
+        session.add_all(new_rows)
         if result.new_offset >= 0:
             honeypot.opencanary_log_offset = result.new_offset
             # A successful poll — the log file was reached and read,
@@ -1327,6 +1330,8 @@ async def _poll_honeypot_canary_log(honeypot_id: str) -> dict[str, Any]:
             honeypot.last_seen_ip = honeypot.ip_address
         await session.commit()
         await publish_honeypot_event(honeypot_id, KIND_ACTIVITY)
+        for row in new_rows:
+            await forward_honeypot_event_to_syslog(honeypot.company, honeypot, row)
 
         return {"ok": True, "new_events": len(alert_events)}
 
