@@ -1,5 +1,7 @@
 # 🛠️ Development
 
+*Ruff, mypy, pytest, one alembic head — the gate that keeps main green, and CI runs the exact same one.*
+
 ## Setup
 
 ```bash
@@ -19,6 +21,14 @@ uv run ruff check .                   # lint
 uv run ruff format .                  # format
 uv run mypy app alembic tests        # type check (strict for app/, alembic/)
 ```
+
+**CI runs this same gate** on every push/PR
+(`.github/workflows/ci.yml`) — ruff, mypy, the full test suite, and the
+single-alembic-head check, plus a separate `pip-audit` pass over exactly
+what `uv.lock` would install. [Dependabot](../.github/dependabot.yml)
+watches for newer fixed versions of Python, Docker, and GitHub Actions
+dependencies on top of that. Nothing here needs a real Postgres/Redis —
+see `tests/conftest.py`.
 
 ## Adding a migration
 

@@ -1,5 +1,7 @@
 # 🚀 Installation
 
+*One `docker compose up`, and the fleet-watching begins.*
+
 ## Quick start (Docker) — recommended
 
 ```bash

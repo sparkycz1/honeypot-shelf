@@ -1,5 +1,7 @@
 # 🍯 Honeypot Onboarding
 
+*Teaching an already-running Pi to phone home, for the honeypots Initialize never got to meet.*
+
 How a Raspberry Pi running [OpenCanary](https://github.com/thinkst/opencanary)
 starts reporting events to Honeypot Shelf. This page is about the **Honeypot Shelf
 side of the wire protocol** — it doesn't cover imaging the Pi, hardening

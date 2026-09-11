@@ -1,5 +1,7 @@
 # 📁 About this folder
 
+*The map of the maze, kept next to the maze.*
+
 This directory holds the project documentation, written to become the
 **GitHub wiki** once this repository is pushed to GitHub. It isn't a GitHub
 wiki yet — a wiki only exists once a repo is on GitHub with the feature
@@ -21,9 +23,9 @@ enabled, and it lives in its own separate git repository
 5. Copy every `.md` file from this folder (except this `README.md`) into
    the cloned wiki repo, then commit and push:
    ```bash
-   cp wiki/*.md ../honeyhive.wiki/
-   rm ../honeyhive.wiki/README.md   # this file itself isn't a wiki page
-   cd ../honeyhive.wiki
+   cp wiki/*.md ../honeypot-shelf.wiki/
+   rm ../honeypot-shelf.wiki/README.md   # this file itself isn't a wiki page
+   cd ../honeypot-shelf.wiki
    git add -A
    git commit -m "Import wiki pages"
    git push

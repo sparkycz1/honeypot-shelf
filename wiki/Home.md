@@ -1,132 +1,104 @@
-# 🐝 Honeypot Shelf
+<p align="center">
+  <img src="../app/web/static/img/logo.svg" alt="Honeypot Shelf" width="96">
+</p>
+
+<h1 align="center">🐝 Honeypot Shelf</h1>
+<p align="center"><em>A fleet of decoys, watched from one browser tab — every fake login attempt lands here first.</em></p>
+
+---
 
 Management and monitoring for a fleet of
 [OpenCanary](https://github.com/thinkst/opencanary) honeypots (Raspberry
-Pis deployed at customer sites), across **multiple companies**, each with
-their own scoped users. Every page requires a login; access is controlled
-per company (see [Architecture](Architecture.md#authentication--rbac)),
-with accounts authenticating locally, against LDAP, or via OIDC SSO. Login
-is two steps — username, then a passkey (signs straight in, no password
-needed) or a password (plus TOTP and/or a passkey as a second factor, if
-either is set up). A honeypot is managed exactly like a
-machine in debcontrol (a sister project managing Debian machines over
-SSH, which this project's tech stack, layout, auth system, and entire SSH
-management layer were ported from) — terminal, facts, packages, updates,
-power, scheduling — plus this project's own addition: honeypots push
-OpenCanary events in, and the Dashboard sums them per company. See
-[CLAUDE.md](../CLAUDE.md) for the full "what was reused vs. what's
-different" story.
+Pis at customer sites), scoped per **company** — every page needs a login
+(local, LDAP, or OIDC, plus TOTP/passkey 2FA), and what an account can see
+is gated by RBAC (see [Architecture](Architecture.md#authentication--rbac)).
+A honeypot is managed exactly like a machine in
+[debcontrol](https://github.com/sparkycz1/debcontrol) (a sister project
+for Debian fleets, where this project's stack, layout, auth system, and
+SSH management layer were all ported from) — plus this project's own
+addition: honeypots push OpenCanary events in, and the Dashboard sums
+them per company. Full "what was reused vs. what's different" story in
+[CLAUDE.md](../CLAUDE.md); this page is the map, not the territory.
 
-## 📑 Wiki contents
+```mermaid
+flowchart LR
+    App(("🐝 Honeypot Shelf"))
+    App --> Dash["📊 Dashboard"]
+    App --> H["🍯 Honeypots"]
+    App --> Init["🌱 Initialize"]
+    App --> Sched["⏱️ Scheduling"]
+    App --> Comp["🏢 Companies"]
+    App --> Set["⚙️ Settings"]
+    H --> H1["Overview · Monitoring · Activity<br/>Updates · Terminal · Logs · Config"]
 
-See [README](README.md) for the full page list. Start with
-[Installation](Installation.md) to run it, or
-[Architecture](Architecture.md) to understand how it's built.
+    classDef hub fill:#1b2430,stroke:#f2a83a,stroke-width:2px,color:#fff
+    classDef leaf fill:#f2a83a,stroke:#1b2430,stroke-width:1px,color:#1b2430
+    classDef sub fill:#f4f4f4,stroke:#1b2430,color:#1b2430
+    class App hub
+    class Dash,H,Init,Sched,Comp,Set leaf
+    class H1 sub
+```
 
-## ✅ Current state
+> [!NOTE]
+> Two independent "is it alive" signals per honeypot, and they mean
+> different things: `is_reachable` is a plain SSH-plane ping; `last_seen_at`
+> is "OpenCanary itself pushed or was polled for a real event." A honeypot
+> can be reachable with OpenCanary dead, or vice versa — see
+> [Architecture](Architecture.md#honeypot-data-model).
 
-Built and verified end-to-end (real Postgres, migrated, exercised through
-the actual app, not just unit tests): the full auth stack; company-scoped
-RBAC; event ingestion and the Dashboard; full Honeypot management
-(create/edit/delete, host-key discovery/trust, the SSH terminal, Logs
-(journal, a clickable file browser, and a shortcut to OpenCanary's own
-log), facts/packages/services refresh, system updates with live output,
-power actions, an Activity tab reading whatever's new in OpenCanary's own
-log over SSH (no forwarder setup needed — an aggregated by-alert-type
-trend chart plus a recent-alerts list, see
-[Architecture](Architecture.md)), and a Honeypot Config tab toggling the
-read-only root filesystem for SD card longevity plus a full
-category-by-category editor for every OpenCanary module (FTP/HTTP(S)/SSH/
-Telnet/databases/RDP/VNC/SIP/SNMP/NTP/TFTP/Git/LLMNR/a generic TCP
-banner/portscan/Samba));
-[Initialize](Honeypot-Initialize.md) — provisioning a brand new
-Raspberry Pi into a working honeypot (packages, OpenCanary, NetBird) over
-SSH before it's ever added to Honeypot Shelf, with a persisted run history for
-debugging a failed provisioning after the fact; Company management (each
-company's own page shows just its users and its honeypots, each with a
-link to add another) and fleet-wide/"All honeypots" bulk actions;
-Scheduling, including a per-schedule run history, one-click retry for a
-failed firing, and two on-demand debugging actions ("force OpenCanary log
-poll now"/"force monitoring sample now") alongside update/power/run-
-command; a per-honeypot ingest token (rotate/revoke from that honeypot's
-Settings tab), alternative to the shared `INGEST_TOKEN`; NetBird or
-WireGuard connectivity for Honeypot Shelf's own SSH management plane
-(Settings → VPN, an optional `docker-compose.vpn.yml` sidecar — see
-[Architecture](Architecture.md)) for a honeypot that's only reachable over
-one of those; a fleet-wide "activity by alert type" breakdown on the
-Dashboard, the same OpenCanary-log-derived chart each honeypot's own
-Activity tab has, plus a CSV/JSON export of that honeypot's own event
-history; the REST API mirroring all of the above, including `GET
-/api/v1/events` (+ `/export`) for scripting against the same event data;
-Users and Settings (LDAP/OIDC/syslog forwarding, SSH key rotation,
-retention policies); "Roll back this update" on a honeypot's own update
-history, re-installing exactly the pre-upgrade package versions for
-whatever's changed since; `scripts/backup.sh`/`restore.sh` for full
-disaster-recovery backups (`pg_dump` + `.env`, retention pruning); FIPS-
-aligned crypto defaults (AES-256-GCM secrets at rest, SHA-2-signed
-tickets, a restricted SSH algorithm set — see
-[Architecture](Architecture.md#fips-alignment)); superadmin personal SSH
-public keys (My account), installed onto both a freshly Initialized
-device and, on demand, the existing fleet, alongside Honeypot Shelf's own
-shared identity key (see
-[Architecture](Architecture.md#superadmin-personal-ssh-keys)); full
-**English and Czech i18n** across every page, not just the site chrome. A
-growing test
-suite (see `uv run pytest` for the current count) covers the
-RBAC/scoping-sensitive paths; `ruff check .` and `mypy app alembic tests`
-are both fully clean. See [CLAUDE.md](../CLAUDE.md)'s "Current state"
-section for what's left (mainly: no CI workflow file).
+## 📑 Read next
 
-### Product decisions (settled)
+| Page | For when you need to... |
+|---|---|
+| [🚀 Installation](Installation.md) | Stand the thing up — Docker, reverse proxy, backups |
+| [🏗️ Architecture](Architecture.md) | Understand *why* it's built this way (the deep-dive reference) |
+| [🌱 Initialize](Honeypot-Initialize.md) | Provision a brand-new Raspberry Pi into a honeypot over SSH |
+| [🍯 Honeypot Onboarding](Honeypot-Onboarding.md) | Teach an already-imaged Pi to report in, without Initialize |
+| [🛠️ Development](Development.md) | Run it locally, add a feature, ship a migration |
+
+## 🔒 Sitting behind a reverse proxy
+
+Honeypot Shelf only ever speaks plain HTTP (port `8080`) — it expects a
+TLS terminator in front of it, always. Pick your fighter:
+
+- **[Caddy](Reverse-Proxy-Caddy.md)** — bundled, zero-config HTTPS. The easy button.
+- **[nginx](Reverse-Proxy-Nginx.md)** — you already run one for everything else.
+- **[Traefik](Reverse-Proxy-Traefik.md)** — you're already all-in on Docker labels.
+
+## ✨ What's in the box
+
+| Tab | The highlights (not the whole story — see [Architecture](Architecture.md)) |
+|---|---|
+| 📊 **Dashboard** | Fleet counts (online/offline, needs-updates), a trend sparkline, and a fleet-wide "activity by alert type" breakdown |
+| 🍯 **Honeypots** | Facts, packages, live monitoring (with an **OpenCanary service** up/down graph), a browser SSH terminal, log browsing, an **Activity** tab reading OpenCanary's own log over SSH, a **Config** tab (read-only-root toggle + a full editor for every OpenCanary module), tags & saved views, bulk actions, JSON/CSV export, and **update rollback** if a `dist-upgrade` goes sideways |
+| 🌱 **Initialize** | Turns a blank Raspberry Pi OS install into a working honeypot over SSH — packages, the OpenCanary service, NetBird, live streamed progress, a persisted run history |
+| ⏱️ **Scheduling** | Cron any action against a honeypot/company/fleet — updates, power, custom commands, on-demand "force a sweep now" debug buttons |
+| 🏢 **Companies** | Each company's own page (users + honeypots), a per-company syslog target for that company's own alerts, plus the "All honeypots" virtual company and its own fleet-wide alert target |
+| 📚 **API docs** (`/api`) | Live Swagger UI over the full read/write REST API — everything the web UI can do, an API can too |
+| ⚙️ **Settings** | SSH key rotation, retention policies, LDAP/OIDC/syslog/SMTP integrations, VPN (NetBird or WireGuard) |
+
+Want the granular, paragraph-by-paragraph feature list this page used to
+carry? That level of detail lives where it belongs — next to the *why*,
+in [Architecture](Architecture.md) — so this page stays something you can
+actually read in one sitting.
+
+## 🔒 Settled product decisions
 
 - **Who can create a company/honeypot/user?** Superadmin only. A company
-  user (`READ` or `READ_WRITE`) never creates a company or another user —
-  only global admins do. A `READ_WRITE` user *does* manage the honeypots
-  already in their own company (create/edit/delete, terminal, updates,
-  power — everything `/honeypots` offers, already scoped to that company).
-  Companies/Users/Settings/Audit stay superadmin-only end to end (nav,
-  web routes, and REST API).
-- **What does `READ_WRITE` mean on a honeypot?** More than Honeypot Shelf-side
-  metadata — it includes reaching into the honeypot itself: an interactive
-  terminal, and everything debcontrol's `Machine` management already
-  covers (facts, packages, system updates, power, running an ad-hoc
-  command via Scheduling's `run_command` action). See
-  [Architecture](Architecture.md) for exactly what that covers today, and
-  what's still web-UI-only by design (SSH key rotation, LDAP/OIDC config).
+  user (`READ`/`READ_WRITE`) never creates a company or another user —
+  a `READ_WRITE` user *does* manage the honeypots already in their own
+  company (create/edit/delete, terminal, updates, power). Companies,
+  Users, Settings, and the Audit log stay superadmin-only end to end.
 - **Alerting**: out of scope for v1 — this is a management/overview tool,
-  not a notification system. (`AppSettings.syslog_*` forwarding to a SIEM
-  such as Wazuh, copied from debcontrol, still exists as an escape hatch
-  for anyone who wants alerting via their own tooling instead — audit log
-  entries only, never a honeypot alert; see the next bullet for those.)
-- **Honeypot alerts get their own, per-company syslog target** —
-  `Company.syslog_*` (`app.services.honeypot_event_syslog`), configured
-  on each Company's own Integrations tab, separate from the global,
-  audit-only target above. A multi-tenant deployment routes each
-  company's own alert traffic to that company's own SIEM this way,
-  rather than one shared target seeing every company's alerts. Every
-  syslog message this app sends — both targets — is JSON.
-- **A third, fleet-wide alert syslog target** — "All honeypots" ->
-  Integrations, `AppSettings.fleet_alert_syslog_*` — fires *in addition
-  to* a honeypot's own company target if both are configured. The "All
-  honeypots" page also dropped its own redundant bulk update/power
-  sections this round (the Honeypots list's own bulk-select already
-  covers the same ground).
-- **SMTP relay settings** (Settings → Integrations) — connection details
-  only for now; actually sending a notification through it is a
-  follow-up task.
-- **OpenCanary alert type labels are now localized** (Czech included) —
-  found live still hardcoded English on an otherwise fully-translated
-  page.
-- **Audit log / Settings visibility**: superadmin-only.
-- **Event retention**: `EVENT_RETENTION_DAYS` defaults to 90 days.
-- **Audit log retention**: `AppSettings.audit_log_retention_days` also
-  defaults to 90 days (Settings → Security) — still settable back to
-  blank ("keep forever") if audit history shouldn't be pruned
-  automatically.
+  not a notification system. Three separate syslog targets (global
+  audit-only, per-company alerts, fleet-wide alerts — see
+  [Architecture](Architecture.md#three-syslog-targets-deliberately-never-mixed))
+  cover "forward to your own SIEM" instead. SMTP relay settings exist
+  (Settings → Integrations) but nothing sends through them yet.
+- **Retention defaults**: events, audit log entries, and dashboard trend
+  snapshots all default to 90 days — still adjustable from Settings.
 
-### Still-open questions
+### Still open
 
-- **A map/geo view** — doesn't exist yet; worth asking whether it matters
-  for v1. (CSV export of events and per-event-type dashboards are done —
-  see the Activity tab, the Dashboard's "activity by alert type", and
-  `GET /api/v1/events`/`/export`.)
+- **A map/geo view** — doesn't exist yet. CSV export and per-event-type
+  breakdowns are done (Activity tab, Dashboard, `GET /api/v1/events`).
