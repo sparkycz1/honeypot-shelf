@@ -31,7 +31,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import require_api_superadmin
 from app.core.app_settings import get_or_create_app_settings
-from app.core.config import get_settings
 from app.core.version import APP_VERSION, commit_url, get_git_commit
 from app.db.session import get_db
 from app.ssh.identity import get_or_create_identity
@@ -45,7 +44,6 @@ _view = Depends(require_api_superadmin)
 async def get_settings_api(db: AsyncSession = Depends(get_db)) -> dict[str, object]:
     identity = await get_or_create_identity(db)
     app_settings = await get_or_create_app_settings(db)
-    settings = get_settings()
     git_commit = get_git_commit()
     return {
         "app_version": APP_VERSION,
@@ -54,8 +52,8 @@ async def get_settings_api(db: AsyncSession = Depends(get_db)) -> dict[str, obje
         "ssh_public_key": identity.public_key,
         "ssh_fingerprint": identity.fingerprint,
         "ssh_pending_fingerprint": identity.pending_fingerprint,
-        "facts_refresh_interval_seconds": settings.facts_refresh_interval_seconds,
-        "update_timeout_seconds": settings.update_timeout_seconds,
-        "ssh_connect_timeout": settings.ssh_connect_timeout,
+        "facts_refresh_interval_seconds": app_settings.facts_refresh_interval_seconds,
+        "update_timeout_seconds": app_settings.update_timeout_seconds,
+        "ssh_connect_timeout": app_settings.ssh_connect_timeout,
         "audit_log_retention_days": app_settings.audit_log_retention_days,
     }

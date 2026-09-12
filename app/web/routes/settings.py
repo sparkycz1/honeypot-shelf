@@ -1,6 +1,6 @@
-"""Settings — the app's SSH identity, background-check intervals (both
-read-only, sourced from the environment), retention policies, the audit
-log hash-chain verification, and the LDAP/OIDC/syslog-forwarding
+"""Settings — the app's SSH identity, Checks & retention (background-check
+timeouts/intervals plus every retention policy, all database-backed), the
+audit log hash-chain verification, and the LDAP/OIDC/syslog-forwarding
 configuration (see `app/db/models/app_settings.py` for why these are
 Settings-page config rather than environment variables). Superadmin-only.
 """
@@ -47,12 +47,12 @@ from app.web.templating import t, templates
 
 router = APIRouter(prefix="/settings", dependencies=[Depends(require_superadmin)])
 
-# Settings has three sections on one long page — a `tab` query string param
-# (see wiki/Architecture.md's "Server-rendered + htmx" section for why:
-# there's only ever one GET route here, not one per tab, since every POST
-# handler below redirects back to /settings regardless of which tab it
-# belongs to).
-_TAB_KEYS = ("general", "security", "integrations", "vpn")
+# Settings has several sections on one long page — a `tab` query string
+# param (see wiki/Architecture.md's "Server-rendered + htmx" section for
+# why: there's only ever one GET route here, not one per tab, since every
+# POST handler below redirects back to /settings regardless of which tab
+# it belongs to).
+_TAB_KEYS = ("general", "checks", "security", "integrations", "vpn")
 _VALID_TABS = set(_TAB_KEYS)
 _DEFAULT_TAB = "general"
 
@@ -136,6 +136,137 @@ def _parse_retention_days(raw: str) -> tuple[int | None, str | None]:
     return value, None
 
 
+def _parse_bounded_int(
+    raw: str, *, label: str, minimum: int, maximum: int
+) -> tuple[int | None, str | None]:
+    """Shared by `update_checks_settings` below — every field there is a
+    whole number of seconds (or a concurrency count) with a sane range,
+    unlike the retention fields above (which allow an empty "forever").
+    Returns `(value, error_message)`; exactly one is `None`. Ported from an
+    identical debcontrol change."""
+    stripped = raw.strip()
+    try:
+        value = int(stripped)
+    except ValueError:
+        return None, f'"{stripped}" isn\'t a whole number for {label}.'
+    if not (minimum <= value <= maximum):
+        return None, f"{label} must be between {minimum} and {maximum}."
+    return value, None
+
+
+@router.post("/checks", dependencies=[Depends(verify_csrf)])
+async def update_checks_settings(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    ssh_connect_timeout: str = Form(""),
+    update_timeout_seconds: str = Form(""),
+    facts_refresh_interval_seconds: str = Form(""),
+    reachability_check_interval_seconds: str = Form(""),
+    reachability_check_concurrency: str = Form(""),
+    monitoring_interval_seconds: str = Form(""),
+    opencanary_log_poll_interval_seconds: str = Form(""),
+) -> Response:
+    """The SSH connect/update-run timeouts, every background-check
+    interval, and the reachability sweep's concurrency cap — moved here
+    from environment variables (see `app/db/models/app_settings.py`'s new
+    fields and `app.core.config`'s module docstring). Ported from an
+    identical debcontrol change.
+
+    The two timeouts and the concurrency cap are read fresh from the
+    database by every task/route that uses them (see `app/tasks/jobs.py`
+    and the various `app_settings = await get_or_create_app_settings(db)`
+    call sites in `app/web/routes/`), so a change here takes effect on the
+    very next check — no restart needed. The four intervals are only read
+    by Celery Beat at its own process start
+    (`app.tasks.celery_app._bootstrap_interval_settings`), so a change to
+    one of those needs a restart of the `worker`/`beat` services, same as
+    when they were `.env` values — see `settings.checks.hint` in the
+    template.
+
+    Bounds below exist for two reasons: a sane range for the setting
+    itself, and — for the two timeouts specifically — staying safely under
+    Celery's own hard per-task time limit (`app.tasks.jobs.
+    _SSH_TASK_TIME_LIMIT_SECONDS`/`_UPDATE_TASK_TIME_LIMIT_SECONDS`), which
+    is a fixed constant sized to comfortably exceed these maximums and is
+    not itself configurable (a Celery task decorator argument can't read
+    the database — see that module's own comment).
+    """
+    app_settings = await get_or_create_app_settings(db)
+    errors: list[str] = []
+
+    def _field(raw: str, *, label: str, minimum: int, maximum: int) -> int | None:
+        value, error = _parse_bounded_int(raw, label=label, minimum=minimum, maximum=maximum)
+        if error:
+            errors.append(error)
+        return value
+
+    ssh_timeout = _field(ssh_connect_timeout, label="SSH connect timeout", minimum=1, maximum=300)
+    update_timeout = _field(
+        update_timeout_seconds, label="Update run timeout", minimum=60, maximum=14400
+    )
+    facts_interval = _field(
+        facts_refresh_interval_seconds, label="Facts refresh interval", minimum=60, maximum=604800
+    )
+    reachability_interval = _field(
+        reachability_check_interval_seconds,
+        label="Reachability check interval",
+        minimum=5,
+        maximum=86400,
+    )
+    concurrency = _field(
+        reachability_check_concurrency,
+        label="Reachability sweep concurrency",
+        minimum=1,
+        maximum=1000,
+    )
+    monitoring_interval = _field(
+        monitoring_interval_seconds, label="Monitoring sample interval", minimum=10, maximum=86400
+    )
+    opencanary_poll_interval = _field(
+        opencanary_log_poll_interval_seconds,
+        label="OpenCanary log poll interval",
+        minimum=10,
+        maximum=86400,
+    )
+
+    if errors:
+        return await _render_settings(request, db, errors, tab="checks")
+
+    assert ssh_timeout is not None
+    assert update_timeout is not None
+    assert facts_interval is not None
+    assert reachability_interval is not None
+    assert concurrency is not None
+    assert monitoring_interval is not None
+    assert opencanary_poll_interval is not None
+
+    app_settings.ssh_connect_timeout = ssh_timeout
+    app_settings.update_timeout_seconds = update_timeout
+    app_settings.facts_refresh_interval_seconds = facts_interval
+    app_settings.reachability_check_interval_seconds = reachability_interval
+    app_settings.reachability_check_concurrency = concurrency
+    app_settings.monitoring_interval_seconds = monitoring_interval
+    app_settings.opencanary_log_poll_interval_seconds = opencanary_poll_interval
+    await db.commit()
+
+    await log_event(
+        db,
+        request=request,
+        action="settings.checks.update",
+        summary="Updated background-check settings",
+        details={
+            "ssh_connect_timeout": ssh_timeout,
+            "update_timeout_seconds": update_timeout,
+            "facts_refresh_interval_seconds": facts_interval,
+            "reachability_check_interval_seconds": reachability_interval,
+            "reachability_check_concurrency": concurrency,
+            "monitoring_interval_seconds": monitoring_interval,
+            "opencanary_log_poll_interval_seconds": opencanary_poll_interval,
+        },
+    )
+    return RedirectResponse(url="/settings?tab=checks", status_code=status.HTTP_303_SEE_OTHER)
+
+
 @router.post("/audit-retention", dependencies=[Depends(verify_csrf)])
 async def update_audit_retention(
     request: Request,
@@ -145,7 +276,7 @@ async def update_audit_retention(
     app_settings = await get_or_create_app_settings(db)
     new_value, error = _parse_retention_days(retention_days)
     if error:
-        return await _render_settings(request, db, [error], tab="security")
+        return await _render_settings(request, db, [error], tab="checks")
 
     app_settings.audit_log_retention_days = new_value
     await db.commit()
@@ -161,7 +292,7 @@ async def update_audit_retention(
         ),
     )
 
-    return RedirectResponse(url="/settings?tab=security", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url="/settings?tab=checks", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/dashboard-trends-retention", dependencies=[Depends(verify_csrf)])
@@ -177,7 +308,7 @@ async def update_dashboard_trends_retention(
     app_settings = await get_or_create_app_settings(db)
     new_value, error = _parse_retention_days(retention_days)
     if error:
-        return await _render_settings(request, db, [error], tab="security")
+        return await _render_settings(request, db, [error], tab="checks")
 
     app_settings.dashboard_trends_retention_days = new_value
     await db.commit()
@@ -193,7 +324,7 @@ async def update_dashboard_trends_retention(
         ),
     )
 
-    return RedirectResponse(url="/settings?tab=security", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url="/settings?tab=checks", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/update-run-retention", dependencies=[Depends(verify_csrf)])
@@ -208,7 +339,7 @@ async def update_honeypot_update_run_retention(
     app_settings = await get_or_create_app_settings(db)
     new_value, error = _parse_retention_days(retention_days)
     if error:
-        return await _render_settings(request, db, [error], tab="security")
+        return await _render_settings(request, db, [error], tab="checks")
 
     app_settings.honeypot_update_run_retention_days = new_value
     await db.commit()
@@ -224,7 +355,7 @@ async def update_honeypot_update_run_retention(
         ),
     )
 
-    return RedirectResponse(url="/settings?tab=security", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url="/settings?tab=checks", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/monitoring-retention", dependencies=[Depends(verify_csrf)])
@@ -241,7 +372,7 @@ async def update_monitoring_retention(
     app_settings = await get_or_create_app_settings(db)
     new_value, error = _parse_retention_days(retention_days)
     if error:
-        return await _render_settings(request, db, [error], tab="security")
+        return await _render_settings(request, db, [error], tab="checks")
 
     app_settings.monitoring_history_retention_days = new_value
     await db.commit()
@@ -257,7 +388,7 @@ async def update_monitoring_retention(
         ),
     )
 
-    return RedirectResponse(url="/settings?tab=security", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url="/settings?tab=checks", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/audit-verify", dependencies=[Depends(verify_csrf)])

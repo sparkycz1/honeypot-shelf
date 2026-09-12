@@ -1,0 +1,119 @@
+  <section class="panel">
+    <h2>{{ t(request, "settings.checks.background_checks.heading") }}</h2>
+    <p class="hint">{{ t(request, "settings.checks.background_checks.hint") }}</p>
+
+    <form method="post" action="/settings/checks" class="form" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+      <label for="ssh_connect_timeout">{{ t(request, "settings.checks.background_checks.ssh_connect_timeout_label") }}</label>
+      <input type="number" id="ssh_connect_timeout" name="ssh_connect_timeout" min="1" max="300" step="1"
+             value="{{ app_settings.ssh_connect_timeout }}">
+      <p class="hint">{{ t(request, "settings.checks.background_checks.ssh_connect_timeout_hint") }}</p>
+
+      <label for="update_timeout_seconds">{{ t(request, "settings.checks.background_checks.update_timeout_label") }}</label>
+      <input type="number" id="update_timeout_seconds" name="update_timeout_seconds" min="60" max="14400" step="1"
+             value="{{ app_settings.update_timeout_seconds }}">
+      <p class="hint">{{ t(request, "settings.checks.background_checks.update_timeout_hint") }}</p>
+
+      <label for="reachability_check_interval_seconds">{{ t(request, "settings.checks.background_checks.reachability_interval_label") }}</label>
+      <input type="number" id="reachability_check_interval_seconds" name="reachability_check_interval_seconds" min="5" max="86400" step="1"
+             value="{{ app_settings.reachability_check_interval_seconds }}">
+      <p class="hint">{{ t(request, "settings.checks.background_checks.reachability_interval_hint") }}</p>
+
+      <label for="reachability_check_concurrency">{{ t(request, "settings.checks.background_checks.reachability_concurrency_label") }}</label>
+      <input type="number" id="reachability_check_concurrency" name="reachability_check_concurrency" min="1" max="1000" step="1"
+             value="{{ app_settings.reachability_check_concurrency }}">
+      <p class="hint">{{ t(request, "settings.checks.background_checks.reachability_concurrency_hint") }}</p>
+
+      <label for="facts_refresh_interval_seconds">{{ t(request, "settings.checks.background_checks.facts_refresh_label") }}</label>
+      <input type="number" id="facts_refresh_interval_seconds" name="facts_refresh_interval_seconds" min="60" max="604800" step="1"
+             value="{{ app_settings.facts_refresh_interval_seconds }}">
+      <p class="hint">{{ t(request, "settings.checks.background_checks.facts_refresh_hint") }}</p>
+
+      <label for="monitoring_interval_seconds">{{ t(request, "settings.checks.background_checks.monitoring_interval_label") }}</label>
+      <input type="number" id="monitoring_interval_seconds" name="monitoring_interval_seconds" min="10" max="86400" step="1"
+             value="{{ app_settings.monitoring_interval_seconds }}">
+      <p class="hint">{{ t(request, "settings.checks.background_checks.monitoring_interval_hint") }}</p>
+
+      <label for="opencanary_log_poll_interval_seconds">{{ t(request, "settings.checks.background_checks.opencanary_poll_label") }}</label>
+      <input type="number" id="opencanary_log_poll_interval_seconds" name="opencanary_log_poll_interval_seconds" min="10" max="86400" step="1"
+             value="{{ app_settings.opencanary_log_poll_interval_seconds }}">
+      <p class="hint">{{ t(request, "settings.checks.background_checks.opencanary_poll_hint") }}</p>
+
+      <button type="submit" class="button">{{ t(request, "common.save") }}</button>
+    </form>
+
+    <p class="hint stack-gap">
+      {{ t(request, "settings.checks.background_checks.restart_hint") }}
+    </p>
+  </section>
+
+  <section class="panel">
+    <h2>{{ t(request, "settings.security.audit_log.retention_heading") }}</h2>
+    <p class="hint">
+      {{ t(request, "settings.security.audit_log.hint1") }}
+      <a href="/audit">{{ t(request, "nav.audit") }}</a>{{ t(request, "settings.security.audit_log.hint2") }}
+    </p>
+    <form method="post" action="/settings/audit-retention" class="form" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label for="retention_days">{{ t(request, "settings.security.audit_log.retention_label") }}</label>
+      <input type="number" id="retention_days" name="retention_days" min="0" step="1"
+             placeholder="{{ t(request, 'settings.security.forever') }}"
+             value="{{ app_settings.audit_log_retention_days if app_settings.audit_log_retention_days is not none else '' }}">
+      <p class="hint">
+        {{ t(request, "settings.security.audit_log.retention_hint") }}
+      </p>
+      <button type="submit" class="button">{{ t(request, "common.save") }}</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>{{ t(request, "settings.security.dashboard_trends.heading") }}</h2>
+    <p class="hint">
+      {{ t(request, "settings.security.dashboard_trends.hint1") }}
+      <a href="/dashboard">{{ t(request, "nav.dashboard") }}</a>{{ t(request, "settings.security.dashboard_trends.hint2") }}
+    </p>
+    <form method="post" action="/settings/dashboard-trends-retention" class="form" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label for="dashboard_trends_retention_days">{{ t(request, "settings.security.dashboard_trends.retention_label") }}</label>
+      <input type="number" id="dashboard_trends_retention_days" name="retention_days" min="0" step="1"
+             placeholder="{{ t(request, 'settings.security.forever') }}"
+             value="{{ app_settings.dashboard_trends_retention_days if app_settings.dashboard_trends_retention_days is not none else '' }}">
+      <p class="hint">{{ t(request, "settings.security.dashboard_trends.retention_hint") }}</p>
+      <button type="submit" class="button">{{ t(request, "common.save") }}</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>{{ t(request, "settings.security.update_history.heading") }}</h2>
+    <p class="hint">
+      {{ t(request, "settings.security.update_history.hint1") }}
+      <a href="/scheduling">{{ t(request, "nav.scheduling") }}</a>{{ t(request, "settings.security.update_history.hint2") }}
+      <a href="/audit">{{ t(request, "nav.audit") }}</a>{{ t(request, "settings.security.update_history.hint3") }}
+    </p>
+    <form method="post" action="/settings/update-run-retention" class="form" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label for="honeypot_update_run_retention_days">{{ t(request, "settings.security.update_history.retention_label") }}</label>
+      <input type="number" id="honeypot_update_run_retention_days" name="retention_days" min="0" step="1"
+             placeholder="{{ t(request, 'settings.security.forever') }}"
+             value="{{ app_settings.honeypot_update_run_retention_days if app_settings.honeypot_update_run_retention_days is not none else '' }}">
+      <p class="hint">{{ t(request, "settings.security.update_history.retention_hint") }}</p>
+      <button type="submit" class="button">{{ t(request, "common.save") }}</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>{{ t(request, "settings.security.monitoring_history.heading") }}</h2>
+    <p class="hint">
+      {{ t(request, "settings.security.monitoring_history.hint") }}
+    </p>
+    <form method="post" action="/settings/monitoring-retention" class="form" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label for="monitoring_history_retention_days">{{ t(request, "settings.security.monitoring_history.retention_label") }}</label>
+      <input type="number" id="monitoring_history_retention_days" name="retention_days" min="0" step="1"
+             placeholder="{{ t(request, 'settings.security.forever') }}"
+             value="{{ app_settings.monitoring_history_retention_days if app_settings.monitoring_history_retention_days is not none else '' }}">
+      <p class="hint">{{ t(request, "settings.security.monitoring_history.retention_hint") }}</p>
+      <button type="submit" class="button">{{ t(request, "common.save") }}</button>
+    </form>
+  </section>

@@ -1173,6 +1173,27 @@
     "users.new.password_label": "Password (local accounts only)",
     "users.new.scope_hint": "A non-superadmin user always belongs to exactly one company, with either read-only or read + write access to its honeypots — nothing in between, and nothing shared across companies. The audit log and Settings are never available to a non-superadmin.",
     "users.new.title": "Add user",
-    "users.new.username_hint": "Lowercase letters, digits, '.', '_', '-'. This is also the LDAP username and the OIDC identity, if used."
+    "users.new.username_hint": "Lowercase letters, digits, '.', '_', '-'. This is also the LDAP username and the OIDC identity, if used.",
+    "settings.tabs.checks": "Checks & retention",
+    "settings.checks.background_checks.heading": "Background checks",
+    "settings.checks.background_checks.hint": "How often each sweep runs, how long an SSH connection/update run may take, and how many honeypots the reachability sweep checks at once. Every sweep only runs for a honeypot with a confirmed host key fingerprint, and only fires on its cadence if Celery Beat is running (the `beat` service) — see Architecture in the wiki for the full list of what's scheduled.",
+    "settings.checks.background_checks.ssh_connect_timeout_label": "SSH connect timeout (seconds)",
+    "settings.checks.background_checks.ssh_connect_timeout_hint": "How long a single SSH connection attempt is given before giving up. Takes effect on the very next check — no restart needed.",
+    "settings.checks.background_checks.update_timeout_label": "Update run timeout (seconds)",
+    "settings.checks.background_checks.update_timeout_hint": "Max wall-clock time given to one full apt/flatpak/snap update run. Takes effect on the very next run — no restart needed.",
+    "settings.checks.background_checks.reachability_interval_label": "Reachability check interval (seconds)",
+    "settings.checks.background_checks.reachability_interval_hint": "How often the \"is it alive\" status badge's reachability sweep (a plain TCP connect, no authentication) runs for every honeypot. Takes effect the next time the `beat` service restarts.",
+    "settings.checks.background_checks.reachability_concurrency_label": "Reachability sweep concurrency",
+    "settings.checks.background_checks.reachability_concurrency_hint": "How many honeypots the reachability sweep checks at once. Takes effect on the very next sweep — no restart needed.",
+    "settings.checks.background_checks.facts_refresh_label": "Facts refresh interval (seconds)",
+    "settings.checks.background_checks.facts_refresh_hint": "How often OS/kernel/CPU/RAM/disk facts, installed packages, services, readiness, and available updates are refreshed for every honeypot. Takes effect the next time the `beat` service restarts.",
+    "settings.checks.background_checks.monitoring_interval_label": "Monitoring sample interval (seconds)",
+    "settings.checks.background_checks.monitoring_interval_hint": "How often the Monitoring tab's CPU/RAM/disk-usage sample is taken for every honeypot (overridable per honeypot). Takes effect the next time the `beat` service restarts.",
+    "settings.checks.background_checks.opencanary_poll_label": "OpenCanary log poll interval (seconds)",
+    "settings.checks.background_checks.opencanary_poll_hint": "How often this app connects over SSH and reads whatever's new in OpenCanary's own log for every honeypot (overridable per honeypot). Takes effect the next time the `beat` service restarts.",
+    "settings.checks.background_checks.restart_hint": "The two timeouts and the concurrency cap above take effect immediately. The four interval settings only take effect the next time the `worker`/`beat` services restart — same as when they were configured in `.env`.",
+    "settings.security.audit_log.retention_heading": "Audit log retention",
+    "settings.security.audit_log.retention_moved_hint": "Retention for these entries is configured under",
+    "settings.security.monitoring_history.hint": "A CPU/RAM/disk-usage sample is stored for every honeypot on the Monitoring tab's own cadence (configurable above, in Background checks) — this only controls how long those samples are kept, not how often they're taken. A single honeypot can override this instance-wide default on its own Settings tab."
   }
 }

@@ -4,19 +4,9 @@
     <p class="hint">
       {{ t(request, "settings.security.audit_log.hint1") }}
       <a href="/audit">{{ t(request, "nav.audit") }}</a>{{ t(request, "settings.security.audit_log.hint2") }}
+      {{ t(request, "settings.security.audit_log.retention_moved_hint") }}
+      <a href="/settings?tab=checks">{{ t(request, "settings.tabs.checks") }}</a>.
     </p>
-
-    <form method="post" action="/settings/audit-retention" class="form" autocomplete="off">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <label for="retention_days">{{ t(request, "settings.security.audit_log.retention_label") }}</label>
-      <input type="number" id="retention_days" name="retention_days" min="0" step="1"
-             placeholder="{{ t(request, 'settings.security.forever') }}"
-             value="{{ app_settings.audit_log_retention_days if app_settings.audit_log_retention_days is not none else '' }}">
-      <p class="hint">
-        {{ t(request, "settings.security.audit_log.retention_hint") }}
-      </p>
-      <button type="submit" class="button">{{ t(request, "common.save") }}</button>
-    </form>
 
     <form method="post" action="/settings/audit-verify" class="stack-gap">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -37,56 +27,4 @@
       {{ t(request, "settings.security.audit_log.export_hint2") }}
       <a href="/audit">{{ t(request, "nav.audit") }}</a>{{ t(request, "settings.security.audit_log.export_hint3") }}
     </p>
-  </section>
-
-  <section class="panel">
-    <h2>{{ t(request, "settings.security.dashboard_trends.heading") }}</h2>
-    <p class="hint">
-      {{ t(request, "settings.security.dashboard_trends.hint1") }}
-      <a href="/dashboard">{{ t(request, "nav.dashboard") }}</a>{{ t(request, "settings.security.dashboard_trends.hint2") }}
-    </p>
-    <form method="post" action="/settings/dashboard-trends-retention" class="form" autocomplete="off">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <label for="dashboard_trends_retention_days">{{ t(request, "settings.security.dashboard_trends.retention_label") }}</label>
-      <input type="number" id="dashboard_trends_retention_days" name="retention_days" min="0" step="1"
-             placeholder="{{ t(request, 'settings.security.forever') }}"
-             value="{{ app_settings.dashboard_trends_retention_days if app_settings.dashboard_trends_retention_days is not none else '' }}">
-      <p class="hint">{{ t(request, "settings.security.dashboard_trends.retention_hint") }}</p>
-      <button type="submit" class="button">{{ t(request, "common.save") }}</button>
-    </form>
-  </section>
-
-  <section class="panel">
-    <h2>{{ t(request, "settings.security.update_history.heading") }}</h2>
-    <p class="hint">
-      {{ t(request, "settings.security.update_history.hint1") }}
-      <a href="/scheduling">{{ t(request, "nav.scheduling") }}</a>{{ t(request, "settings.security.update_history.hint2") }}
-      <a href="/audit">{{ t(request, "nav.audit") }}</a>{{ t(request, "settings.security.update_history.hint3") }}
-    </p>
-    <form method="post" action="/settings/update-run-retention" class="form" autocomplete="off">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <label for="honeypot_update_run_retention_days">{{ t(request, "settings.security.update_history.retention_label") }}</label>
-      <input type="number" id="honeypot_update_run_retention_days" name="retention_days" min="0" step="1"
-             placeholder="{{ t(request, 'settings.security.forever') }}"
-             value="{{ app_settings.honeypot_update_run_retention_days if app_settings.honeypot_update_run_retention_days is not none else '' }}">
-      <p class="hint">{{ t(request, "settings.security.update_history.retention_hint") }}</p>
-      <button type="submit" class="button">{{ t(request, "common.save") }}</button>
-    </form>
-  </section>
-
-  <section class="panel">
-    <h2>{{ t(request, "settings.security.monitoring_history.heading") }}</h2>
-    <p class="hint">
-      {{ t(request, "settings.security.monitoring_history.hint1") }}
-      <code>MONITORING_INTERVAL_SECONDS</code>{{ t(request, "settings.security.monitoring_history.hint2") }}
-    </p>
-    <form method="post" action="/settings/monitoring-retention" class="form" autocomplete="off">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <label for="monitoring_history_retention_days">{{ t(request, "settings.security.monitoring_history.retention_label") }}</label>
-      <input type="number" id="monitoring_history_retention_days" name="retention_days" min="0" step="1"
-             placeholder="{{ t(request, 'settings.security.forever') }}"
-             value="{{ app_settings.monitoring_history_retention_days if app_settings.monitoring_history_retention_days is not none else '' }}">
-      <p class="hint">{{ t(request, "settings.security.monitoring_history.retention_hint") }}</p>
-      <button type="submit" class="button">{{ t(request, "common.save") }}</button>
-    </form>
   </section>

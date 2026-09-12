@@ -56,41 +56,17 @@ class Settings(BaseSettings):
     # debcontrol close to unchanged, since a honeypot is managed exactly
     # like a debcontrol Machine (terminal, facts, packages, updates,
     # power). See wiki/Architecture.md. ---
-    ssh_connect_timeout: int = Field(default=10, alias="SSH_CONNECT_TIMEOUT")
-
-    # How often (seconds) Celery Beat schedules a refresh of OS/kernel/CPU/
-    # RAM/disk facts (and installed packages, and update availability) for
-    # every honeypot with a pinned host key.
-    facts_refresh_interval_seconds: int = Field(
-        default=600, alias="FACTS_REFRESH_INTERVAL_SECONDS"
-    )
-
-    # How often (seconds) the "is it alive" status badge's reachability
-    # sweep (a plain TCP connect to the SSH port, no authentication) runs
-    # for every honeypot. Deliberately its own, much shorter, default than
-    # `facts_refresh_interval_seconds`.
-    reachability_check_interval_seconds: int = Field(
-        default=60, alias="REACHABILITY_CHECK_INTERVAL_SECONDS"
-    )
-
-    # How many honeypots the reachability sweep checks concurrently — a
-    # semaphore, not a thread/process count.
-    reachability_check_concurrency: int = Field(
-        default=20, alias="REACHABILITY_CHECK_CONCURRENCY"
-    )
-
-    # How often (seconds) the Monitoring tab's CPU/RAM/disk-usage sample
-    # (and the cheap "how many systemd services are failed" count) is
-    # taken for every honeypot — a real SSH round trip (unlike the plain
-    # TCP reachability check above), but much lighter than a full facts
-    # refresh.
-    monitoring_interval_seconds: int = Field(default=120, alias="MONITORING_INTERVAL_SECONDS")
-
-    # apt update/upgrade/autoremove/autoclean can legitimately take a long
-    # time — this is the max wall-clock time given to that whole sequence,
-    # distinct from `ssh_connect_timeout` (which only bounds establishing
-    # the connection itself).
-    update_timeout_seconds: int = Field(default=1800, alias="UPDATE_TIMEOUT_SECONDS")
+    #
+    # ssh_connect_timeout, update_timeout_seconds,
+    # facts_refresh_interval_seconds, reachability_check_interval_seconds,
+    # reachability_check_concurrency, and monitoring_interval_seconds used
+    # to live here as env vars — moved to `AppSettings` (Settings → Checks
+    # & retention), editable without a restart. See
+    # `app.db.models.app_settings.AppSettings` for the current defaults and
+    # docstrings, and `app.tasks.celery_app._bootstrap_interval_settings`
+    # for how Celery Beat's own fixed schedule still only re-reads the
+    # interval settings at its own process start. Ported from an identical
+    # debcontrol change.
 
     # --- NetBird for HoneyHive itself (app.services.netbird, Settings ->
     # NetBird) — lets `web`/`worker` reach a honeypot that's only addressable
@@ -161,18 +137,10 @@ class Settings(BaseSettings):
         default=600, alias="HONEYPOT_OFFLINE_AFTER_SECONDS"
     )
 
-    # How often (seconds) HoneyHive itself connects over SSH and reads
-    # whatever's new in OpenCanary's own log (`app.ssh.logs.HONEYPOT_LOG_PATH`)
-    # since the last read, for every honeypot with a pinned host key — the
-    # only way an event ever reaches this app (`app.ssh.canary_activity`,
-    # `app.tasks.jobs.poll_all_honeypot_canary_logs`) — see
-    # `app.services.honeypot_events`. Overridable per honeypot
-    # (`Honeypot.opencanary_log_poll_interval_seconds`); `None` there means
-    # "use this default". Same SSH round trip shape as `monitoring_interval_
-    # seconds` above, just aimed at OpenCanary's log instead of `/proc`.
-    opencanary_log_poll_interval_seconds: int = Field(
-        default=120, alias="OPENCANARY_LOG_POLL_INTERVAL_SECONDS"
-    )
+    # opencanary_log_poll_interval_seconds used to live here as an env var
+    # too — moved to `AppSettings` alongside the SSH-management-plane
+    # settings above, same reasoning. Overridable per honeypot regardless
+    # (`Honeypot.opencanary_log_poll_interval_seconds`).
 
     # --- Branding (nav-bar/login logo, favicon) ---
     # Either an absolute/relative URL (http://, https://) or a filesystem

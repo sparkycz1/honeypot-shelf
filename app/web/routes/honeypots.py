@@ -31,9 +31,10 @@ from app.auth.scope import (
     visible_honeypots_by_ids,
 )
 from app.core.app_settings import get_or_create_app_settings
-from app.core.config import Settings, get_settings
+from app.core.config import get_settings
 from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie, verify_csrf
 from app.core.security import encrypt_secret
+from app.db.models.app_settings import AppSettings
 from app.db.models.audit_log import AuditOutcome
 from app.db.models.company import Company
 from app.db.models.honeypot import AuthMethod, Honeypot
@@ -1322,7 +1323,7 @@ async def refresh_monitoring_endpoint(
     rather than sequential since neither job depends on the other), then
     re-renders the same partial the auto-poll panel does."""
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    settings = get_settings()
+    app_settings = await get_or_create_app_settings(db)
 
     monitoring_result = tasks.sample_honeypot_monitoring.delay(str(honeypot.id))
     reachability_result = tasks.check_honeypot_reachability.delay(str(honeypot.id))
@@ -1330,10 +1331,10 @@ async def refresh_monitoring_endpoint(
     try:
         results = await asyncio.gather(
             asyncio.to_thread(
-                monitoring_result.get, timeout=settings.ssh_connect_timeout + 5
+                monitoring_result.get, timeout=app_settings.ssh_connect_timeout + 5
             ),
             asyncio.to_thread(
-                reachability_result.get, timeout=settings.ssh_connect_timeout + 5
+                reachability_result.get, timeout=app_settings.ssh_connect_timeout + 5
             ),
         )
         for result in results:
@@ -1518,7 +1519,6 @@ async def edit_honeypot_form(
             "all_tags": await _get_all_tags(db),
             "errors": [],
             "csrf_token": csrf_token,
-            "global_settings": get_settings(),
             "app_settings": await get_or_create_app_settings(db),
         },
     )
@@ -1539,7 +1539,7 @@ async def run_onboarding_endpoint(
     the honeypot's credential never leaves this process — the task resolves
     it itself from the DB, it is never passed as a task argument."""
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    settings = get_settings()
+    app_settings = await get_or_create_app_settings(db)
 
     async_result = tasks.run_honeypot_onboarding.delay(str(honeypot.id))
     error: str | None = None
@@ -1550,7 +1550,7 @@ async def run_onboarding_endpoint(
         # inside the task — a bad password, a network hiccup — is what
         # this wait reports, not this endpoint giving up first.
         result = await asyncio.to_thread(
-            async_result.get, timeout=settings.ssh_connect_timeout + 120
+            async_result.get, timeout=app_settings.ssh_connect_timeout + 120
         )
         if isinstance(result, dict):
             if result.get("ok"):
@@ -1597,7 +1597,6 @@ async def run_onboarding_endpoint(
             "onboarding_error": error,
             "onboarding_output": output,
             "csrf_token": csrf_token,
-            "global_settings": get_settings(),
             "app_settings": await get_or_create_app_settings(db),
         },
     )
@@ -1615,11 +1614,11 @@ async def recheck_readiness_endpoint(
     trip, same "Test connection"-style pattern as the other on-demand
     checks on this page."""
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    settings = get_settings()
+    app_settings = await get_or_create_app_settings(db)
 
     async_result = tasks.check_honeypot_readiness.delay(str(honeypot.id))
     with contextlib.suppress(Exception):
-        await asyncio.to_thread(async_result.get, timeout=settings.ssh_connect_timeout + 15)
+        await asyncio.to_thread(async_result.get, timeout=app_settings.ssh_connect_timeout + 15)
 
     redirect_url = f"/honeypots/{honeypot.id}"
     if request.headers.get("HX-Request") == "true":
@@ -1659,7 +1658,7 @@ async def run_onboarding_with_credential_endpoint(
     success-path revert never gets a chance to run when the script fails.
     """
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    settings = get_settings()
+    app_settings = await get_or_create_app_settings(db)
 
     previous_username = honeypot.username
     previous_auth_method = honeypot.auth_method
@@ -1672,7 +1671,7 @@ async def run_onboarding_with_credential_endpoint(
     error: str | None = None
     try:
         result = await asyncio.to_thread(
-            async_result.get, timeout=settings.ssh_connect_timeout + 120
+            async_result.get, timeout=app_settings.ssh_connect_timeout + 120
         )
         if isinstance(result, dict) and not result.get("ok"):
             error = str(result.get("error") or "Unknown error.")
@@ -1728,13 +1727,13 @@ async def fix_readiness_directly_endpoint(
     between page load and this click just gets its own real error back
     from the SSH connection, same as any other stale-page race."""
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    settings = get_settings()
+    app_settings = await get_or_create_app_settings(db)
 
     async_result = tasks.fix_root_readiness.delay(str(honeypot.id))
     error: str | None = None
     try:
         result = await asyncio.to_thread(
-            async_result.get, timeout=settings.ssh_connect_timeout + 60
+            async_result.get, timeout=app_settings.ssh_connect_timeout + 60
         )
         if isinstance(result, dict) and not result.get("ok"):
             error = str(result.get("error") or "Unknown error.")
@@ -1863,7 +1862,6 @@ async def update_honeypot(
                 "all_tags": await _get_all_tags(db),
                 "errors": [str(exc)],
                 "csrf_token": csrf_token,
-                "global_settings": get_settings(),
                 "app_settings": await get_or_create_app_settings(db),
             },
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -1947,7 +1945,7 @@ async def discover_host_key(
     current_user: User = Depends(get_current_user),
 ) -> Response:
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    settings = get_settings()
+    app_settings = await get_or_create_app_settings(db)
     csrf_token, new_cookie = get_or_create_csrf_token(request)
 
     context: dict[str, object] = {"honeypot": honeypot, "csrf_token": csrf_token}
@@ -1956,7 +1954,7 @@ async def discover_host_key(
     else:
         try:
             context["fingerprint"] = await discover_host_key_fingerprint(
-                honeypot.ip_address, honeypot.port, settings.ssh_connect_timeout
+                honeypot.ip_address, honeypot.port, app_settings.ssh_connect_timeout
             )
         except SSHConnectionError as exc:
             context["error"] = str(exc)
@@ -2032,14 +2030,14 @@ async def test_connection_endpoint(
     current_user: User = Depends(get_current_user),
 ) -> Response:
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    settings = get_settings()
+    app_settings = await get_or_create_app_settings(db)
 
     async_result = tasks.test_honeypot_connection.delay(str(honeypot.id))
     result: dict[str, object] | None = None
     error: str | None = None
     try:
         result = await asyncio.to_thread(
-            async_result.get, timeout=settings.ssh_connect_timeout + 5
+            async_result.get, timeout=app_settings.ssh_connect_timeout + 5
         )
     except CeleryTimeoutError:
         error = "The background job did not respond in time."
@@ -2074,13 +2072,13 @@ async def refresh_facts_endpoint(
     current_user: User = Depends(get_current_user),
 ) -> Response:
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    settings = get_settings()
+    app_settings = await get_or_create_app_settings(db)
 
     async_result = tasks.refresh_honeypot_facts.delay(str(honeypot.id))
     error: str | None = None
     try:
         result = await asyncio.to_thread(
-            async_result.get, timeout=settings.ssh_connect_timeout + 5
+            async_result.get, timeout=app_settings.ssh_connect_timeout + 5
         )
         if isinstance(result, dict) and not result.get("ok"):
             error = str(result.get("error") or "Unknown error.")
@@ -2127,13 +2125,13 @@ async def refresh_packages_endpoint(
     current_user: User = Depends(get_current_user),
 ) -> Response:
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    settings = get_settings()
+    app_settings = await get_or_create_app_settings(db)
 
     async_result = tasks.refresh_honeypot_packages.delay(str(honeypot.id))
     error: str | None = None
     try:
         result = await asyncio.to_thread(
-            async_result.get, timeout=settings.ssh_connect_timeout + 15
+            async_result.get, timeout=app_settings.ssh_connect_timeout + 15
         )
         if isinstance(result, dict) and not result.get("ok"):
             error = str(result.get("error") or "Unknown error.")
@@ -2188,13 +2186,13 @@ async def refresh_services_endpoint(
     current_user: User = Depends(get_current_user),
 ) -> Response:
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    settings = get_settings()
+    app_settings = await get_or_create_app_settings(db)
 
     async_result = tasks.refresh_honeypot_services.delay(str(honeypot.id))
     error: str | None = None
     try:
         result = await asyncio.to_thread(
-            async_result.get, timeout=settings.ssh_connect_timeout + 15
+            async_result.get, timeout=app_settings.ssh_connect_timeout + 15
         )
         if isinstance(result, dict) and not result.get("ok"):
             error = str(result.get("error") or "Unknown error.")
@@ -2240,13 +2238,13 @@ async def check_updates_endpoint(
     current_user: User = Depends(get_current_user),
 ) -> Response:
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    settings = get_settings()
+    app_settings = await get_or_create_app_settings(db)
 
     async_result = tasks.check_honeypot_updates.delay(str(honeypot.id))
     error: str | None = None
     try:
         result = await asyncio.to_thread(
-            async_result.get, timeout=settings.update_timeout_seconds + 5
+            async_result.get, timeout=app_settings.update_timeout_seconds + 5
         )
         if isinstance(result, dict) and not result.get("ok"):
             error = str(result.get("error") or "Unknown error.")
@@ -2309,14 +2307,14 @@ async def preview_honeypot_update(
             detail="Confirm the host key fingerprint before previewing updates.",
         )
 
-    settings = get_settings()
+    app_settings = await get_or_create_app_settings(db)
     async_result = tasks.preview_honeypot_update.delay(str(honeypot.id), strategy.value)
     error: str | None = None
     to_install_or_upgrade: list[PendingPackage] = []
     to_remove: list[PendingPackage] = []
     try:
         result = await asyncio.to_thread(
-            async_result.get, timeout=settings.update_timeout_seconds + 5
+            async_result.get, timeout=app_settings.update_timeout_seconds + 5
         )
         if isinstance(result, dict):
             if not result.get("ok"):
@@ -2618,6 +2616,7 @@ async def honeypot_logs(
     itself, which is never stored anywhere in this app."""
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
     settings = get_settings()
+    app_settings = await get_or_create_app_settings(db)
 
     output: str | None = None
     browse_entries: list[tuple[str, bool]] | None = None
@@ -2630,7 +2629,7 @@ async def honeypot_logs(
                 str(honeypot.id), path=browse.strip()
             )
             result = await asyncio.to_thread(
-                async_result.get, timeout=settings.ssh_connect_timeout + 15
+                async_result.get, timeout=app_settings.ssh_connect_timeout + 15
             )
             if isinstance(result, dict):
                 if result.get("ok"):
@@ -2668,7 +2667,7 @@ async def honeypot_logs(
                     until=until,
                 )
             result = await asyncio.to_thread(
-                async_result.get, timeout=settings.ssh_connect_timeout + 15
+                async_result.get, timeout=app_settings.ssh_connect_timeout + 15
             )
             if isinstance(result, dict):
                 if result.get("ok"):
@@ -2770,7 +2769,7 @@ async def _build_activity_context(
         "recent_events": recent_events,
         "time_ranges": monitoring_history.TIME_RANGES,
         "range_key": range_key,
-        "global_settings": get_settings(),
+        "app_settings": await get_or_create_app_settings(db),
         "palette": _CHART_PALETTE,
     }
 
@@ -2840,13 +2839,13 @@ async def refresh_activity_endpoint(
     log poll, waits for it synchronously, then re-renders the same
     partial the auto-poll panel does."""
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    settings = get_settings()
+    app_settings = await get_or_create_app_settings(db)
 
     async_result = tasks.poll_honeypot_canary_log.delay(str(honeypot.id))
     error: str | None = None
     try:
         result = await asyncio.to_thread(
-            async_result.get, timeout=settings.ssh_connect_timeout + 5
+            async_result.get, timeout=app_settings.ssh_connect_timeout + 5
         )
         if isinstance(result, dict) and not result.get("ok"):
             error = str(result.get("error") or "Unknown error.")
@@ -2959,13 +2958,13 @@ async def export_honeypot_activity(
 
 
 async def _load_readonly_state(
-    honeypot: Honeypot, settings: Settings
+    honeypot: Honeypot, app_settings: AppSettings
 ) -> tuple[str | None, str | None]:
     """`(state, error)` — see `app.ssh.readonly`."""
     try:
         async_result = tasks.check_honeypot_readonly_status.delay(str(honeypot.id))
         result = await asyncio.to_thread(
-            async_result.get, timeout=settings.ssh_connect_timeout + 15
+            async_result.get, timeout=app_settings.ssh_connect_timeout + 15
         )
         if isinstance(result, dict):
             if result.get("ok"):
@@ -2979,7 +2978,7 @@ async def _load_readonly_state(
 
 
 async def _load_opencanary_config(
-    honeypot: Honeypot, settings: Settings
+    honeypot: Honeypot, app_settings: AppSettings
 ) -> tuple[dict[str, Any] | None, str | None]:
     """`(config, error)` — a fresh SSH read of `opencanary.conf`, see
     `app.ssh.opencanary_config`'s module docstring for why this is never
@@ -2987,7 +2986,7 @@ async def _load_opencanary_config(
     try:
         async_result = tasks.read_honeypot_opencanary_config.delay(str(honeypot.id))
         result = await asyncio.to_thread(
-            async_result.get, timeout=settings.ssh_connect_timeout + 15
+            async_result.get, timeout=app_settings.ssh_connect_timeout + 15
         )
         if isinstance(result, dict):
             if result.get("ok"):
@@ -3026,7 +3025,7 @@ async def honeypot_config_tab(
     from a silent no-op. Confirmed live as a real "it does nothing" bug
     report."""
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    settings = get_settings()
+    app_settings = await get_or_create_app_settings(db)
 
     readonly_state: str | None = None
     opencanary_config: dict[str, Any] | None = None
@@ -3034,8 +3033,8 @@ async def honeypot_config_tab(
     if not honeypot.host_key_fingerprint:
         error = error or "Confirm the server's key fingerprint on the Overview tab first."
     else:
-        readonly_state, readonly_load_error = await _load_readonly_state(honeypot, settings)
-        opencanary_config, config_error = await _load_opencanary_config(honeypot, settings)
+        readonly_state, readonly_load_error = await _load_readonly_state(honeypot, app_settings)
+        opencanary_config, config_error = await _load_opencanary_config(honeypot, app_settings)
         error = error or readonly_load_error or config_error
 
     csrf_token, new_cookie = get_or_create_csrf_token(request)
@@ -3079,7 +3078,7 @@ async def save_honeypot_opencanary_config_endpoint(
     Never a partial save: reading and writing both happen in this one
     request, no separate "stage changes then apply" step."""
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    settings = get_settings()
+    app_settings = await get_or_create_app_settings(db)
 
     error: str | None = None
     saved = False
@@ -3088,7 +3087,7 @@ async def save_honeypot_opencanary_config_endpoint(
     if not honeypot.host_key_fingerprint:
         error = "Confirm the server's key fingerprint on the Overview tab first."
     else:
-        current_config, read_error = await _load_opencanary_config(honeypot, settings)
+        current_config, read_error = await _load_opencanary_config(honeypot, app_settings)
         if read_error or current_config is None:
             error = read_error or "Could not read the current config."
         else:
@@ -3100,7 +3099,7 @@ async def save_honeypot_opencanary_config_endpoint(
                     str(honeypot.id), updated_config
                 )
                 result = await asyncio.to_thread(
-                    async_result.get, timeout=settings.ssh_connect_timeout + 60
+                    async_result.get, timeout=app_settings.ssh_connect_timeout + 60
                 )
                 if isinstance(result, dict):
                     if result.get("ok"):
@@ -3119,10 +3118,10 @@ async def save_honeypot_opencanary_config_endpoint(
             except Exception as exc:  # noqa: BLE001 - reported, not swallowed
                 error = str(exc)
 
-        readonly_state, readonly_error = await _load_readonly_state(honeypot, settings)
+        readonly_state, readonly_error = await _load_readonly_state(honeypot, app_settings)
         error = error or readonly_error
         if opencanary_config is None:
-            opencanary_config, _ = await _load_opencanary_config(honeypot, settings)
+            opencanary_config, _ = await _load_opencanary_config(honeypot, app_settings)
 
     await log_event(
         db,
@@ -3174,7 +3173,7 @@ async def set_honeypot_readonly_endpoint(
     the Config tab, not a checkbox (there's nothing to check — each button
     is its own explicit, unambiguous action)."""
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    settings = get_settings()
+    app_settings = await get_or_create_app_settings(db)
     enable_bool = enable == "true"
 
     error: str | None = None
@@ -3184,7 +3183,7 @@ async def set_honeypot_readonly_endpoint(
         try:
             async_result = tasks.set_honeypot_readonly.delay(str(honeypot.id), enable=enable_bool)
             result = await asyncio.to_thread(
-                async_result.get, timeout=settings.ssh_connect_timeout + 30
+                async_result.get, timeout=app_settings.ssh_connect_timeout + 30
             )
             if isinstance(result, dict) and not result.get("ok"):
                 error = str(result.get("error") or "Unknown error.")

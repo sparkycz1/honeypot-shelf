@@ -158,25 +158,25 @@ visudo -cf /etc/sudoers.d/{{ honeypot.username }}</code></pre>
       <label for="reachability_check_interval_seconds">{{ t(request, 'honeypots.edit.reachability_interval') }}</label>
       <input type="number" id="reachability_check_interval_seconds"
         name="reachability_check_interval_seconds" min="1"
-        placeholder="{{ t(request, 'honeypots.edit.default_placeholder', value=global_settings.reachability_check_interval_seconds) }}"
+        placeholder="{{ t(request, 'honeypots.edit.default_placeholder', value=app_settings.reachability_check_interval_seconds) }}"
         value="{{ honeypot.reachability_check_interval_seconds or '' }}">
 
       <label for="facts_refresh_interval_seconds">{{ t(request, 'honeypots.edit.facts_interval') }}</label>
       <input type="number" id="facts_refresh_interval_seconds"
         name="facts_refresh_interval_seconds" min="1"
-        placeholder="{{ t(request, 'honeypots.edit.default_placeholder', value=global_settings.facts_refresh_interval_seconds) }}"
+        placeholder="{{ t(request, 'honeypots.edit.default_placeholder', value=app_settings.facts_refresh_interval_seconds) }}"
         value="{{ honeypot.facts_refresh_interval_seconds or '' }}">
 
       <label for="monitoring_interval_seconds">{{ t(request, 'honeypots.edit.monitoring_interval') }}</label>
       <input type="number" id="monitoring_interval_seconds"
         name="monitoring_interval_seconds" min="1"
-        placeholder="{{ t(request, 'honeypots.edit.default_placeholder', value=global_settings.monitoring_interval_seconds) }}"
+        placeholder="{{ t(request, 'honeypots.edit.default_placeholder', value=app_settings.monitoring_interval_seconds) }}"
         value="{{ honeypot.monitoring_interval_seconds or '' }}">
 
       <label for="opencanary_log_poll_interval_seconds">{{ t(request, 'honeypots.edit.canary_log_poll_interval') }}</label>
       <input type="number" id="opencanary_log_poll_interval_seconds"
         name="opencanary_log_poll_interval_seconds" min="1"
-        placeholder="{{ t(request, 'honeypots.edit.default_placeholder', value=global_settings.opencanary_log_poll_interval_seconds) }}"
+        placeholder="{{ t(request, 'honeypots.edit.default_placeholder', value=app_settings.opencanary_log_poll_interval_seconds) }}"
         value="{{ honeypot.opencanary_log_poll_interval_seconds or '' }}">
 
       <label for="monitoring_history_retention_days">{{ t(request, 'honeypots.edit.retention_days') }}</label>

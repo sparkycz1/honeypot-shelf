@@ -75,7 +75,7 @@ TLS terminator in front of it, always. Pick your fighter:
 | ⏱️ **Scheduling** | Cron any action against a honeypot/company/fleet — updates, power, custom commands, on-demand "force a sweep now" debug buttons |
 | 🏢 **Companies** | Each company's own page (users + honeypots), a per-company syslog target for that company's own alerts, plus the "All honeypots" virtual company and its own fleet-wide alert target |
 | 📚 **API docs** (`/api`) | Live Swagger UI over the full read/write REST API — everything the web UI can do, an API can too |
-| ⚙️ **Settings** | SSH key rotation, retention policies, LDAP/OIDC/syslog/SMTP integrations, VPN (NetBird or WireGuard) |
+| ⚙️ **Settings** | SSH key rotation, **Checks & retention** (background-check timeouts/intervals plus every retention policy, database-backed — no restart to change most of it), LDAP/OIDC/syslog/SMTP integrations, VPN (NetBird or WireGuard) |
 
 Want the granular, paragraph-by-paragraph feature list this page used to
 carry? That level of detail lives where it belongs — next to the *why*,

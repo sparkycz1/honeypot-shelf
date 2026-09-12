@@ -23,7 +23,9 @@ test suite and only bites a real Postgres deployment.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import sys
 from datetime import timedelta
 
 from celery import Celery
@@ -39,6 +41,83 @@ logger = logging.getLogger(__name__)
 
 settings = get_settings()
 configure_logging(settings.log_level)
+
+# Built-in fallback for the four interval settings below — used whenever
+# `_bootstrap_interval_settings` can't read `AppSettings` yet (any process
+# that isn't `celery ... beat` itself, or a `beat` process starting up
+# before `alembic upgrade head` has run against a brand new Postgres).
+# Matches `AppSettings`'s own column defaults (app/db/models/app_settings.py).
+# Ported from an identical debcontrol change.
+_INTERVAL_SETTING_DEFAULTS: dict[str, int] = {
+    "reachability_check_interval_seconds": 60,
+    "facts_refresh_interval_seconds": 600,
+    "monitoring_interval_seconds": 120,
+    "opencanary_log_poll_interval_seconds": 120,
+}
+
+
+def _bootstrap_interval_settings() -> dict[str, int]:
+    """One-time, synchronous-from-the-caller's-perspective read of the four
+    Beat-schedule intervals from `AppSettings`, for the `beat_schedule`
+    dict literal below — a Celery schedule has to be a plain value computed
+    once at import time, not something re-read from the database on every
+    tick, so this is the one place these settings are still read "once at
+    process start, restart to pick up a change," same as when they were
+    environment variables.
+
+    This module is imported identically by the web app, every Celery
+    worker, and Celery Beat (see `app.tasks.jobs`'s import of `celery_app`)
+    — but only Beat's own schedule actually depends on these four values,
+    so only the `celery ... beat` process pays for the database round trip
+    this needs; every other import (the web app, a worker, `alembic`, the
+    test suite collecting `app.main`) gets the built-in defaults
+    immediately with no I/O at all, matching this app's "tests never touch
+    a real Postgres" contract. Detected via `sys.argv` rather than a
+    dedicated environment variable, since that's already exactly how
+    Celery itself is told which role to run as.
+
+    Uses its own throwaway engine (`NullPool`, torn down again immediately)
+    rather than `app.db.session`'s module-level one: this runs via
+    `asyncio.run()` in the *parent* process before any worker child forks
+    (see `_init_worker_process`'s own docstring for why a pooled connection
+    and `asyncio.run()`'s own fresh event loop each call don't mix), and
+    before that module's own engine may even be usable here.
+
+    Falls back to `_INTERVAL_SETTING_DEFAULTS` — never raises — if the
+    database isn't reachable yet, so a fresh, not-yet-migrated instance's
+    `beat` container still starts instead of crash-looping; the real
+    configured values take effect on the next restart once the database is
+    up.
+
+    Ported from an identical debcontrol change.
+    """
+    if "beat" not in sys.argv:
+        return dict(_INTERVAL_SETTING_DEFAULTS)
+
+    async def _fetch() -> dict[str, int]:
+        from app.core.app_settings import get_or_create_app_settings
+
+        engine = create_async_engine(settings.database_url, poolclass=NullPool, echo=False)
+        try:
+            session_factory = async_sessionmaker(
+                bind=engine, expire_on_commit=False, autoflush=False
+            )
+            async with session_factory() as db:
+                app_settings = await get_or_create_app_settings(db)
+                return {key: getattr(app_settings, key) for key in _INTERVAL_SETTING_DEFAULTS}
+        finally:
+            await engine.dispose()
+
+    try:
+        return asyncio.run(_fetch())
+    except Exception:
+        logger.warning(
+            "Could not read background-check intervals from the database at startup "
+            "(using the built-in defaults until the next restart) — is the database "
+            "reachable and migrated yet?",
+            exc_info=True,
+        )
+        return dict(_INTERVAL_SETTING_DEFAULTS)
 
 celery_app = Celery(
     "honeyhive",
@@ -76,13 +155,15 @@ celery_app.conf.update(
     result_expires=3600,
 )
 
+_interval_settings = _bootstrap_interval_settings()
 celery_app.conf.beat_schedule = {
     # --- Fleet sweeps — each one only *enqueues* one task per due honeypot
     # (see each `_due_honeypots` caller in app/tasks/jobs.py); the actual
     # SSH round trips run on `worker`, fanned out. `timedelta`, not
-    # `crontab`: these cadences are configurable via `.env`
-    # (REACHABILITY_CHECK_INTERVAL_SECONDS etc.), and Beat only re-reads
-    # them at its own startup — see this file's own module docstring and
+    # `crontab`: these cadences are now DB-backed (`AppSettings` — Settings
+    # → Checks & retention), and Beat only re-reads them at its own
+    # startup, same "restart to pick up a change" contract they had as
+    # `.env` vars — see `_bootstrap_interval_settings` above and
     # docker-compose.yml's comment on the `beat` service.
     #
     # These nine entries (plus the per-minute Scheduling tick right below)
@@ -100,35 +181,37 @@ celery_app.conf.beat_schedule = {
     # alongside this fix, for the regression guard.
     "ping-all-honeypots": {
         "task": "app.tasks.jobs.ping_all_honeypots",
-        "schedule": timedelta(seconds=settings.reachability_check_interval_seconds),
+        "schedule": timedelta(seconds=_interval_settings["reachability_check_interval_seconds"]),
     },
     "refresh-all-honeypot-facts": {
         "task": "app.tasks.jobs.refresh_all_honeypot_facts",
-        "schedule": timedelta(seconds=settings.facts_refresh_interval_seconds),
+        "schedule": timedelta(seconds=_interval_settings["facts_refresh_interval_seconds"]),
     },
     "refresh-all-honeypot-packages": {
         "task": "app.tasks.jobs.refresh_all_honeypot_packages",
-        "schedule": timedelta(seconds=settings.facts_refresh_interval_seconds),
+        "schedule": timedelta(seconds=_interval_settings["facts_refresh_interval_seconds"]),
     },
     "refresh-all-honeypot-services": {
         "task": "app.tasks.jobs.refresh_all_honeypot_services",
-        "schedule": timedelta(seconds=settings.facts_refresh_interval_seconds),
+        "schedule": timedelta(seconds=_interval_settings["facts_refresh_interval_seconds"]),
     },
     "refresh-all-honeypot-readiness": {
         "task": "app.tasks.jobs.refresh_all_honeypot_readiness",
-        "schedule": timedelta(seconds=settings.facts_refresh_interval_seconds),
+        "schedule": timedelta(seconds=_interval_settings["facts_refresh_interval_seconds"]),
     },
     "check-all-honeypot-updates": {
         "task": "app.tasks.jobs.check_all_honeypot_updates",
-        "schedule": timedelta(seconds=settings.facts_refresh_interval_seconds),
+        "schedule": timedelta(seconds=_interval_settings["facts_refresh_interval_seconds"]),
     },
     "monitor-all-honeypots": {
         "task": "app.tasks.jobs.monitor_all_honeypots",
-        "schedule": timedelta(seconds=settings.monitoring_interval_seconds),
+        "schedule": timedelta(seconds=_interval_settings["monitoring_interval_seconds"]),
     },
     "poll-all-honeypot-canary-logs": {
         "task": "app.tasks.jobs.poll_all_honeypot_canary_logs",
-        "schedule": timedelta(seconds=settings.opencanary_log_poll_interval_seconds),
+        "schedule": timedelta(
+            seconds=_interval_settings["opencanary_log_poll_interval_seconds"]
+        ),
     },
     # Cron expressions are minute-grained anyway, so a fixed per-minute
     # tick needs no new setting of its own — see

@@ -38,7 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.audit import log_event
 from app.auth.sessions import SESSION_COOKIE_NAME, get_valid_session
 from app.auth.ssh_keys import parse_ssh_public_keys
-from app.core.config import get_settings
+from app.core.app_settings import get_or_create_app_settings
 from app.core.security import decrypt_secret
 from app.db.models.audit_log import AuditOutcome
 from app.db.models.honeypot import AuthMethod, Honeypot
@@ -253,8 +253,9 @@ async def initialize_websocket(websocket: WebSocket, run_id: str) -> None:
 
     await websocket.accept()
 
-    settings = get_settings()
     db_session_factory = websocket.app.state.db_session_factory
+    async with db_session_factory() as db:
+        app_settings = await get_or_create_app_settings(db)
 
     error: str | None = None
     fingerprint: str | None = None
@@ -267,7 +268,7 @@ async def initialize_websocket(websocket: WebSocket, run_id: str) -> None:
         await websocket.send_text(json.dumps({"kind": "step", "label": "Connecting"}))
         try:
             fingerprint = await discover_host_key_fingerprint(
-                run.ip_address, run.port, settings.ssh_connect_timeout
+                run.ip_address, run.port, app_settings.ssh_connect_timeout
             )
         except SSHConnectionError as exc:
             error = str(exc)
@@ -332,7 +333,7 @@ async def initialize_websocket(websocket: WebSocket, run_id: str) -> None:
 
         try:
             conn, process = await open_process_session(
-                device, secret, script, settings.ssh_connect_timeout
+                device, secret, script, app_settings.ssh_connect_timeout
             )
         except SSHConnectionError as exc:
             error = str(exc)

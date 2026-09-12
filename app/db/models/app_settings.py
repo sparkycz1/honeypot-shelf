@@ -76,6 +76,65 @@ class AppSettings(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
+    # --- Background checks (moved here from environment variables per
+    # explicit instruction — was `app.core.config.Settings`, needing a
+    # restart to change; ported from an identical debcontrol change).
+    # Defaults match the old env-var defaults, so an upgrading instance
+    # behaves identically until an admin changes one from the new
+    # Settings → Checks & retention tab. ---
+    #
+    # How long (seconds) a single SSH connection attempt is given before
+    # giving up (app.ssh.connection). Read fresh from this table at the top
+    # of every Celery task body that opens an SSH connection (app.tasks.
+    # jobs), so a change here takes effect on the very next scheduled check
+    # or "run now" click — no restart needed. (Celery's own hard per-task
+    # time limit, a process-safety kill switch rather than this
+    # operator-facing timeout, is a separate fixed constant — see
+    # `app.tasks.jobs._SSH_TASK_TIME_LIMIT_SECONDS`.)
+    ssh_connect_timeout: Mapped[int] = mapped_column(Integer, default=10, nullable=False)
+    # Max wall-clock time given to one apt/flatpak/snap update run — distinct
+    # from ssh_connect_timeout, which only bounds establishing the
+    # connection itself. Same "read fresh, no restart" contract; see
+    # `app.tasks.jobs._UPDATE_TASK_TIME_LIMIT_SECONDS` for the matching
+    # fixed Celery task time limit.
+    update_timeout_seconds: Mapped[int] = mapped_column(Integer, default=1800, nullable=False)
+    # How often (seconds) Celery Beat schedules a refresh of OS/kernel/CPU/
+    # RAM/disk facts (and installed packages, and update availability) for
+    # every honeypot with a pinned host key. Beat re-reads this only at its
+    # own process start (see app.tasks.celery_app) — same "restart to pick
+    # up a change" contract this had back when it was
+    # FACTS_REFRESH_INTERVAL_SECONDS in .env.
+    facts_refresh_interval_seconds: Mapped[int] = mapped_column(
+        Integer, default=600, nullable=False
+    )
+    # How often (seconds) the "is it alive" status badge's reachability
+    # sweep (a plain TCP connect, no authentication) runs for every
+    # honeypot. Same Beat-restart caveat as above.
+    reachability_check_interval_seconds: Mapped[int] = mapped_column(
+        Integer, default=60, nullable=False
+    )
+    # How many honeypots the reachability sweep checks concurrently — a
+    # semaphore, not a thread/process count. Read fresh on every sweep
+    # (app.tasks.jobs.ping_all_honeypots), so this one *does* take effect
+    # immediately, unlike the interval fields.
+    reachability_check_concurrency: Mapped[int] = mapped_column(
+        Integer, default=20, nullable=False
+    )
+    # How often (seconds) the Monitoring tab's CPU/RAM/disk-usage sample is
+    # taken for every honeypot. Same Beat-restart caveat as the intervals
+    # above.
+    monitoring_interval_seconds: Mapped[int] = mapped_column(
+        Integer, default=120, nullable=False
+    )
+    # How often (seconds) this app SSH-polls every honeypot's own OpenCanary
+    # log for new alerts (app.ssh.canary_activity) — the only way an event
+    # is ingested (see app.services.honeypot_events). Same Beat-restart
+    # caveat; overridable per honeypot regardless
+    # (Honeypot.opencanary_log_poll_interval_seconds).
+    opencanary_log_poll_interval_seconds: Mapped[int] = mapped_column(
+        Integer, default=120, nullable=False
+    )
+
     # How many days of audit_log_entries to keep before the daily purge job
     # (app.tasks.jobs.purge_old_audit_log_entries) deletes them. Defaults to
     # 90 (explicit product decision, matching every other retention setting

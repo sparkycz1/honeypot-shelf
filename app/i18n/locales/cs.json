@@ -1173,6 +1173,27 @@
     "users.new.password_label": "Heslo (jen lokální účty)",
     "users.new.scope_hint": "Uživatel bez role superadmina vždy patří přesně k jedné firmě, s buď jen čtecím, nebo čtecím a zápisovým přístupem k jejím honeypotům — nic mezi tím a nic sdíleného mezi firmami. Auditní log a Nastavení nejsou pro uživatele bez role superadmina nikdy dostupné.",
     "users.new.title": "Přidat uživatele",
-    "users.new.username_hint": "Malá písmena, číslice, „.“, „_“, „-“. Toto je zároveň uživatelské jméno pro LDAP a identita pro OIDC, pokud se používají."
+    "users.new.username_hint": "Malá písmena, číslice, „.“, „_“, „-“. Toto je zároveň uživatelské jméno pro LDAP a identita pro OIDC, pokud se používají.",
+    "settings.tabs.checks": "Kontroly a uchovávání",
+    "settings.checks.background_checks.heading": "Pozadí kontrol",
+    "settings.checks.background_checks.hint": "Jak často každý sweep běží, jak dlouho může trvat SSH připojení/aktualizace a kolik honeypotů kontrola dostupnosti prověřuje najednou. Každý sweep běží jen pro honeypot s potvrzeným otiskem klíče a spouští se jen pokud běží Celery Beat (služba `beat`) — úplný seznam naplánovaných úloh je v Architecture na wiki.",
+    "settings.checks.background_checks.ssh_connect_timeout_label": "Časový limit SSH připojení (sekundy)",
+    "settings.checks.background_checks.ssh_connect_timeout_hint": "Jak dlouho se čeká na navázání SSH spojení, než se to vzdá. Projeví se hned při další kontrole — restart není potřeba.",
+    "settings.checks.background_checks.update_timeout_label": "Časový limit aktualizace (sekundy)",
+    "settings.checks.background_checks.update_timeout_hint": "Maximální čas pro jeden celý běh apt/flatpak/snap aktualizace. Projeví se hned při dalším běhu — restart není potřeba.",
+    "settings.checks.background_checks.reachability_interval_label": "Interval kontroly dostupnosti (sekundy)",
+    "settings.checks.background_checks.reachability_interval_hint": "Jak často běží kontrola dostupnosti (jen TCP spojení, bez autentizace) pro každý honeypot. Projeví se při dalším restartu služby `beat`.",
+    "settings.checks.background_checks.reachability_concurrency_label": "Souběžnost kontroly dostupnosti",
+    "settings.checks.background_checks.reachability_concurrency_hint": "Kolik honeypotů kontrola dostupnosti prověřuje najednou. Projeví se hned při dalším sweepu — restart není potřeba.",
+    "settings.checks.background_checks.facts_refresh_label": "Interval obnovy faktů (sekundy)",
+    "settings.checks.background_checks.facts_refresh_hint": "Jak často se pro každý honeypot obnovují fakta o OS/jádru/CPU/RAM/discích, nainstalované balíčky, služby, připravenost a dostupné aktualizace. Projeví se při dalším restartu služby `beat`.",
+    "settings.checks.background_checks.monitoring_interval_label": "Interval monitorovacího vzorku (sekundy)",
+    "settings.checks.background_checks.monitoring_interval_hint": "Jak často se pro každý honeypot bere vzorek CPU/RAM/disku na záložce Monitoring (lze přepsat pro jednotlivý honeypot). Projeví se při dalším restartu služby `beat`.",
+    "settings.checks.background_checks.opencanary_poll_label": "Interval čtení logu OpenCanary (sekundy)",
+    "settings.checks.background_checks.opencanary_poll_hint": "Jak často se aplikace přes SSH připojuje a čte nové záznamy z vlastního logu OpenCanary pro každý honeypot (lze přepsat pro jednotlivý honeypot). Projeví se při dalším restartu služby `beat`.",
+    "settings.checks.background_checks.restart_hint": "Oba časové limity a limit souběžnosti výše se projeví okamžitě. Čtyři intervaly se projeví až při dalším restartu služeb `worker`/`beat` — stejně jako když byly nastavené v `.env`.",
+    "settings.security.audit_log.retention_heading": "Uchovávání auditního logu",
+    "settings.security.audit_log.retention_moved_hint": "Uchovávání těchto záznamů se nastavuje v sekci",
+    "settings.security.monitoring_history.hint": "Vzorek CPU/RAM/disku se pro každý honeypot ukládá v kadenci záložky Monitoring (nastavitelné výše, v Pozadí kontrol) — toto nastavení určuje jen to, jak dlouho se vzorky uchovávají, ne jak často se berou. Jednotlivý honeypot může tuto výchozí hodnotu pro celou instanci přepsat na vlastní záložce Nastavení."
   }
 }

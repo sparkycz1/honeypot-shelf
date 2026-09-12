@@ -333,9 +333,10 @@ user), state.
 ### How events arrive: an SSH poll, nothing pushed
 
 OpenCanary has no built-in "POST to a URL" — it only logs locally. Every
-`OPENCANARY_LOG_POLL_INTERVAL_SECONDS` (default 120), this app connects
-over SSH and reads whatever's new in that log, incrementally by byte
-offset, and turns each new alert line into a `HoneypotEvent` row
+`AppSettings.opencanary_log_poll_interval_seconds` (Settings → Checks &
+retention, default 120), this app connects over SSH and reads whatever's
+new in that log, incrementally by byte offset, and turns each new alert
+line into a `HoneypotEvent` row
 (`source="ssh_poll"`) — no setup needed on the honeypot side beyond a
 pinned host key. Backs the **Activity** tab: an aggregated by-type trend
 chart plus a recent-alerts list.
@@ -395,6 +396,51 @@ equivalents are untouched.)
 connection details. Deliberately config-only for now — nothing calls
 into `app.services.smtp` yet, and no notification feature exists to
 trigger a send.
+
+### Settings → Checks & retention: database-backed, not `.env`
+
+`ssh_connect_timeout`, `update_timeout_seconds`,
+`facts_refresh_interval_seconds`, `reachability_check_interval_seconds`,
+`reachability_check_concurrency`, `monitoring_interval_seconds`, and
+`opencanary_log_poll_interval_seconds` used to be `app.core.config.Settings`
+fields (env vars, restart to change) — moved to `AppSettings` (a new
+Settings → **Checks & retention** tab), alongside the four retention-day
+settings that used to live on the Security tab. Ported from an identical
+debcontrol change.
+
+Two different "how fast does a change take effect" contracts coexist here,
+same as debcontrol's own version of this:
+
+- **The two timeouts and the concurrency cap take effect immediately.**
+  Every Celery task/web route that uses them reads fresh from the database
+  on each call (`app_settings = await get_or_create_app_settings(db)`), so
+  a change applies to the very next check.
+- **The four interval settings still only take effect on the next
+  `worker`/`beat` restart** — a Celery `beat_schedule` entry's `schedule`
+  is a plain value computed once at import time, not something re-read per
+  tick, so `app.tasks.celery_app._bootstrap_interval_settings()` does a
+  one-time, synchronous-from-the-caller's-perspective read of these four at
+  process start, using a throwaway `NullPool` engine + `asyncio.run()`
+  (this runs in the parent process before any worker child forks) — and
+  only for the literal `celery ... beat` process (detected via `"beat" not
+  in sys.argv`, the same way Celery itself knows its own role); every
+  other import (the web app, a worker, the test suite collecting
+  `app.main`) gets hardcoded fallback defaults immediately, no I/O at all.
+  Never raises — falls back to the defaults, logging a warning, if the
+  database isn't reachable/migrated yet, so a fresh `beat` container still
+  starts. Same "restart to pick up a change" contract these four had as
+  `.env` values, just now sourced from the database.
+
+A `@celery_app.task(..., time_limit=...)` decorator argument has the same
+"evaluated once at import time" problem as the interval settings above —
+it can't read a now-database-configurable timeout at all, at any point.
+`app.tasks.jobs._SSH_TASK_TIME_LIMIT_SECONDS` (600s) and
+`_UPDATE_TASK_TIME_LIMIT_SECONDS` (4.5h) are fixed constants instead — a
+Celery process-safety kill switch, deliberately distinct from (and sized
+comfortably above) the operator-facing `ssh_connect_timeout`/
+`update_timeout_seconds` values the Settings form actually validates to
+(1–300s and 60–14400s respectively) — a task is only ever killed by this
+limit if something has gone genuinely wrong.
 
 ### Alert type labels are localized
 

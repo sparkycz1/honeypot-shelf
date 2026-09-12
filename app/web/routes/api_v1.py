@@ -64,7 +64,7 @@ from app.auth.scope import (
     honeypots_visible_to,
     visible_honeypots_by_ids,
 )
-from app.core.config import get_settings
+from app.core.app_settings import get_or_create_app_settings
 from app.core.security import encrypt_secret
 from app.db.models.audit_log import AuditOutcome
 from app.db.models.company import Company
@@ -650,14 +650,14 @@ async def test_connection_api(
     user: User = Depends(get_api_token_user),
 ) -> dict[str, object]:
     honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
-    settings = get_settings()
+    app_settings = await get_or_create_app_settings(db)
 
     async_result = tasks.test_honeypot_connection.delay(str(honeypot.id))
     result: dict[str, object] | None = None
     error: str | None = None
     try:
         result = await asyncio.to_thread(
-            async_result.get, timeout=settings.ssh_connect_timeout + 5
+            async_result.get, timeout=app_settings.ssh_connect_timeout + 5
         )
     except CeleryTimeoutError:
         error = "The background job did not respond in time."
@@ -686,7 +686,7 @@ async def discover_host_key_api(
     user: User = Depends(get_api_token_user),
 ) -> dict[str, object]:
     honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
-    settings = get_settings()
+    app_settings = await get_or_create_app_settings(db)
 
     fingerprint: str | None = None
     error: str | None = None
@@ -695,7 +695,7 @@ async def discover_host_key_api(
     else:
         try:
             fingerprint = await discover_host_key_fingerprint(
-                honeypot.ip_address, honeypot.port, settings.ssh_connect_timeout
+                honeypot.ip_address, honeypot.port, app_settings.ssh_connect_timeout
             )
         except SSHConnectionError as exc:
             error = str(exc)
@@ -760,13 +760,13 @@ async def refresh_facts_api(
     user: User = Depends(get_api_token_user),
 ) -> dict[str, object]:
     honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
-    settings = get_settings()
+    app_settings = await get_or_create_app_settings(db)
 
     async_result = tasks.refresh_honeypot_facts.delay(str(honeypot.id))
     error: str | None = None
     try:
         result = await asyncio.to_thread(
-            async_result.get, timeout=settings.ssh_connect_timeout + 5
+            async_result.get, timeout=app_settings.ssh_connect_timeout + 5
         )
         if isinstance(result, dict) and not result.get("ok"):
             error = str(result.get("error") or "Unknown error.")
@@ -800,13 +800,13 @@ async def refresh_packages_api(
     user: User = Depends(get_api_token_user),
 ) -> dict[str, object]:
     honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
-    settings = get_settings()
+    app_settings = await get_or_create_app_settings(db)
 
     async_result = tasks.refresh_honeypot_packages.delay(str(honeypot.id))
     error: str | None = None
     try:
         result = await asyncio.to_thread(
-            async_result.get, timeout=settings.ssh_connect_timeout + 15
+            async_result.get, timeout=app_settings.ssh_connect_timeout + 15
         )
         if isinstance(result, dict) and not result.get("ok"):
             error = str(result.get("error") or "Unknown error.")
@@ -837,13 +837,13 @@ async def refresh_services_api(
     user: User = Depends(get_api_token_user),
 ) -> dict[str, object]:
     honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
-    settings = get_settings()
+    app_settings = await get_or_create_app_settings(db)
 
     async_result = tasks.refresh_honeypot_services.delay(str(honeypot.id))
     error: str | None = None
     try:
         result = await asyncio.to_thread(
-            async_result.get, timeout=settings.ssh_connect_timeout + 15
+            async_result.get, timeout=app_settings.ssh_connect_timeout + 15
         )
         if isinstance(result, dict) and not result.get("ok"):
             error = str(result.get("error") or "Unknown error.")
@@ -877,14 +877,14 @@ async def run_onboarding_api(
     honeypot record. See this module's docstring for why the "Fix it"
     variant that submits a fresh one-time credential is not exposed here."""
     honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
-    settings = get_settings()
+    app_settings = await get_or_create_app_settings(db)
 
     async_result = tasks.run_honeypot_onboarding.delay(str(honeypot.id))
     error: str | None = None
     output: str | None = None
     try:
         result = await asyncio.to_thread(
-            async_result.get, timeout=settings.ssh_connect_timeout + 120
+            async_result.get, timeout=app_settings.ssh_connect_timeout + 120
         )
         if isinstance(result, dict):
             if result.get("ok"):
@@ -926,13 +926,13 @@ async def fix_readiness_directly_api(
     already on file, same as `run_onboarding_api` above, so it's exposed
     here for the same reason that one is."""
     honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
-    settings = get_settings()
+    app_settings = await get_or_create_app_settings(db)
 
     async_result = tasks.fix_root_readiness.delay(str(honeypot.id))
     error: str | None = None
     try:
         result = await asyncio.to_thread(
-            async_result.get, timeout=settings.ssh_connect_timeout + 60
+            async_result.get, timeout=app_settings.ssh_connect_timeout + 60
         )
         if isinstance(result, dict) and not result.get("ok"):
             error = str(result.get("error") or "Unknown error.")
@@ -963,11 +963,11 @@ async def recheck_readiness_api(
     user: User = Depends(get_api_token_user),
 ) -> dict[str, object]:
     honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
-    settings = get_settings()
+    app_settings = await get_or_create_app_settings(db)
 
     async_result = tasks.check_honeypot_readiness.delay(str(honeypot.id))
     with contextlib.suppress(Exception):
-        await asyncio.to_thread(async_result.get, timeout=settings.ssh_connect_timeout + 15)
+        await asyncio.to_thread(async_result.get, timeout=app_settings.ssh_connect_timeout + 15)
     return {"ok": True}
 
 
@@ -988,7 +988,7 @@ async def honeypot_logs_api(
     `ACTION_TERMINAL`, same as the web route, not `HONEYPOT_VIEW` — see
     `app.ssh.logs`'s module docstring for why. Never stored anywhere."""
     honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
-    settings = get_settings()
+    app_settings = await get_or_create_app_settings(db)
 
     if not honeypot.host_key_fingerprint:
         raise HTTPException(
@@ -1009,7 +1009,7 @@ async def honeypot_logs_api(
                 str(honeypot.id), lines=clamped_lines, search=search, since=since, until=until
             )
         result = await asyncio.to_thread(
-            async_result.get, timeout=settings.ssh_connect_timeout + 15
+            async_result.get, timeout=app_settings.ssh_connect_timeout + 15
         )
         if isinstance(result, dict):
             if result.get("ok"):
@@ -1221,13 +1221,13 @@ async def preview_honeypot_update_api(
         )
 
     async_result = preview_honeypot_update.delay(str(honeypot.id), strategy.value)
-    settings = get_settings()
+    app_settings = await get_or_create_app_settings(db)
     try:
         # `AsyncResult.get()` is a blocking, synchronous call — off the event
         # loop it goes, or it would stall every other in-flight request for
         # as long as this preview takes.
         result = await asyncio.to_thread(
-            async_result.get, timeout=settings.update_timeout_seconds + 5
+            async_result.get, timeout=app_settings.update_timeout_seconds + 5
         )
     except CeleryTimeoutError as exc:
         raise HTTPException(

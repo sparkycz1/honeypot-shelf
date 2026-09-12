@@ -15,7 +15,7 @@
   <p class="hint">
     {{ t(request, "honeypots.activity.hint") }}
     {{ t(request, "honeypots.activity.every") }}
-    {{ honeypot.opencanary_log_poll_interval_seconds or global_settings.opencanary_log_poll_interval_seconds }}
+    {{ honeypot.opencanary_log_poll_interval_seconds or app_settings.opencanary_log_poll_interval_seconds }}
     {{ t(request, "honeypots.activity.seconds") }}.
   </p>
 

@@ -119,13 +119,27 @@ _PROGRESS_COMMIT_INTERVAL_SECONDS = 2.0
 # connect timeout.
 _SSH_COMMAND_EXTRA_SECONDS = 60
 
+# Celery's own hard per-task time limit (a process-safety kill switch, not
+# the operator-facing timeout an SSH/update task actually uses — that one
+# is `AppSettings.ssh_connect_timeout`/`update_timeout_seconds`, read fresh
+# from the database inside each task body below). A `@celery_app.task(...)`
+# decorator argument is evaluated once at import time, so it can't read a
+# now-database-configurable value the way the task's own body can — these
+# two fixed constants are sized comfortably above the maximum either
+# setting can validate to from Settings → Checks & retention (300s for the
+# SSH timeout, 4h/14400s for the update timeout), so a task is only ever
+# killed by this limit if something has gone genuinely wrong, never because
+# an operator configured a long-but-legitimate timeout. Ported from an
+# identical debcontrol change.
+_SSH_TASK_TIME_LIMIT_SECONDS = 600
+_UPDATE_TASK_TIME_LIMIT_SECONDS = 4 * 60 * 60 + 600
+
 
 async def _test_honeypot_connection(honeypot_id: str) -> dict[str, Any]:
     """Full SSH connection test for the "Test connection" button: connect
     (with strict pinned host-key verification) and run `uname -a`."""
-    settings = get_settings()
-
     async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
         honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
         if honeypot is None:
             return {"ok": False, "error": "Honeypot not found."}
@@ -133,7 +147,7 @@ async def _test_honeypot_connection(honeypot_id: str) -> dict[str, Any]:
         secret = await resolve_honeypot_credential(honeypot, session)
 
         try:
-            output = await test_connection(honeypot, secret, settings.ssh_connect_timeout)
+            output = await test_connection(honeypot, secret, app_settings.ssh_connect_timeout)
         except SSHConnectionError as exc:
             logger.warning("test_honeypot_connection failed for %s: %s", honeypot.name, exc)
             return {"ok": False, "error": str(exc)}
@@ -168,9 +182,8 @@ async def _run_remote_ssh_command(honeypot_id: str, command: str) -> dict[str, A
       "authorized when set up, then runs unattended" shape
       `reboot`/`shutdown`/`system_update` scheduled actions already have.
     """
-    settings = get_settings()
-
     async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
         honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
         if honeypot is None:
             return {"ok": False, "error": "Honeypot not found."}
@@ -184,8 +197,8 @@ async def _run_remote_ssh_command(honeypot_id: str, command: str) -> dict[str, A
                 honeypot,
                 secret,
                 command,
-                settings.ssh_connect_timeout,
-                settings.ssh_connect_timeout + _SSH_COMMAND_EXTRA_SECONDS,
+                app_settings.ssh_connect_timeout,
+                app_settings.ssh_connect_timeout + _SSH_COMMAND_EXTRA_SECONDS,
             )
         except SSHConnectionError as exc:
             logger.warning("run_remote_ssh_command failed for %s: %s", honeypot.name, exc)
@@ -205,7 +218,7 @@ async def _run_remote_ssh_command(honeypot_id: str, command: str) -> dict[str, A
     # an ad-hoc command isn't expected to run for half an hour, and a
     # runaway one shouldn't tie up a worker child as if it were a
     # dist-upgrade. Long enough to connect plus a minute of work.
-    time_limit=get_settings().ssh_connect_timeout + _SSH_COMMAND_EXTRA_SECONDS + 10,
+    time_limit=_SSH_TASK_TIME_LIMIT_SECONDS,
 )
 def run_remote_ssh_command(honeypot_id: str, command: str) -> dict[str, Any]:
     return asyncio.run(_run_remote_ssh_command(honeypot_id, command))
@@ -217,9 +230,8 @@ async def _view_honeypot_journal(
     """The Logs tab's default view — no persistence, a fresh read-only SSH
     round trip every time (see `app.ssh.logs`'s module docstring for the
     permission-tier reasoning)."""
-    settings = get_settings()
-
     async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
         honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
         if honeypot is None:
             return {"ok": False, "error": "Honeypot not found."}
@@ -232,7 +244,7 @@ async def _view_honeypot_journal(
             output = await view_journal(
                 honeypot,
                 secret,
-                settings.ssh_connect_timeout,
+                app_settings.ssh_connect_timeout,
                 lines=lines,
                 search=search,
                 since=since,
@@ -247,7 +259,7 @@ async def _view_honeypot_journal(
 
 @celery_app.task(
     name="app.tasks.jobs.view_honeypot_journal",
-    time_limit=get_settings().ssh_connect_timeout + _SSH_COMMAND_EXTRA_SECONDS,
+    time_limit=_SSH_TASK_TIME_LIMIT_SECONDS,
 )
 def view_honeypot_journal(
     honeypot_id: str, *, lines: int, search: str, since: str, until: str
@@ -263,9 +275,8 @@ async def _view_honeypot_log_file(
     """The Logs tab's "view a file" mode — restricted to `LOG_FILE_ALLOWED_
     PATHS`, checked inside `view_file` itself (never reaches the honeypot at
     all for a disallowed path)."""
-    settings = get_settings()
-
     async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
         honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
         if honeypot is None:
             return {"ok": False, "error": "Honeypot not found."}
@@ -278,7 +289,7 @@ async def _view_honeypot_log_file(
             output = await view_file(
                 honeypot,
                 secret,
-                settings.ssh_connect_timeout,
+                app_settings.ssh_connect_timeout,
                 path=path,
                 lines=lines,
                 search=search,
@@ -294,7 +305,7 @@ async def _view_honeypot_log_file(
 
 @celery_app.task(
     name="app.tasks.jobs.view_honeypot_log_file",
-    time_limit=get_settings().ssh_connect_timeout + _SSH_COMMAND_EXTRA_SECONDS,
+    time_limit=_SSH_TASK_TIME_LIMIT_SECONDS,
 )
 def view_honeypot_log_file(
     honeypot_id: str, *, path: str, lines: int, search: str
@@ -306,9 +317,8 @@ async def _list_honeypot_log_directory(honeypot_id: str, *, path: str) -> dict[s
     """The Logs tab's "browse" picker — one `ls` round trip, same
     permission tier and `LOG_FILE_ALLOWED_PATHS` restriction as viewing a
     file itself (see `app.ssh.logs.list_directory`)."""
-    settings = get_settings()
-
     async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
         honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
         if honeypot is None:
             return {"ok": False, "error": "Honeypot not found."}
@@ -319,7 +329,7 @@ async def _list_honeypot_log_directory(honeypot_id: str, *, path: str) -> dict[s
 
         try:
             entries = await list_directory(
-                honeypot, secret, settings.ssh_connect_timeout, path=path
+                honeypot, secret, app_settings.ssh_connect_timeout, path=path
             )
         except LogAccessError as exc:
             return {"ok": False, "error": str(exc)}
@@ -332,7 +342,7 @@ async def _list_honeypot_log_directory(honeypot_id: str, *, path: str) -> dict[s
 
 @celery_app.task(
     name="app.tasks.jobs.list_honeypot_log_directory",
-    time_limit=get_settings().ssh_connect_timeout + _SSH_COMMAND_EXTRA_SECONDS,
+    time_limit=_SSH_TASK_TIME_LIMIT_SECONDS,
 )
 def list_honeypot_log_directory(honeypot_id: str, *, path: str) -> dict[str, Any]:
     return asyncio.run(_list_honeypot_log_directory(honeypot_id, path=path))
@@ -342,9 +352,8 @@ async def _check_honeypot_readonly_status(honeypot_id: str) -> dict[str, Any]:
     """The Honeypot Status tab's own load — see `app.ssh.readonly` for what
     "enabled"/"disabled" mean and why this reflects the currently *booted*
     state, not a pending-until-reboot toggle."""
-    settings = get_settings()
-
     async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
         honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
         if honeypot is None:
             return {"ok": False, "error": "Honeypot not found."}
@@ -354,7 +363,7 @@ async def _check_honeypot_readonly_status(honeypot_id: str) -> dict[str, Any]:
         secret = await resolve_honeypot_credential(honeypot, session)
 
         try:
-            state = await check_readonly_status(honeypot, secret, settings.ssh_connect_timeout)
+            state = await check_readonly_status(honeypot, secret, app_settings.ssh_connect_timeout)
         except SSHConnectionError as exc:
             logger.warning("check_honeypot_readonly_status failed for %s: %s", honeypot.name, exc)
             return {"ok": False, "error": str(exc)}
@@ -364,7 +373,7 @@ async def _check_honeypot_readonly_status(honeypot_id: str) -> dict[str, Any]:
 
 @celery_app.task(
     name="app.tasks.jobs.check_honeypot_readonly_status",
-    time_limit=get_settings().ssh_connect_timeout + _SSH_COMMAND_EXTRA_SECONDS,
+    time_limit=_SSH_TASK_TIME_LIMIT_SECONDS,
 )
 def check_honeypot_readonly_status(honeypot_id: str) -> dict[str, Any]:
     return asyncio.run(_check_honeypot_readonly_status(honeypot_id))
@@ -391,7 +400,7 @@ async def _set_honeypot_readonly(honeypot_id: str, *, enable: bool) -> dict[str,
 
 @celery_app.task(
     name="app.tasks.jobs.set_honeypot_readonly",
-    time_limit=get_settings().ssh_connect_timeout + _SSH_COMMAND_EXTRA_SECONDS,
+    time_limit=_SSH_TASK_TIME_LIMIT_SECONDS,
 )
 def set_honeypot_readonly(honeypot_id: str, *, enable: bool) -> dict[str, Any]:
     return asyncio.run(_set_honeypot_readonly(honeypot_id, enable=enable))
@@ -401,9 +410,8 @@ async def _read_honeypot_opencanary_config(honeypot_id: str) -> dict[str, Any]:
     """The Honeypot Config tab's module editor — a fresh `cat` of
     `opencanary.conf` on every load, see `app.ssh.opencanary_config`'s
     module docstring for why this is never cached in HoneyHive's own DB."""
-    settings = get_settings()
-
     async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
         honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
         if honeypot is None:
             return {"ok": False, "error": "Honeypot not found."}
@@ -414,12 +422,12 @@ async def _read_honeypot_opencanary_config(honeypot_id: str) -> dict[str, Any]:
 
         try:
             async with await open_connection(
-                honeypot, secret, settings.ssh_connect_timeout
+                honeypot, secret, app_settings.ssh_connect_timeout
             ) as conn:
                 result = await conn.run(
                     opencanary_build_read_command(),
                     check=False,
-                    timeout=settings.ssh_connect_timeout,
+                    timeout=app_settings.ssh_connect_timeout,
                 )
         except (SSHConnectionError, OSError) as exc:
             logger.warning(
@@ -445,7 +453,7 @@ async def _read_honeypot_opencanary_config(honeypot_id: str) -> dict[str, Any]:
 
 @celery_app.task(
     name="app.tasks.jobs.read_honeypot_opencanary_config",
-    time_limit=get_settings().ssh_connect_timeout + _SSH_COMMAND_EXTRA_SECONDS,
+    time_limit=_SSH_TASK_TIME_LIMIT_SECONDS,
 )
 def read_honeypot_opencanary_config(honeypot_id: str) -> dict[str, Any]:
     return asyncio.run(_read_honeypot_opencanary_config(honeypot_id))
@@ -457,9 +465,8 @@ def read_honeypot_opencanary_config(honeypot_id: str) -> dict[str, Any]:
 async def _write_honeypot_opencanary_config(
     honeypot_id: str, config: dict[str, Any]
 ) -> dict[str, Any]:
-    settings = get_settings()
-
     async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
         honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
         if honeypot is None:
             return {"ok": False, "error": "Honeypot not found."}
@@ -471,12 +478,12 @@ async def _write_honeypot_opencanary_config(
 
         try:
             async with await open_connection(
-                honeypot, secret, settings.ssh_connect_timeout
+                honeypot, secret, app_settings.ssh_connect_timeout
             ) as conn:
                 result = await conn.run(
                     command,
                     check=False,
-                    timeout=settings.ssh_connect_timeout + _SSH_COMMAND_EXTRA_SECONDS,
+                    timeout=app_settings.ssh_connect_timeout + _SSH_COMMAND_EXTRA_SECONDS,
                     stderr=asyncssh.STDOUT,
                 )
         except (SSHConnectionError, OSError) as exc:
@@ -499,7 +506,7 @@ async def _write_honeypot_opencanary_config(
 
 @celery_app.task(
     name="app.tasks.jobs.write_honeypot_opencanary_config",
-    time_limit=get_settings().ssh_connect_timeout + 2 * _SSH_COMMAND_EXTRA_SECONDS,
+    time_limit=_SSH_TASK_TIME_LIMIT_SECONDS,
 )
 def write_honeypot_opencanary_config(honeypot_id: str, config: dict[str, Any]) -> dict[str, Any]:
     return asyncio.run(_write_honeypot_opencanary_config(honeypot_id, config))
@@ -537,7 +544,7 @@ async def _push_pending_ssh_key(honeypot_id: str) -> dict[str, Any]:
             return {"ok": False, "error": "No pending SSH key to push."}
 
         secret = await resolve_honeypot_credential(honeypot, session)
-        settings = get_settings()
+        app_settings = await get_or_create_app_settings(session)
         quoted_key = shlex.quote(pending_key)
         command = (
             "mkdir -p ~/.ssh && chmod 700 ~/.ssh && "
@@ -551,8 +558,8 @@ async def _push_pending_ssh_key(honeypot_id: str) -> dict[str, Any]:
                 honeypot,
                 secret,
                 command,
-                settings.ssh_connect_timeout,
-                settings.ssh_connect_timeout + _SSH_COMMAND_EXTRA_SECONDS,
+                app_settings.ssh_connect_timeout,
+                app_settings.ssh_connect_timeout + _SSH_COMMAND_EXTRA_SECONDS,
             )
         except SSHConnectionError as exc:
             logger.warning("push_pending_ssh_key failed for %s: %s", honeypot.name, exc)
@@ -570,7 +577,7 @@ async def _push_pending_ssh_key(honeypot_id: str) -> dict[str, Any]:
     name="app.tasks.jobs.push_pending_ssh_key",
     # Same reasoning as run_remote_ssh_command above — a short, fixed
     # sequence of commands, not an apt run.
-    time_limit=get_settings().ssh_connect_timeout + _SSH_COMMAND_EXTRA_SECONDS + 10,
+    time_limit=_SSH_TASK_TIME_LIMIT_SECONDS,
 )
 def push_pending_ssh_key(honeypot_id: str) -> dict[str, Any]:
     return asyncio.run(_push_pending_ssh_key(honeypot_id))
@@ -605,7 +612,7 @@ async def _push_superadmin_ssh_keys(honeypot_id: str, keys: list[str]) -> dict[s
             return {"ok": False, "error": "Honeypot has no configured username."}
 
         secret = await resolve_honeypot_credential(honeypot, session)
-        settings = get_settings()
+        app_settings = await get_or_create_app_settings(session)
         command = build_authorized_keys_append_command(honeypot.username, keys)
 
         try:
@@ -613,8 +620,8 @@ async def _push_superadmin_ssh_keys(honeypot_id: str, keys: list[str]) -> dict[s
                 honeypot,
                 secret,
                 command,
-                settings.ssh_connect_timeout,
-                settings.ssh_connect_timeout + _SSH_COMMAND_EXTRA_SECONDS,
+                app_settings.ssh_connect_timeout,
+                app_settings.ssh_connect_timeout + _SSH_COMMAND_EXTRA_SECONDS,
             )
         except SSHConnectionError as exc:
             logger.warning("push_superadmin_ssh_keys failed for %s: %s", honeypot.name, exc)
@@ -630,7 +637,7 @@ async def _push_superadmin_ssh_keys(honeypot_id: str, keys: list[str]) -> dict[s
 
 @celery_app.task(
     name="app.tasks.jobs.push_superadmin_ssh_keys",
-    time_limit=get_settings().ssh_connect_timeout + _SSH_COMMAND_EXTRA_SECONDS + 10,
+    time_limit=_SSH_TASK_TIME_LIMIT_SECONDS,
 )
 def push_superadmin_ssh_keys(honeypot_id: str, keys: list[str]) -> dict[str, Any]:
     return asyncio.run(_push_superadmin_ssh_keys(honeypot_id, keys))
@@ -662,9 +669,8 @@ async def _run_honeypot_onboarding(honeypot_id: str) -> dict[str, Any]:
     real connection this app makes — onboarding a honeypot is not an
     exception to "no trust on first use."
     """
-    settings = get_settings()
-
     async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
         honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
         if honeypot is None:
             return {"ok": False, "error": "Honeypot not found."}
@@ -680,8 +686,8 @@ async def _run_honeypot_onboarding(honeypot_id: str) -> dict[str, Any]:
                 honeypot,
                 secret,
                 script,
-                settings.ssh_connect_timeout,
-                settings.ssh_connect_timeout + _ONBOARDING_EXTRA_SECONDS,
+                app_settings.ssh_connect_timeout,
+                app_settings.ssh_connect_timeout + _ONBOARDING_EXTRA_SECONDS,
             )
         except SSHConnectionError as exc:
             logger.warning("run_honeypot_onboarding failed for %s: %s", honeypot.name, exc)
@@ -706,7 +712,7 @@ async def _run_honeypot_onboarding(honeypot_id: str) -> dict[str, Any]:
 
 @celery_app.task(
     name="app.tasks.jobs.run_honeypot_onboarding",
-    time_limit=get_settings().ssh_connect_timeout + _ONBOARDING_EXTRA_SECONDS + 15,
+    time_limit=_SSH_TASK_TIME_LIMIT_SECONDS,
 )
 def run_honeypot_onboarding(honeypot_id: str) -> dict[str, Any]:
     return asyncio.run(_run_honeypot_onboarding(honeypot_id))
@@ -720,9 +726,8 @@ async def _check_honeypot_readiness(honeypot_id: str) -> dict[str, Any]:
     this and forgets it (right after a host key is confirmed) or reloads
     the honeypot from the DB afterward (the "Re-check" button, the
     onboarding-with-credential route)."""
-    settings = get_settings()
-
     async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
         honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
         if honeypot is None:
             return {"ok": False, "error": "Honeypot not found."}
@@ -732,7 +737,7 @@ async def _check_honeypot_readiness(honeypot_id: str) -> dict[str, Any]:
         secret = await resolve_honeypot_credential(honeypot, session)
 
         try:
-            result = await run_readiness_probes(honeypot, secret, settings.ssh_connect_timeout)
+            result = await run_readiness_probes(honeypot, secret, app_settings.ssh_connect_timeout)
         except SSHConnectionError as exc:
             logger.warning("check_honeypot_readiness failed for %s: %s", honeypot.name, exc)
             return {"ok": False, "error": str(exc)}
@@ -746,7 +751,7 @@ async def _check_honeypot_readiness(honeypot_id: str) -> dict[str, Any]:
 
 @celery_app.task(
     name="app.tasks.jobs.check_honeypot_readiness",
-    time_limit=get_settings().ssh_connect_timeout + 30,
+    time_limit=_SSH_TASK_TIME_LIMIT_SECONDS,
 )
 def check_honeypot_readiness(honeypot_id: str) -> dict[str, Any]:
     return asyncio.run(_check_honeypot_readiness(honeypot_id))
@@ -763,9 +768,8 @@ async def _fix_root_readiness(honeypot_id: str) -> dict[str, Any]:
     thing left for a root-connected honeypot to actually fix. Re-runs the
     readiness probes afterward either way, so the banner reflects reality
     even if the install itself failed (no network, no matching package)."""
-    settings = get_settings()
-
     async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
         honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
         if honeypot is None:
             return {"ok": False, "error": "Honeypot not found."}
@@ -778,8 +782,8 @@ async def _fix_root_readiness(honeypot_id: str) -> dict[str, Any]:
                 honeypot,
                 secret,
                 DIRECT_FIX_COMMAND,
-                settings.ssh_connect_timeout,
-                settings.ssh_connect_timeout + 30,
+                app_settings.ssh_connect_timeout,
+                app_settings.ssh_connect_timeout + 30,
             )
         except SSHConnectionError as exc:
             logger.warning("fix_root_readiness failed for %s: %s", honeypot.name, exc)
@@ -790,7 +794,7 @@ async def _fix_root_readiness(honeypot_id: str) -> dict[str, Any]:
 
 @celery_app.task(
     name="app.tasks.jobs.fix_root_readiness",
-    time_limit=get_settings().ssh_connect_timeout + 60,
+    time_limit=_SSH_TASK_TIME_LIMIT_SECONDS,
 )
 def fix_root_readiness(honeypot_id: str) -> dict[str, Any]:
     return asyncio.run(_fix_root_readiness(honeypot_id))
@@ -871,6 +875,7 @@ async def _ping_all_honeypots() -> None:
     `Honeypot.reachability_check_interval_seconds` — this job does the
     sweep, minus whichever honeypots aren't due yet, and returns."""
     async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
         result = await session.execute(
             select(Honeypot).where(Honeypot.is_active, Honeypot.ip_address.is_not(None))
         )
@@ -878,14 +883,14 @@ async def _ping_all_honeypots() -> None:
             list(result.scalars().all()),
             last_checked_at=lambda m: m.last_ping_at,
             override_seconds=lambda m: m.reachability_check_interval_seconds,
-            global_default_seconds=get_settings().reachability_check_interval_seconds,
+            global_default_seconds=app_settings.reachability_check_interval_seconds,
             now=datetime.now(UTC),
         )
         if honeypots:
-            # Configurable (REACHABILITY_CHECK_CONCURRENCY) — see that
+            # Configurable (Settings → Checks & retention) — see that
             # setting's own docstring for how this interacts with a large
             # fleet and the sweep interval.
-            semaphore = asyncio.Semaphore(get_settings().reachability_check_concurrency)
+            semaphore = asyncio.Semaphore(app_settings.reachability_check_concurrency)
 
             async def _check(honeypot: Honeypot) -> tuple[Honeypot, ReachabilityResult]:
                 # ip_address can't be None here — filtered by the query above
@@ -953,7 +958,7 @@ async def _check_honeypot_reachability(honeypot_id: str) -> dict[str, Any]:
 
 @celery_app.task(
     name="app.tasks.jobs.check_honeypot_reachability",
-    time_limit=get_settings().ssh_connect_timeout + 15,
+    time_limit=_SSH_TASK_TIME_LIMIT_SECONDS,
 )
 def check_honeypot_reachability(honeypot_id: str) -> dict[str, Any]:
     return asyncio.run(_check_honeypot_reachability(honeypot_id))
@@ -963,9 +968,8 @@ async def _refresh_honeypot_facts(honeypot_id: str) -> dict[str, Any]:
     """Connect to one honeypot and refresh its OS/kernel/arch/CPU/RAM/disk/
     uptime/process-count facts. Requires a pinned host key — honeypots
     without one are skipped."""
-    settings = get_settings()
-
     async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
         honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
         if honeypot is None:
             return {"ok": False, "error": "Honeypot not found."}
@@ -975,7 +979,7 @@ async def _refresh_honeypot_facts(honeypot_id: str) -> dict[str, Any]:
         secret = await resolve_honeypot_credential(honeypot, session)
 
         try:
-            facts = await gather_facts(honeypot, secret, settings.ssh_connect_timeout)
+            facts = await gather_facts(honeypot, secret, app_settings.ssh_connect_timeout)
         except SSHConnectionError as exc:
             logger.warning("refresh_honeypot_facts failed for %s: %s", honeypot.name, exc)
             return {"ok": False, "error": str(exc)}
@@ -1020,6 +1024,7 @@ async def _refresh_all_honeypot_facts() -> None:
     task gets its own budget instead.
     """
     async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
         result = await session.execute(
             select(Honeypot).where(Honeypot.is_active, Honeypot.host_key_fingerprint.is_not(None))
         )
@@ -1027,7 +1032,7 @@ async def _refresh_all_honeypot_facts() -> None:
             list(result.scalars().all()),
             last_checked_at=lambda m: m.facts_updated_at,
             override_seconds=lambda m: m.facts_refresh_interval_seconds,
-            global_default_seconds=get_settings().facts_refresh_interval_seconds,
+            global_default_seconds=app_settings.facts_refresh_interval_seconds,
             now=datetime.now(UTC),
         )
         honeypot_ids = [m.id for m in honeypots]
@@ -1048,9 +1053,8 @@ async def _refresh_honeypot_packages(honeypot_id: str) -> dict[str, Any]:
     set in one transaction (delete-then-bulk-insert) rather than diffing,
     since this is a snapshot of "what's installed right now," not a
     history."""
-    settings = get_settings()
-
     async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
         honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
         if honeypot is None:
             return {"ok": False, "error": "Honeypot not found."}
@@ -1060,7 +1064,7 @@ async def _refresh_honeypot_packages(honeypot_id: str) -> dict[str, Any]:
         secret = await resolve_honeypot_credential(honeypot, session)
 
         try:
-            packages = await gather_packages(honeypot, secret, settings.ssh_connect_timeout)
+            packages = await gather_packages(honeypot, secret, app_settings.ssh_connect_timeout)
         except SSHConnectionError as exc:
             logger.warning("refresh_honeypot_packages failed for %s: %s", honeypot.name, exc)
             return {"ok": False, "error": str(exc)}
@@ -1116,9 +1120,8 @@ async def _refresh_honeypot_services(honeypot_id: str) -> dict[str, Any]:
     skipped. Same delete-then-bulk-insert replace as
     `_refresh_honeypot_packages`, and the same reasoning: a snapshot of
     "what's running right now," not a history of state changes."""
-    settings = get_settings()
-
     async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
         honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
         if honeypot is None:
             return {"ok": False, "error": "Honeypot not found."}
@@ -1128,7 +1131,7 @@ async def _refresh_honeypot_services(honeypot_id: str) -> dict[str, Any]:
         secret = await resolve_honeypot_credential(honeypot, session)
 
         try:
-            services = await gather_services(honeypot, secret, settings.ssh_connect_timeout)
+            services = await gather_services(honeypot, secret, app_settings.ssh_connect_timeout)
         except SSHConnectionError as exc:
             logger.warning("refresh_honeypot_services failed for %s: %s", honeypot.name, exc)
             return {"ok": False, "error": str(exc)}
@@ -1186,9 +1189,8 @@ async def _sample_honeypot_monitoring(honeypot_id: str) -> dict[str, Any]:
     without one are skipped. Unlike facts/packages/services, this *appends*
     a new row rather than replacing a snapshot — it's a history, purged
     separately by `purge_old_monitoring_samples`."""
-    settings = get_settings()
-
     async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
         honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
         if honeypot is None:
             return {"ok": False, "error": "Honeypot not found."}
@@ -1199,7 +1201,7 @@ async def _sample_honeypot_monitoring(honeypot_id: str) -> dict[str, Any]:
 
         try:
             sample = await gather_monitoring_sample(
-                honeypot, secret, settings.ssh_connect_timeout
+                honeypot, secret, app_settings.ssh_connect_timeout
             )
         except SSHConnectionError as exc:
             logger.warning("sample_honeypot_monitoring failed for %s: %s", honeypot.name, exc)
@@ -1234,7 +1236,7 @@ async def _sample_honeypot_monitoring(honeypot_id: str) -> dict[str, Any]:
     name="app.tasks.jobs.sample_honeypot_monitoring",
     # The `sleep 1` baked into MONITORING_COMMAND plus normal SSH connect
     # overhead — comfortably under a minute even for a slow/distant host.
-    time_limit=get_settings().ssh_connect_timeout + 30,
+    time_limit=_SSH_TASK_TIME_LIMIT_SECONDS,
 )
 def sample_honeypot_monitoring(honeypot_id: str) -> dict[str, Any]:
     return asyncio.run(_sample_honeypot_monitoring(honeypot_id))
@@ -1247,6 +1249,7 @@ async def _monitor_all_honeypots() -> None:
     same fan-out-only pattern as the other sweeps, cadence owned by Celery
     Beat (`MONITORING_INTERVAL_SECONDS`)."""
     async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
         result = await session.execute(
             select(Honeypot).where(Honeypot.is_active, Honeypot.host_key_fingerprint.is_not(None))
         )
@@ -1254,7 +1257,7 @@ async def _monitor_all_honeypots() -> None:
             list(result.scalars().all()),
             last_checked_at=lambda m: m.monitoring_updated_at,
             override_seconds=lambda m: m.monitoring_interval_seconds,
-            global_default_seconds=get_settings().monitoring_interval_seconds,
+            global_default_seconds=app_settings.monitoring_interval_seconds,
             now=datetime.now(UTC),
         )
         honeypot_ids = [m.id for m in honeypots]
@@ -1285,9 +1288,10 @@ async def _poll_honeypot_canary_log(honeypot_id: str) -> dict[str, Any]:
             return {"ok": False, "error": "No pinned host key fingerprint yet."}
 
         secret = await resolve_honeypot_credential(honeypot, session)
+        app_settings = await get_or_create_app_settings(session)
 
         try:
-            result = await poll_log(honeypot, secret, get_settings().ssh_connect_timeout)
+            result = await poll_log(honeypot, secret, app_settings.ssh_connect_timeout)
         except SSHConnectionError as exc:
             logger.warning("poll_honeypot_canary_log failed for %s: %s", honeypot.name, exc)
             return {"ok": False, "error": str(exc)}
@@ -1334,7 +1338,7 @@ async def _poll_honeypot_canary_log(honeypot_id: str) -> dict[str, Any]:
 
 @celery_app.task(
     name="app.tasks.jobs.poll_honeypot_canary_log",
-    time_limit=get_settings().ssh_connect_timeout + 30,
+    time_limit=_SSH_TASK_TIME_LIMIT_SECONDS,
 )
 def poll_honeypot_canary_log(honeypot_id: str) -> dict[str, Any]:
     return asyncio.run(_poll_honeypot_canary_log(honeypot_id))
@@ -1347,6 +1351,7 @@ async def _poll_all_honeypot_canary_logs() -> None:
     `_due_honeypots`) — same fan-out-only pattern as the other sweeps,
     cadence owned by Celery Beat (`OPENCANARY_LOG_POLL_INTERVAL_SECONDS`)."""
     async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
         result = await session.execute(
             select(Honeypot).where(Honeypot.is_active, Honeypot.host_key_fingerprint.is_not(None))
         )
@@ -1354,7 +1359,7 @@ async def _poll_all_honeypot_canary_logs() -> None:
             list(result.scalars().all()),
             last_checked_at=lambda m: m.opencanary_log_polled_at,
             override_seconds=lambda m: m.opencanary_log_poll_interval_seconds,
-            global_default_seconds=get_settings().opencanary_log_poll_interval_seconds,
+            global_default_seconds=app_settings.opencanary_log_poll_interval_seconds,
             now=datetime.now(UTC),
         )
         honeypot_ids = [m.id for m in honeypots]
@@ -1522,9 +1527,8 @@ async def _run_honeypot_update(run_id: str) -> None:
     update-availability check for the same honeypot, rather than waiting for
     the next periodic sweep, so the honeypot page reflects reality right away.
     """
-    settings = get_settings()
-
     async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
         run = await session.get(HoneypotUpdateRun, uuid.UUID(run_id))
         if run is None:
             return
@@ -1551,7 +1555,7 @@ async def _run_honeypot_update(run_id: str) -> None:
         # from before this feature existed.
         try:
             snapshot = await capture_package_snapshot(
-                honeypot, secret, settings.ssh_connect_timeout
+                honeypot, secret, app_settings.ssh_connect_timeout
             )
             run.package_snapshot = json.dumps(snapshot)
         except (SSHConnectionError, TimeoutError) as exc:
@@ -1583,8 +1587,8 @@ async def _run_honeypot_update(run_id: str) -> None:
                 honeypot,
                 secret,
                 run.strategy,
-                settings.ssh_connect_timeout,
-                settings.update_timeout_seconds,
+                app_settings.ssh_connect_timeout,
+                app_settings.update_timeout_seconds,
                 on_output=_persist_partial_output,
             )
         except (SSHConnectionError, TimeoutError) as exc:
@@ -1608,7 +1612,7 @@ async def _run_honeypot_update(run_id: str) -> None:
 
 @celery_app.task(
     name="app.tasks.jobs.run_honeypot_update",
-    time_limit=get_settings().update_timeout_seconds,
+    time_limit=_UPDATE_TASK_TIME_LIMIT_SECONDS,
 )
 def run_honeypot_update(run_id: str) -> None:
     asyncio.run(_run_honeypot_update(run_id))
@@ -1630,9 +1634,8 @@ async def _rollback_honeypot_update(run_id: str) -> None:
     in the meantime for unrelated reasons, and a rollback with nothing
     left to undo (e.g. run twice) is a fast no-op instead of a full apt
     invocation."""
-    settings = get_settings()
-
     async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
         run = await session.get(HoneypotUpdateRun, uuid.UUID(run_id))
         if run is None:
             return
@@ -1658,7 +1661,9 @@ async def _rollback_honeypot_update(run_id: str) -> None:
 
         try:
             snapshot: dict[str, str] = json.loads(source_run.package_snapshot)
-            current = await capture_package_snapshot(honeypot, secret, settings.ssh_connect_timeout)
+            current = await capture_package_snapshot(
+                honeypot, secret, app_settings.ssh_connect_timeout
+            )
             target_versions = {
                 package: version
                 for package, version in snapshot.items()
@@ -1675,8 +1680,8 @@ async def _rollback_honeypot_update(run_id: str) -> None:
                     honeypot,
                     secret,
                     target_versions,
-                    settings.ssh_connect_timeout,
-                    settings.update_timeout_seconds,
+                    app_settings.ssh_connect_timeout,
+                    app_settings.update_timeout_seconds,
                 )
                 run.output = _truncate_output(result.output)
                 if result.exit_status == 0:
@@ -1698,7 +1703,7 @@ async def _rollback_honeypot_update(run_id: str) -> None:
 
 @celery_app.task(
     name="app.tasks.jobs.rollback_honeypot_update",
-    time_limit=get_settings().update_timeout_seconds,
+    time_limit=_UPDATE_TASK_TIME_LIMIT_SECONDS,
 )
 def rollback_honeypot_update(run_id: str) -> None:
     asyncio.run(_rollback_honeypot_update(run_id))
@@ -1709,9 +1714,8 @@ async def _check_honeypot_updates(honeypot_id: str) -> dict[str, Any]:
     flatpak apps, and snaps are upgradable, without installing anything.
     apt requires root/sudo, same as `run_honeypot_update`; flatpak/snap
     listing never does — see `app.ssh.updates`."""
-    settings = get_settings()
-
     async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
         honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
         if honeypot is None:
             return {"ok": False, "error": "Honeypot not found."}
@@ -1722,7 +1726,10 @@ async def _check_honeypot_updates(honeypot_id: str) -> dict[str, Any]:
 
         try:
             result = await check_updates(
-                honeypot, secret, settings.ssh_connect_timeout, settings.update_timeout_seconds
+                honeypot,
+                secret,
+                app_settings.ssh_connect_timeout,
+                app_settings.update_timeout_seconds,
             )
         except SSHConnectionError as exc:
             logger.warning("check_honeypot_updates failed for %s: %s", honeypot.name, exc)
@@ -1761,7 +1768,7 @@ async def _check_honeypot_updates(honeypot_id: str) -> dict[str, Any]:
 
 @celery_app.task(
     name="app.tasks.jobs.check_honeypot_updates",
-    time_limit=get_settings().update_timeout_seconds,
+    time_limit=_UPDATE_TASK_TIME_LIMIT_SECONDS,
 )
 def check_honeypot_updates(honeypot_id: str) -> dict[str, Any]:
     return asyncio.run(_check_honeypot_updates(honeypot_id))
@@ -1776,9 +1783,8 @@ async def _preview_honeypot_update(honeypot_id: str, strategy: str) -> dict[str,
     to the `Honeypot` row here (unlike `check_honeypot_updates` above) — this
     is a one-off, ephemeral view for whoever's looking at the preview page
     right now, not a fact worth keeping around after they navigate away."""
-    settings = get_settings()
-
     async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
         honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
         if honeypot is None:
             return {"ok": False, "error": "Honeypot not found."}
@@ -1792,8 +1798,8 @@ async def _preview_honeypot_update(honeypot_id: str, strategy: str) -> dict[str,
                 honeypot,
                 secret,
                 UpgradeStrategy(strategy),
-                settings.ssh_connect_timeout,
-                settings.update_timeout_seconds,
+                app_settings.ssh_connect_timeout,
+                app_settings.update_timeout_seconds,
             )
         except SSHConnectionError as exc:
             logger.warning("preview_honeypot_update failed for %s: %s", honeypot.name, exc)
@@ -1813,7 +1819,7 @@ async def _preview_honeypot_update(honeypot_id: str, strategy: str) -> dict[str,
 
 @celery_app.task(
     name="app.tasks.jobs.preview_honeypot_update",
-    time_limit=get_settings().update_timeout_seconds,
+    time_limit=_UPDATE_TASK_TIME_LIMIT_SECONDS,
 )
 def preview_honeypot_update(honeypot_id: str, strategy: str) -> dict[str, Any]:
     return asyncio.run(_preview_honeypot_update(honeypot_id, strategy))
@@ -1849,9 +1855,8 @@ async def _send_honeypot_power_command(honeypot_id: str, action: str) -> dict[st
     `app.ssh.power` for why there's no persistent result to report beyond
     ok/error; the reachability check reflects the actual outcome over the
     following minutes."""
-    settings = get_settings()
-
     async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
         honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
         if honeypot is None:
             return {"ok": False, "error": "Honeypot not found."}
@@ -1860,7 +1865,7 @@ async def _send_honeypot_power_command(honeypot_id: str, action: str) -> dict[st
 
         try:
             await send_power_command(
-                honeypot, secret, PowerAction(action), settings.ssh_connect_timeout
+                honeypot, secret, PowerAction(action), app_settings.ssh_connect_timeout
             )
         except SSHConnectionError as exc:
             logger.warning(
