@@ -43,10 +43,12 @@ from app.web.routes import (
     companies,
     dashboard,
     honeypots,
+    impersonation,
     inform,
     initialize,
     initialize_ws,
     live_ws,
+    notifications,
     scheduling,
     terminal_ws,
     theme,
@@ -262,6 +264,8 @@ def create_app() -> FastAPI:
     app.include_router(api_v1_events.router)
     app.include_router(api_v1_account.router)
     app.include_router(users.router)
+    app.include_router(impersonation.router)
+    app.include_router(notifications.router)
     app.include_router(settings_routes.router)
     app.include_router(theme.router)
     # No HTTP dependency here — WebSocket connections never go through

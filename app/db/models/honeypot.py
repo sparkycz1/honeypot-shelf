@@ -128,6 +128,15 @@ class Honeypot(Base):
     # --- Cheap per-minute reachability check (TCP connect to the SSH port) ---
     is_reachable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     last_ping_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    # When this honeypot most recently *transitioned* from reachable (or
+    # never-yet-checked) to unreachable — `None` while reachable. Distinct
+    # from `last_ping_at`, which is overwritten on every sweep tick
+    # regardless of outcome and so can't answer "how long has it actually
+    # been down." Exists for Notifications' own debounce (`app.tasks.jobs.
+    # _ping_all_honeypots`, `HoneypotNotificationSubscription.
+    # unavailable_after_minutes`) — cleared back to `None` the moment a
+    # sweep finds it reachable again.
+    unreachable_since: Mapped[datetime | None] = mapped_column(nullable=True)
 
     # --- Per-honeypot overrides of the global `.env` sweep cadences —
     # NULL means "use the global default". See app.tasks.jobs._due_honeypots.

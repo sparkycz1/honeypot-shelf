@@ -104,8 +104,9 @@ connectivity (NetBird/WireGuard, see
 [wiki/Architecture.md](wiki/Architecture.md)), complete English+Czech
 i18n, and CI. Check `uv run pytest` for the current test count rather
 than trusting a number in prose. Settled product decisions (only a
-superadmin creates companies/honeypots/users, no alerting in v1, audit
-log/Settings superadmin-only, ...) live in
+superadmin creates companies/honeypots/users, self-service per-user
+Notifications rather than admin-authored rules, audit log/Settings
+superadmin-only, ...) live in
 [wiki/Home.md](wiki/Home.md) — don't relitigate those without asking.
 
 Periodically synced against upstream debcontrol for fixes that apply to

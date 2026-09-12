@@ -35,6 +35,7 @@ def _user_to_dict(user: User) -> dict[str, object]:
         "id": str(user.id),
         "username": user.username,
         "display_name": user.display_name,
+        "email": user.email,
         "auth_provider": user.auth_provider.value,
         "is_superadmin": user.is_superadmin,
         "memberships": [
@@ -111,6 +112,7 @@ async def create_user_api(
     user = User(
         username=payload.username,
         display_name=payload.display_name,
+        email=payload.email,
         auth_provider=payload.auth_provider,
         password_hash=hash_password(payload.password) if payload.password else None,
         must_change_password=payload.auth_provider == AuthProvider.LOCAL,
@@ -203,10 +205,16 @@ async def update_user_api(
 
     user.username = payload.username
     user.display_name = payload.display_name
+    user.email = payload.email
     user.auth_provider = payload.auth_provider
     user.is_superadmin = payload.is_superadmin
+    # Flush the deletes before adding the replacements — see
+    # `app.web.routes.users._apply_memberships`'s docstring for why
+    # re-submitting the same (company_id, access_level) unchanged would
+    # otherwise trip the unique constraint instead of being a no-op.
     for existing in list(user.memberships):
         await db.delete(existing)
+    await db.flush()
     user.memberships = [
         CompanyMembership(company_id=m.company_id, access_level=m.access_level)
         for m in payload.memberships

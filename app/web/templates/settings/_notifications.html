@@ -1,0 +1,45 @@
+  <section class="panel">
+    <h2>{{ t(request, "settings.notifications.heading") }}</h2>
+    <p class="hint">{{ t(request, "settings.notifications.hint") }}</p>
+    <p class="hint">
+      {{ t(request, "settings.notifications.self_service_hint") }}
+      <a href="/account/notifications">{{ t(request, "notifications.title") }}</a>.
+    </p>
+
+    <form method="post" action="/settings/notifications/templates" class="form" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+      <h3>{{ t(request, "settings.notifications.alert.heading") }}</h3>
+      <label for="notification_alert_subject">{{ t(request, "settings.notifications.subject_label") }}</label>
+      <input type="text" id="notification_alert_subject" name="notification_alert_subject" maxlength="255"
+             value="{{ app_settings.notification_alert_subject or '' }}"
+             placeholder="{{ notification_defaults.alert[0] }}">
+      <label for="notification_alert_body">{{ t(request, "settings.notifications.body_label") }}</label>
+      <textarea id="notification_alert_body" name="notification_alert_body" rows="3"
+                placeholder="{{ notification_defaults.alert[1] }}">{{ app_settings.notification_alert_body or '' }}</textarea>
+      <p class="hint">{{ t(request, "settings.notifications.alert.placeholders") }}</p>
+
+      <h3>{{ t(request, "settings.notifications.unavailable.heading") }}</h3>
+      <label for="notification_unavailable_subject">{{ t(request, "settings.notifications.subject_label") }}</label>
+      <input type="text" id="notification_unavailable_subject" name="notification_unavailable_subject" maxlength="255"
+             value="{{ app_settings.notification_unavailable_subject or '' }}"
+             placeholder="{{ notification_defaults.unavailable[0] }}">
+      <label for="notification_unavailable_body">{{ t(request, "settings.notifications.body_label") }}</label>
+      <textarea id="notification_unavailable_body" name="notification_unavailable_body" rows="3"
+                placeholder="{{ notification_defaults.unavailable[1] }}">{{ app_settings.notification_unavailable_body or '' }}</textarea>
+      <p class="hint">{{ t(request, "settings.notifications.unavailable.placeholders") }}</p>
+
+      <h3>{{ t(request, "settings.notifications.recovered.heading") }}</h3>
+      <label for="notification_recovered_subject">{{ t(request, "settings.notifications.subject_label") }}</label>
+      <input type="text" id="notification_recovered_subject" name="notification_recovered_subject" maxlength="255"
+             value="{{ app_settings.notification_recovered_subject or '' }}"
+             placeholder="{{ notification_defaults.recovered[0] }}">
+      <label for="notification_recovered_body">{{ t(request, "settings.notifications.body_label") }}</label>
+      <textarea id="notification_recovered_body" name="notification_recovered_body" rows="3"
+                placeholder="{{ notification_defaults.recovered[1] }}">{{ app_settings.notification_recovered_body or '' }}</textarea>
+      <p class="hint">{{ t(request, "settings.notifications.recovered.placeholders") }}</p>
+
+      <p class="hint">{{ t(request, "settings.notifications.blank_resets_hint") }}</p>
+      <button type="submit" class="button">{{ t(request, "common.save") }}</button>
+    </form>
+  </section>

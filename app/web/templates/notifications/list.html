@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t(request, "notifications.title") }} — Honeypot Shelf{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>{{ t(request, "notifications.title") }}</h1>
+    <a href="/account">{{ t(request, "notifications.back_to_account") }}</a>
+  </div>
+
+  {% if errors %}
+    <div class="alert alert-error">
+      {% for error in errors %}<p>{{ error }}</p>{% endfor %}
+    </div>
+  {% endif %}
+  {% if saved %}
+    <div class="alert alert-ok"><p>{{ t(request, "notifications.saved_notice") }}</p></div>
+  {% endif %}
+
+  <section class="panel">
+    <h2>{{ t(request, "notifications.email.heading") }}</h2>
+    <p class="hint">
+      {{ t(request, "notifications.email.hint", email=(user.email or t(request, "notifications.email.none_set"))) }}
+    </p>
+    <form method="post" action="/account/notifications/email" class="form" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label for="notification_email">{{ t(request, "notifications.email.label") }}</label>
+      <input type="email" id="notification_email" name="notification_email" maxlength="255"
+             value="{{ user.notification_email or '' }}"
+             placeholder="{{ user.email or t(request, 'notifications.email.placeholder') }}">
+      <p class="hint">{{ t(request, "notifications.email.override_hint") }}</p>
+      <button type="submit" class="button">{{ t(request, "common.save") }}</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>{{ t(request, "notifications.subscriptions.heading") }}</h2>
+    <p class="hint">{{ t(request, "notifications.subscriptions.hint") }}</p>
+
+    {% if not user.notification_target_email %}
+      <div class="alert alert-warn">
+        <p>{{ t(request, "notifications.subscriptions.no_email_warning") }}</p>
+      </div>
+    {% endif %}
+
+    {% if not honeypots %}
+      <p class="hint">{{ t(request, "notifications.subscriptions.none_visible") }}</p>
+    {% else %}
+      <form method="post" action="/account/notifications" class="form form-wide" autocomplete="off">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>{{ t(request, "notifications.subscriptions.honeypot_column") }}</th>
+              <th>{{ t(request, "notifications.subscriptions.alert_column") }}</th>
+              <th>{{ t(request, "notifications.subscriptions.unavailable_column") }}</th>
+              <th>{{ t(request, "notifications.subscriptions.minutes_column") }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for honeypot in honeypots %}
+              {% set sub = subscriptions.get(honeypot.id) %}
+              <tr>
+                <td>{{ honeypot.name }}</td>
+                <td>
+                  <input type="checkbox" name="alert_{{ honeypot.id }}"
+                         aria-label="{{ t(request, 'notifications.subscriptions.alert_aria', name=honeypot.name) }}"
+                         {% if sub and sub.notify_on_alert %}checked{% endif %}>
+                </td>
+                <td>
+                  <input type="checkbox" name="unavailable_{{ honeypot.id }}"
+                         aria-label="{{ t(request, 'notifications.subscriptions.unavailable_aria', name=honeypot.name) }}"
+                         {% if sub and sub.notify_on_unavailable %}checked{% endif %}>
+                </td>
+                <td>
+                  <input type="number" name="minutes_{{ honeypot.id }}" min="{{ min_minutes }}" max="{{ max_minutes }}"
+                         value="{{ sub.unavailable_after_minutes if sub else 10 }}" style="width: 6rem;">
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <p class="hint">{{ t(request, "notifications.subscriptions.minutes_hint") }}</p>
+        <button type="submit" class="button">{{ t(request, "common.save") }}</button>
+      </form>
+    {% endif %}
+  </section>
+{% endblock %}

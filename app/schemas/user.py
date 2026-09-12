@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import uuid
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -10,6 +11,18 @@ from app.auth.security import USERNAME_PATTERN
 from app.db.models.user import AccessLevel, AuthProvider
 
 MIN_PASSWORD_LENGTH = 12
+
+# Deliberately loose — a plausible-shape check, not full RFC 5322
+# validation (no deliverability check either, since no confirmation email
+# is ever sent). Shared by every place an address is entered by hand:
+# `User.email`/`notification_email` (app/web/routes/auth.py,
+# app/web/routes/notifications.py) and the admin-side Users edit form
+# (app/web/routes/users.py).
+_EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+
+
+def looks_like_email(value: str) -> bool:
+    return bool(_EMAIL_PATTERN.match(value))
 
 
 class MembershipInput(BaseModel):
@@ -44,6 +57,11 @@ class _CompanyScopeMixin(BaseModel):
 class UserCreate(_CompanyScopeMixin):
     username: str = Field(min_length=1, max_length=64)
     display_name: str | None = Field(default=None, max_length=255)
+    # This account's own email — see `User.email`'s own docstring
+    # (Notifications' default destination address; not used for login).
+    # Settable here so an admin can fill it in at creation time, same as
+    # the user themselves can later from My account.
+    email: str | None = Field(default=None, max_length=255)
     auth_provider: AuthProvider
     # Required (and validated) only for AuthProvider.LOCAL — see
     # `_check_password_required`. LDAP/OIDC accounts have no HoneyHive-side
@@ -61,6 +79,16 @@ class UserCreate(_CompanyScopeMixin):
                 "starting with a letter or digit."
             )
         return normalized
+
+    @field_validator("email")
+    @classmethod
+    def _validate_email(cls, value: str | None) -> str | None:
+        stripped = (value or "").strip()
+        if not stripped:
+            return None
+        if not looks_like_email(stripped):
+            raise ValueError("That doesn't look like a valid email address.")
+        return stripped
 
     @field_validator("password")
     @classmethod
@@ -82,6 +110,8 @@ class UserCreate(_CompanyScopeMixin):
 class UserUpdate(_CompanyScopeMixin):
     username: str = Field(min_length=1, max_length=64)
     display_name: str | None = Field(default=None, max_length=255)
+    # See `UserCreate.email`'s own comment.
+    email: str | None = Field(default=None, max_length=255)
     auth_provider: AuthProvider
     # Blank = keep the existing password unchanged (only meaningful when
     # `auth_provider` is already, or is becoming, LOCAL).
@@ -99,6 +129,16 @@ class UserUpdate(_CompanyScopeMixin):
                 "starting with a letter or digit."
             )
         return normalized
+
+    @field_validator("email")
+    @classmethod
+    def _validate_email(cls, value: str | None) -> str | None:
+        stripped = (value or "").strip()
+        if not stripped:
+            return None
+        if not looks_like_email(stripped):
+            raise ValueError("That doesn't look like a valid email address.")
+        return stripped
 
     @field_validator("password")
     @classmethod

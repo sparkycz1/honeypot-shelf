@@ -41,9 +41,11 @@ from app.auth.oidc import OidcNotConfiguredError, handle_callback, redirect_to_p
 from app.auth.rate_limit import check_rate_limit
 from app.auth.security import hash_password, verify_password
 from app.auth.sessions import (
+    IMPERSONATION_RETURN_COOKIE_NAME,
     PENDING_TOTP_COOKIE_NAME,
     SESSION_COOKIE_NAME,
     WEBAUTHN_CHALLENGE_COOKIE_NAME,
+    clear_impersonation_return_cookie,
     clear_pending_totp_cookie,
     clear_session_cookie,
     clear_webauthn_challenge_cookie,
@@ -58,6 +60,7 @@ from app.auth.sessions import (
     set_pending_totp_cookie,
     set_session_cookie,
     set_webauthn_challenge_cookie,
+    stop_impersonation,
 )
 from app.auth.ssh_keys import InvalidSshPublicKeyError, parse_ssh_public_keys
 from app.auth.webauthn import WebAuthnError
@@ -73,7 +76,7 @@ from app.db.models.user import AuthProvider, User
 from app.db.models.webauthn_credential import WebAuthnCredential
 from app.db.session import get_db
 from app.i18n import available_locales, get_locale
-from app.schemas.user import MIN_PASSWORD_LENGTH
+from app.schemas.user import MIN_PASSWORD_LENGTH, looks_like_email
 from app.ssh.identity import get_or_create_identity
 from app.tasks.jobs import push_superadmin_ssh_keys
 from app.web.templating import templates
@@ -648,19 +651,64 @@ async def login_webauthn_verify(
 async def logout(request: Request, db: AsyncSession = Depends(get_db)) -> Response:
     raw_token = request.cookies.get(SESSION_COOKIE_NAME)
     session = await get_valid_session(db, raw_token) if raw_token else None
-    if session is not None:
-        await revoke_session(db, session)
+    if session is None:
+        response = RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
+        clear_session_cookie(response)
+        clear_impersonation_return_cookie(response)
+        return response
+
+    # Impersonating: "log out" here means "stop impersonating" — return to
+    # the superadmin's own session instead of a full sign-out, like closing
+    # a "su" shell. See app.web.routes.impersonation's module docstring.
+    # Falls through to an ordinary logout below if the return ticket is
+    # missing/expired or the original session no longer validates.
+    if session.impersonator_id is not None:
+        return_ticket = request.cookies.get(IMPERSONATION_RETURN_COOKIE_NAME)
+        restored = (
+            await stop_impersonation(db, impersonation_session=session, return_ticket=return_ticket)
+            if return_ticket
+            else None
+        )
         await log_event(
             db,
             request=request,
-            action="user.logout",
-            summary=f'"{session.user.username}" logged out',
+            action="user.impersonate.stop",
+            summary=(
+                f'"{session.impersonator.username if session.impersonator else "?"}" '
+                f'stopped impersonating "{session.user.username}"'
+            ),
             target_type="user",
             target_id=session.user_id,
             target_label=session.user.username,
         )
+        if restored is not None:
+            _restored_session, raw_original_token = restored
+            response = RedirectResponse(url="/users", status_code=status.HTTP_303_SEE_OTHER)
+            set_session_cookie(response, raw_original_token)
+            clear_impersonation_return_cookie(response)
+            return response
+        # Return ticket already consumed/expired, or its session no longer
+        # validates — nothing left to restore, fall through to a plain full
+        # logout (the impersonation session was already revoked by
+        # `stop_impersonation` above).
+        response = RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
+        clear_session_cookie(response)
+        clear_impersonation_return_cookie(response)
+        return response
+
+    await revoke_session(db, session)
+    await log_event(
+        db,
+        request=request,
+        action="user.logout",
+        summary=f'"{session.user.username}" logged out',
+        target_type="user",
+        target_id=session.user_id,
+        target_label=session.user.username,
+    )
     response = RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
     clear_session_cookie(response)
+    clear_impersonation_return_cookie(response)
     return response
 
 
@@ -791,6 +839,41 @@ async def update_display_name(
         request=request,
         action="user.account.update",
         summary=f'"{user.username}" updated their display name',
+        target_type="user",
+        target_id=user.id,
+        target_label=user.username,
+    )
+    return RedirectResponse(url="/account", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/account/email", dependencies=[Depends(verify_csrf)])
+async def update_email(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    email: str = Form(""),
+) -> Response:
+    """This account's own email — the default destination for Notifications
+    (see `app.services.notifications`, `User.notification_target_email`)
+    unless overridden with a manual address on the Notifications page
+    (`/account/notifications`). Not used for login, and not validated as
+    deliverable — no confirmation email is ever sent, only a plausible
+    shape (`app.schemas.user.looks_like_email`)."""
+    stripped = email.strip()
+    if stripped and not looks_like_email(stripped):
+        return await _render_account(
+            request, db, current_user, errors=["That doesn't look like a valid email address."]
+        )
+
+    user = await db.get(User, current_user.id)
+    assert user is not None
+    user.email = stripped or None
+    await db.commit()
+    await log_event(
+        db,
+        request=request,
+        action="user.account.update",
+        summary=f'"{user.username}" updated their email',
         target_type="user",
         target_id=user.id,
         target_label=user.username,

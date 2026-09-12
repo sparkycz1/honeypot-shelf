@@ -52,6 +52,14 @@
              value="{{ user.display_name or '' }}" placeholder="{{ user.username }}">
       <button type="submit" class="button">{{ t(request, "common.save") }}</button>
     </form>
+    <form method="post" action="/account/email" class="form" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label for="email">{{ t(request, "account.profile.email") }}</label>
+      <input type="email" id="email" name="email" maxlength="255"
+             value="{{ user.email or '' }}" placeholder="you@example.com">
+      <p class="hint">{{ t(request, "account.profile.email_hint") }}</p>
+      <button type="submit" class="button">{{ t(request, "common.save") }}</button>
+    </form>
   </section>
 
   <section class="panel">
@@ -67,6 +75,12 @@
       <p class="hint">{{ t(request, "account.language.help") }}</p>
       <button type="submit" class="button">{{ t(request, "common.save") }}</button>
     </form>
+  </section>
+
+  <section class="panel">
+    <h2>{{ t(request, "account.notifications.heading") }}</h2>
+    <p class="hint">{{ t(request, "account.notifications.hint") }}</p>
+    <a class="button button-secondary" href="/account/notifications">{{ t(request, "account.notifications.manage_button") }}</a>
   </section>
 
   {% if user.auth_provider.value == 'local' %}

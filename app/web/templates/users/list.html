@@ -67,7 +67,16 @@
               {% endif %}
             </td>
             <td>{{ u.last_login_at | local_time('%Y-%m-%d %H:%M %Z') if u.last_login_at else t(request, "users.list.never") }}</td>
-            <td><a href="/users/{{ u.id }}/edit">{{ t(request, "users.list.edit_link") }}</a></td>
+            <td>
+              <a href="/users/{{ u.id }}/edit">{{ t(request, "users.list.edit_link") }}</a>
+              {% if request.state.user.is_superadmin and u.id != request.state.user.id and u.is_active and not u.is_superadmin %}
+                <form method="post" action="/users/{{ u.id }}/impersonate" class="inline-form"
+                      data-confirm="{{ t(request, 'users.impersonate.confirm', name=(u.display_name or u.username)) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button type="submit" class="link-button">{{ t(request, "users.impersonate") }}</button>
+                </form>
+              {% endif %}
+            </td>
           </tr>
         {% endfor %}
       </tbody>

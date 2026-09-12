@@ -63,6 +63,9 @@ from app.db.pg_enum import pg_enum
 if TYPE_CHECKING:
     from app.db.models.api_token import ApiToken
     from app.db.models.company_membership import CompanyMembership
+    from app.db.models.honeypot_notification_subscription import (
+        HoneypotNotificationSubscription,
+    )
     from app.db.models.totp_recovery_code import TotpRecoveryCode
     from app.db.models.user_session import UserSession
     from app.db.models.webauthn_credential import WebAuthnCredential
@@ -93,6 +96,20 @@ class User(Base):
     # OIDC identity, all at once. See the module docstring.
     username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # This account's own email — self-service (My account → Notifications),
+    # or set by an admin from the Users edit form. Not used for login (see
+    # `username` above); its only consumer today is Notifications, as the
+    # default destination address — see `notification_target_email` below.
+    # Not validated as deliverable (no confirmation email sent), only as a
+    # plausible address shape (`app.schemas.user`).
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # A manually-entered notification destination, self-service only (an
+    # admin does not set this for someone else) — e.g. a shared team alias
+    # instead of this person's own inbox. Takes priority over `email` when
+    # set; see `notification_target_email`.
+    notification_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # This account's own UI language, self-service (My account → Language) —
     # a locale *code* (e.g. "en", "cs"). `None` means "use the default"
@@ -161,7 +178,9 @@ class User(Base):
     ssh_public_keys: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     sessions: Mapped[list[UserSession]] = relationship(
-        back_populates="user", cascade="all, delete-orphan"
+        back_populates="user",
+        foreign_keys="UserSession.user_id",
+        cascade="all, delete-orphan",
     )
     totp_recovery_codes: Mapped[list[TotpRecoveryCode]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
@@ -170,6 +189,9 @@ class User(Base):
         back_populates="user", cascade="all, delete-orphan"
     )
     api_tokens: Mapped[list[ApiToken]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    notification_subscriptions: Mapped[list[HoneypotNotificationSubscription]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
 
@@ -204,6 +226,14 @@ class User(Base):
             m.company_id == company_id and m.access_level == AccessLevel.READ_WRITE
             for m in self.memberships
         )
+
+    @property
+    def notification_target_email(self) -> str | None:
+        """Where a Notifications email for this user actually goes —
+        `notification_email` (the manual override) if set, else `email`
+        (this account's own), else `None` (nothing to send to yet). See
+        `app.services.notifications`."""
+        return self.notification_email or self.email
 
     @property
     def is_locked_out(self) -> bool:

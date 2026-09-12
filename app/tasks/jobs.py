@@ -35,17 +35,21 @@ from typing import Any
 
 import asyncssh
 from sqlalchemy import delete, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.audit import log_event
 from app.core.app_settings import get_or_create_app_settings
 from app.core.config import get_settings
 from app.db import session as db_session
+from app.db.models.app_settings import AppSettings
 from app.db.models.audit_log import AuditLogEntry
 from app.db.models.company import Company
 from app.db.models.company_snapshot import CompanySnapshot
 from app.db.models.honeypot import AuthMethod, Honeypot
 from app.db.models.honeypot_event import HoneypotEvent
 from app.db.models.honeypot_monitoring_sample import HoneypotMonitoringSample
+from app.db.models.honeypot_notification_subscription import HoneypotNotificationSubscription
 from app.db.models.honeypot_package import HoneypotPackage
 from app.db.models.honeypot_reachability_sample import HoneypotReachabilitySample
 from app.db.models.honeypot_service import HoneypotService
@@ -53,7 +57,7 @@ from app.db.models.honeypot_update_run import HoneypotUpdateRun, UpdateRunStatus
 from app.services.company_stats import compute_company_stats
 from app.services.honeypot_event_syslog import forward_honeypot_event_to_syslog
 from app.services.honeypot_events import build_event
-from app.services.honeypot_status import offline_cutoff
+from app.services.honeypot_status import as_aware_utc, offline_cutoff
 from app.services.live_updates import (
     KIND_ACTIVITY,
     KIND_FACTS,
@@ -64,7 +68,8 @@ from app.services.live_updates import (
     KIND_UPDATES,
     publish_honeypot_event,
 )
-from app.services.opencanary_logtypes import is_internal_logtype
+from app.services.notifications import notify_alert, notify_recovered, notify_unavailable
+from app.services.opencanary_logtypes import is_internal_logtype, logtype_label
 from app.ssh.authorized_keys import build_authorized_keys_append_command
 from app.ssh.canary_activity import poll_log
 from app.ssh.client import open_connection, test_connection
@@ -905,8 +910,18 @@ async def _ping_all_honeypots() -> None:
 
             now = datetime.now(UTC)
             for honeypot, outcome in results:
+                was_reachable = honeypot.is_reachable
                 honeypot.is_reachable = outcome.reachable
                 honeypot.last_ping_at = now
+                if outcome.reachable:
+                    honeypot.unreachable_since = None
+                elif was_reachable is not False or honeypot.unreachable_since is None:
+                    # Either the first failing check ever, or a fresh
+                    # transition from reachable — start (or restart) the
+                    # clock. `was_reachable is not False` also covers
+                    # `None` (never checked before), same as a brand-new
+                    # outage.
+                    honeypot.unreachable_since = now
                 session.add(
                     HoneypotReachabilitySample(
                         honeypot_id=honeypot.id,
@@ -918,6 +933,68 @@ async def _ping_all_honeypots() -> None:
             await session.commit()
             for honeypot, _outcome in results:
                 await publish_honeypot_event(str(honeypot.id), KIND_STATUS)
+
+            if app_settings.smtp_enabled:
+                await _evaluate_unavailability_notifications(session, app_settings, results, now)
+
+
+async def _evaluate_unavailability_notifications(
+    session: AsyncSession,
+    app_settings: AppSettings,
+    results: list[tuple[Honeypot, ReachabilityResult]],
+    now: datetime,
+) -> None:
+    """For every honeypot this sweep just checked, evaluate each of its
+    `notify_on_unavailable` subscriptions against that subscription's own
+    debounce (`unavailable_after_minutes`) and send at most one "it's
+    down" email per continuous outage, plus one "it's back" email once it
+    recovers — see `HoneypotNotificationSubscription`'s own docstring for
+    the state machine this implements."""
+    honeypot_ids = [honeypot.id for honeypot, _outcome in results]
+    if not honeypot_ids:
+        return
+    subs_result = await session.execute(
+        select(HoneypotNotificationSubscription)
+        .options(selectinload(HoneypotNotificationSubscription.user))
+        .where(
+            HoneypotNotificationSubscription.honeypot_id.in_(honeypot_ids),
+            HoneypotNotificationSubscription.notify_on_unavailable.is_(True),
+        )
+    )
+    subs_by_honeypot: dict[uuid.UUID, list[HoneypotNotificationSubscription]] = {}
+    for sub in subs_result.scalars().all():
+        subs_by_honeypot.setdefault(sub.honeypot_id, []).append(sub)
+    if not subs_by_honeypot:
+        return
+
+    changed = False
+    for honeypot, outcome in results:
+        subs = subs_by_honeypot.get(honeypot.id)
+        if not subs:
+            continue
+        for sub in subs:
+            if not sub.user.is_active:
+                continue
+            if outcome.reachable:
+                if sub.unavailable_notified_at is not None:
+                    sub.unavailable_notified_at = None
+                    changed = True
+                    await notify_recovered(app_settings, user=sub.user, honeypot=honeypot)
+                continue
+            if sub.unavailable_notified_at is not None or honeypot.unreachable_since is None:
+                continue
+            elapsed_minutes = (now - as_aware_utc(honeypot.unreachable_since)).total_seconds() / 60
+            if elapsed_minutes >= sub.unavailable_after_minutes:
+                sub.unavailable_notified_at = now
+                changed = True
+                await notify_unavailable(
+                    app_settings,
+                    user=sub.user,
+                    honeypot=honeypot,
+                    threshold_minutes=sub.unavailable_after_minutes,
+                )
+    if changed:
+        await session.commit()
 
 
 @celery_app.task(name="app.tasks.jobs.ping_all_honeypots")
@@ -1332,6 +1409,30 @@ async def _poll_honeypot_canary_log(honeypot_id: str) -> dict[str, Any]:
         await publish_honeypot_event(honeypot_id, KIND_ACTIVITY)
         for row in new_rows:
             await forward_honeypot_event_to_syslog(session, honeypot, row)
+
+        if new_rows and app_settings.smtp_enabled:
+            subscribers_result = await session.execute(
+                select(HoneypotNotificationSubscription)
+                .options(selectinload(HoneypotNotificationSubscription.user))
+                .where(
+                    HoneypotNotificationSubscription.honeypot_id == honeypot.id,
+                    HoneypotNotificationSubscription.notify_on_alert.is_(True),
+                )
+            )
+            recipients = [
+                sub.user for sub in subscribers_result.scalars().all() if sub.user.is_active
+            ]
+            if recipients:
+                for row in new_rows:
+                    await notify_alert(
+                        app_settings,
+                        recipients=recipients,
+                        honeypot=honeypot,
+                        event_type=row.event_type,
+                        event_label=logtype_label(row.event_type),
+                        src_ip=row.src_ip,
+                        occurred_at=row.occurred_at,
+                    )
 
         return {"ok": True, "new_events": len(alert_events)}
 

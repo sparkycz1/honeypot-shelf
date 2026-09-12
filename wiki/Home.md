@@ -75,7 +75,7 @@ TLS terminator in front of it, always. Pick your fighter:
 | ⏱️ **Scheduling** | Cron any action against a honeypot/company/fleet — updates, power, custom commands, on-demand "force a sweep now" debug buttons |
 | 🏢 **Companies** | Each company's own page (users + honeypots), a per-company syslog target for that company's own alerts, plus the "All honeypots" virtual company and its own fleet-wide alert target |
 | 📚 **API docs** (`/api`) | Live Swagger UI over the full read/write REST API — everything the web UI can do, an API can too |
-| ⚙️ **Settings** | SSH key rotation, **Checks & retention** (background-check timeouts/intervals plus every retention policy, database-backed — no restart to change most of it), LDAP/OIDC/syslog/SMTP integrations, VPN (NetBird or WireGuard) |
+| ⚙️ **Settings** | SSH key rotation, **Checks & retention** (background-check timeouts/intervals plus every retention policy, database-backed — no restart to change most of it), the shared **Notifications** email templates, LDAP/OIDC/syslog/SMTP integrations, VPN (NetBird or WireGuard) |
 
 Want the granular, paragraph-by-paragraph feature list this page used to
 carry? That level of detail lives where it belongs — next to the *why*,
@@ -89,14 +89,22 @@ actually read in one sitting.
   a `READ_WRITE` user *does* manage the honeypots already in their own
   company (create/edit/delete, terminal, updates, power). Companies,
   Users, Settings, and the Audit log stay superadmin-only end to end.
-- **Alerting**: out of scope for v1 — this is a management/overview tool,
-  not a notification system. Three separate syslog targets (global
-  audit-only, per-company alerts, fleet-wide alerts — see
+- **Notifications**: self-service, per-user email alerts — any user,
+  regardless of access level, can subscribe their own account (or a
+  manually-entered address) to honeypot-alert and/or unavailability
+  emails for any honeypot they can see, from My account → Notifications.
+  Deliberately much simpler than a role/condition-based rules engine — see
+  [Architecture](Architecture.md#notifications-self-service-per-honeypot-email-alerts).
+  The three syslog targets (global audit-only, per-company alerts,
+  fleet-wide alerts — see
   [Architecture](Architecture.md#three-syslog-targets-deliberately-never-mixed))
-  cover "forward to your own SIEM" instead. SMTP relay settings exist
-  (Settings → Integrations) but nothing sends through them yet.
+  remain the "forward to your own SIEM" path, unrelated to this.
 - **Retention defaults**: events, audit log entries, and dashboard trend
   snapshots all default to 90 days — still adjustable from Settings.
+- **Impersonate**: a superadmin can sign in as any other (non-superadmin)
+  account for support/debugging, from the Users list — see
+  [Architecture](Architecture.md#impersonate-a-superadmin-signing-in-as-another-account)
+  for the safeguards and audit trail.
 
 ### Still open
 

@@ -126,9 +126,21 @@ async def _apply_memberships(
 ) -> None:
     """Replaces every one of `user`'s memberships with exactly the given
     set — simplest correct approach for a form re-submitting the whole
-    fieldset each time, and cheap (a handful of rows at most)."""
+    fieldset each time, and cheap (a handful of rows at most).
+
+    Flushes the deletes before adding the replacements: re-submitting the
+    *same* (company_id, access_level) unchanged — the common case, editing
+    a user for an unrelated field — would otherwise insert the new row
+    before the old one's DELETE actually reaches the database, tripping
+    `uq_company_membership_user_company` with a real
+    `sqlite3.IntegrityError`/`psycopg` unique-violation instead of a no-op.
+    SQLAlchemy's unit of work does order deletes before inserts within one
+    flush in general, but only for objects it already knows about in this
+    same flush — replacing the collection wholesale, both halves land in
+    the *same* flush, so the ordering isn't guaranteed without this."""
     for existing in list(user.memberships):
         await db.delete(existing)
+    await db.flush()
     user.memberships = [
         CompanyMembership(company_id=m.company_id, access_level=m.access_level)
         for m in memberships
@@ -207,6 +219,7 @@ async def create_user(
     db: AsyncSession = Depends(get_db),
     username: str = Form(...),
     display_name: str = Form(""),
+    email: str = Form(""),
     auth_provider: AuthProvider = Form(...),
     password: str = Form(""),
     is_superadmin: str = Form(""),
@@ -240,6 +253,7 @@ async def create_user(
                 "form": {
                     "username": username,
                     "display_name": display_name,
+                    "email": email,
                     "auth_provider": auth_provider,
                 },
                 "membership_levels": {m.company_id: m.access_level for m in memberships},
@@ -252,6 +266,7 @@ async def create_user(
         payload = UserCreate(
             username=username,
             display_name=display_name or None,
+            email=email or None,
             auth_provider=auth_provider,
             password=password or None,
             is_superadmin=bool(is_superadmin),
@@ -268,6 +283,7 @@ async def create_user(
     user = User(
         username=payload.username,
         display_name=payload.display_name,
+        email=payload.email,
         auth_provider=payload.auth_provider,
         password_hash=hash_password(payload.password) if payload.password else None,
         # An admin-set initial password must be changed on first login —
@@ -457,6 +473,7 @@ async def update_user(
     db: AsyncSession = Depends(get_db),
     username: str = Form(...),
     display_name: str = Form(""),
+    email: str = Form(""),
     auth_provider: AuthProvider = Form(...),
     password: str = Form(""),
     is_superadmin: str = Form(""),
@@ -494,6 +511,7 @@ async def update_user(
         payload = UserUpdate(
             username=username,
             display_name=display_name or None,
+            email=email or None,
             auth_provider=auth_provider,
             password=password or None,
             is_superadmin=bool(is_superadmin),
@@ -557,6 +575,7 @@ async def update_user(
 
     user.username = payload.username
     user.display_name = payload.display_name
+    user.email = payload.email
     user.auth_provider = payload.auth_provider
     user.is_superadmin = payload.is_superadmin
     await _apply_memberships(db, user, payload.memberships)

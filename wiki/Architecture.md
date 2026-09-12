@@ -156,6 +156,45 @@ default because trusting it from anyone lets an attacker spoof a new
 "source" every attempt and defeat the rate limiter entirely. Only turn
 it on once `TRUSTED_PROXY_IPS` is narrowed to your real proxy.
 
+### Impersonate: a superadmin signing in as another account
+
+`POST /users/{id}/impersonate` (Users list, "Sign in as") — for support/
+debugging, a superadmin can take over another account's session without
+knowing their password. Ported from an identical debcontrol feature
+(`user.impersonate`, its own permission there); this app has no roles/
+permissions at all (see `app/db/models/user.py`'s module docstring), so
+the whole `app.web.routes.impersonation` router is gated simply on "you
+must already be a superadmin," and the guardrail against admin-on-admin
+impersonation becomes "the target may never itself be a superadmin."
+
+Mechanism: starting an impersonation does **not** touch the superadmin's
+own session row — it creates a brand-new `UserSession` for the target
+account (`UserSession.impersonator_id` tags who started it), swaps the
+browser's session cookie over to that new session, and stashes the
+superadmin's own raw session token in a second, signed, httponly cookie
+(`impersonation_return`) so it can be handed back later. "Logging out" of
+an impersonated session (the same `/logout` route, no separate endpoint)
+restores the superadmin's own session instead of a full sign-out — like
+closing a `su` shell — falling back to an ordinary logout only if that
+return cookie is missing/expired or the original session no longer
+validates.
+
+Guardrails: can't impersonate yourself, can't impersonate a disabled
+account, can't impersonate another superadmin (no chains — an
+impersonated session's own access level governs what it can do, same as
+any other session, so this also means an impersonated session can never
+itself reach the impersonate router at all, since it requires
+`is_superadmin`). Every start/stop is its own audit log entry naming both
+accounts; actions taken during the impersonated session are audit-logged
+as usual under the impersonated account. The topbar shows the
+impersonated account's name with the superadmin's own name in a colored
+tag so it's never ambiguous who "you" are while it's active.
+
+Deliberately web-only, not in the REST API — see `api_v1.py`'s module
+docstring: swapping a session cookie has no meaningful translation to a
+stateless bearer-token call, which already scopes to one fixed account by
+design.
+
 ## 🌱 Initialize: provisioning a brand new device
 
 [Initialize](Honeypot-Initialize.md) is the one write path that SSHes
@@ -390,12 +429,56 @@ update/power sections this round — the Honeypots list's bulk-select
 already covers the same ground with finer selection. (The REST API's
 equivalents are untouched.)
 
-### SMTP — configured, not yet wired to send anything
+### SMTP — the relay behind Notifications
 
 `AppSettings.smtp_*` (Settings → Integrations) holds a mail relay's
-connection details. Deliberately config-only for now — nothing calls
-into `app.services.smtp` yet, and no notification feature exists to
-trigger a send.
+connection details; `app.services.smtp.send_email` is the actual
+`smtplib` send (sync library, run via `asyncio.to_thread` — the same
+seam every Celery task crosses for its own synchronous protocols). The
+only caller is `app.services.notifications` — see the next section.
+
+### Notifications: self-service, per-honeypot email alerts
+
+Any user, regardless of access level, can subscribe to email alerts for
+any honeypot they can already see (My account → Notifications,
+`app.web.routes.notifications`, `HoneypotNotificationSubscription`) —
+deliberately much simpler than debcontrol's own Notifications (admin-
+authored rules, role-targeted recipients, CPU/RAM/disk condition
+thresholds, per-rule custom templates), matching this app's own flatter
+RBAC (no roles/groups — see `app.db.models.user`'s module docstring) and
+an explicit product decision to keep this self-service rather than
+admin-configured.
+
+Two trigger types, both per-(user, honeypot) subscription rows:
+
+- **Honeypot alert** — every newly ingested, non-internal `HoneypotEvent`
+  emails every subscriber with `notify_on_alert=True` for that honeypot.
+  One email per event, no batching/digest.
+- **Unavailable** — emails a subscriber once a honeypot has been
+  continuously unreachable for at least *that subscription's own*
+  `unavailable_after_minutes` (each subscriber sets their own threshold,
+  not a shared instance-wide one), and again once it's reachable again.
+  `Honeypot.unreachable_since` tracks when the current outage started —
+  distinct from `last_ping_at`, which is overwritten every sweep tick
+  regardless of outcome and so can't answer "how long has it actually
+  been down." `HoneypotNotificationSubscription.unavailable_notified_at`
+  ensures at most one "it's down" email per continuous outage, cleared
+  the moment it recovers. Both hook directly into the existing
+  `app.tasks.jobs._poll_honeypot_canary_log`/`_ping_all_honeypots` sweeps
+  — no new Celery Beat schedule entry needed.
+
+Recipient: `User.notification_target_email` — a manually-entered
+`User.notification_email` if set, else the account's own `User.email`
+(self-service in My account, or admin-set from the Users edit form),
+else nothing to send to. Wording is the one place this *is* centrally
+configured: `AppSettings.notification_*_subject`/`_body` (Settings →
+Notifications, superadmin-only) — one shared template per event type,
+not per-user/per-rule, substituted via plain `str.format_map` (never a
+template engine, so an admin-edited body can't execute code or reach
+outside its own string) — see `app.services.notifications` for the full
+design and every failure-is-a-silent-no-op reasoning (SMTP not
+configured, no recipient email set, the relay refusing the connection —
+none of this may ever break the background sweep that triggered it).
 
 ### Settings → Checks & retention: database-backed, not `.env`
 
