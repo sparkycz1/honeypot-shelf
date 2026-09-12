@@ -13,6 +13,7 @@ from app.db.models.honeypot import Honeypot
 from app.db.models.honeypot_company import honeypot_companies
 from app.db.models.honeypot_event import HoneypotEvent
 from app.db.models.honeypot_monitoring_sample import HoneypotMonitoringSample
+from app.db.models.honeypot_notification_subscription import HoneypotNotificationSubscription
 from app.db.models.honeypot_package import HoneypotPackage
 from app.db.models.honeypot_reachability_sample import HoneypotReachabilitySample
 from app.db.models.honeypot_service import HoneypotService
@@ -41,6 +42,7 @@ __all__ = [
     "HoneypotEvent",
     "honeypot_companies",
     "HoneypotMonitoringSample",
+    "HoneypotNotificationSubscription",
     "HoneypotPackage",
     "HoneypotReachabilitySample",
     "HoneypotService",

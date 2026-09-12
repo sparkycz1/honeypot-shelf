@@ -34,6 +34,7 @@ from celery.signals import worker_process_init
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
+import app.db.models  # noqa: F401 - registers every model before _bootstrap_interval_settings
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 
@@ -90,6 +91,32 @@ def _bootstrap_interval_settings() -> dict[str, int]:
     up.
 
     Ported from an identical debcontrol change.
+
+    **Real bug this module's own top-level `import app.db.models` guards
+    against**: this function's DB query (via `get_or_create_app_settings`)
+    is the very first ORM query this process ever runs, at *module import
+    time* — before Celery's own `include=[...]` has had a chance to import
+    `app.tasks.jobs` (where most model modules actually get imported as a
+    side effect). SQLAlchemy configures every mapped class's relationships
+    the first time *any* one of them is queried, and a `Mapped[list[Foo]]`
+    relationship using a plain string/forward-reference annotation (every
+    relationship in this codebase, since `from __future__ import
+    annotations` is in effect everywhere) needs `Foo` to already be
+    registered in the shared declarative registry at that moment — not
+    merely imported eventually. Confirmed live: on its very first boot
+    after `HoneypotNotificationSubscription` was added (`User.
+    notification_subscriptions` referencing it), this function's own
+    `except Exception` above caught a `sqlalchemy.exc.InvalidRequestError:
+    ... failed to locate a name 'HoneypotNotificationSubscription'` here —
+    not a crash (the `except` did its job, `beat` started fine on the
+    hardcoded fallback defaults), but a real, avoidable miss: the actual
+    configured interval values silently didn't take effect until the next
+    restart, logged as a scary-looking traceback each time. The top-level
+    `import app.db.models` (the same whole-registry import
+    `alembic/env.py` already relies on for autogenerate, per that
+    package's own docstring) guarantees every model is registered before
+    this function's query can trigger mapper configuration, so the real
+    values are read on the very first boot instead.
     """
     if "beat" not in sys.argv:
         return dict(_INTERVAL_SETTING_DEFAULTS)
