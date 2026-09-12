@@ -60,6 +60,35 @@ async def _get_user_or_404(user_id: uuid.UUID, db: AsyncSession) -> User:
     return user
 
 
+async def _duplicate_username_error(
+    db: AsyncSession, *, exclude_user_id: uuid.UUID, username: str
+) -> str | None:
+    """Proactively look for a row this write would collide with, instead of
+    relying solely on catching `IntegrityError` from the commit.
+
+    This matters specifically for *updates*, not creates: `User.updated_at`
+    has `onupdate=func.now()`, so SQLAlchemy emits an implicit
+    `UPDATE ... RETURNING updated_at`. Confirmed against both dialects:
+    asyncpg (what production actually runs) handles a UNIQUE-violating
+    RETURNING UPDATE the same way as any other failed statement, surfacing
+    a normal `IntegrityError`. But under the test suite's aiosqlite backend
+    (`tests/conftest.py`'s `db_session_factory`), the same failure corrupts
+    aiosqlite's greenlet/asyncio bridging and surfaces as
+    `sqlalchemy.exc.MissingGreenlet` instead — a driver-level quirk, not a
+    real production behavior. This check sidesteps it so the common
+    "edited to someone else's username" case behaves identically on both
+    backends; the `IntegrityError` catch below the commit stays in place as
+    a defense-in-depth backstop for a genuine update race. Ported from the
+    identical fix in debcontrol.
+    """
+    result = await db.execute(
+        select(User).where(User.id != exclude_user_id, User.username == username)
+    )
+    if result.scalars().first() is not None:
+        return f'A user named "{username}" already exists.'
+    return None
+
+
 async def _get_companies(db: AsyncSession) -> list[Company]:
     result = await db.execute(select(Company).order_by(Company.name))
     return list(result.scalars().all())
@@ -515,6 +544,16 @@ async def update_user(
                 ["This is the last superadmin account — it can't lose that access."],
                 status.HTTP_409_CONFLICT,
             )
+
+    # Checked before mutating `user` in place below: once its attributes are
+    # dirtied, a `SELECT` here would trigger autoflush and emit the very
+    # UPDATE this check exists to get ahead of, defeating the point (see
+    # `_duplicate_username_error`'s docstring).
+    duplicate_error = await _duplicate_username_error(
+        db, exclude_user_id=user.id, username=payload.username
+    )
+    if duplicate_error is not None:
+        return await _rerender([duplicate_error], status.HTTP_409_CONFLICT)
 
     user.username = payload.username
     user.display_name = payload.display_name

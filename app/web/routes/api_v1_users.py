@@ -63,6 +63,27 @@ async def _get_user_or_404(user_id: uuid.UUID, db: AsyncSession) -> User:
     return user
 
 
+async def _duplicate_username_error(
+    db: AsyncSession, *, exclude_user_id: uuid.UUID, username: str
+) -> str | None:
+    """Proactively look for a row this write would collide with, instead of
+    relying on catching `IntegrityError` from the commit — see the matching
+    helper in `app/web/routes/users.py` for why: `User.updated_at`'s
+    `onupdate=func.now()` makes an UPDATE emit an implicit
+    `RETURNING updated_at`, and a UNIQUE violation on that specific
+    statement shape surfaces as `sqlalchemy.exc.MissingGreenlet` rather than
+    `IntegrityError` under the test suite's aiosqlite backend (confirmed not
+    to happen against production's asyncpg). Must be called before mutating
+    `user` in place — see the call site in `update_user_api`.
+    """
+    result = await db.execute(
+        select(User).where(User.id != exclude_user_id, User.username == username)
+    )
+    if result.scalars().first() is not None:
+        return f'A user named "{username}" already exists.'
+    return None
+
+
 async def _would_remove_last_superadmin(db: AsyncSession, target: User) -> bool:
     if not target.is_superadmin:
         return False
@@ -171,6 +192,14 @@ async def update_user_api(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="This is the last superadmin account — it can't lose that access.",
             )
+
+    # Checked before mutating `user` in place below — see
+    # `_duplicate_username_error`'s docstring for why.
+    duplicate_error = await _duplicate_username_error(
+        db, exclude_user_id=user.id, username=payload.username
+    )
+    if duplicate_error is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=duplicate_error)
 
     user.username = payload.username
     user.display_name = payload.display_name

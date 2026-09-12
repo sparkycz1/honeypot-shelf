@@ -52,6 +52,10 @@ over the internal Docker network.
   `Referrer-Policy: no-referrer`, and the `Server` header is stripped.
 - **Request/idle timeouts** — conservative defaults under
   `servers { timeouts { ... } }`.
+- **5MB request body cap** — the app has no file-upload endpoint; the
+  largest legitimate body is a pasted runbook, SSH key, or a honeypot/
+  company config JSON/CSV import, all comfortably under that. Rejects an
+  oversized POST at the proxy, before it reaches `web` at all.
 
 ### Verifying it worked
 
@@ -105,6 +109,10 @@ without `docker-compose.caddy.yml`):
 your-domain.example.com {
 	tls {
 		protocols tls1.3 tls1.3
+	}
+
+	request_body {
+		max_size 5MB
 	}
 
 	header {
