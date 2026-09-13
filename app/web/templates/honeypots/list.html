@@ -187,7 +187,7 @@
           {% for honeypot in honeypots %}
             <li class="honeypot-compact-row">
               <input type="checkbox" name="honeypot_ids" value="{{ honeypot.id }}"
-                     aria-label="Select {{ honeypot.name }}">
+                     aria-label="{{ t(request, 'honeypots.list.select_aria', name=honeypot.name) }}">
               {{ render_os_badge(honeypot.os_id, size=18) }}
               <a href="/honeypots/{{ honeypot.id }}" class="honeypot-compact-name">{{ honeypot.name }}</a>
               {{ status_badge(request, honeypot) }}
@@ -257,7 +257,8 @@
           <tbody>
             {% for honeypot in honeypots %}
               <tr>
-                <td><input type="checkbox" name="honeypot_ids" value="{{ honeypot.id }}"></td>
+                <td><input type="checkbox" name="honeypot_ids" value="{{ honeypot.id }}"
+                           aria-label="{{ t(request, 'honeypots.list.select_aria', name=honeypot.name) }}"></td>
                 <td>
                   {{ render_os_badge(honeypot.os_id) }}
                   <a href="/honeypots/{{ honeypot.id }}">{{ honeypot.name }}</a>
