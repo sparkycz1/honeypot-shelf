@@ -2,25 +2,25 @@
   Wazuh decoders for Honeypot Shelf's two syslog feeds:
 
     - The global audit log target (Settings -> Integrations,
-      app.audit_syslog) — every human-initiated mutation across the
+      app.audit_syslog) - every human-initiated mutation across the
       whole app, "event":"audit" in the JSON body.
     - The per-company / fleet-wide honeypot-alert targets (each
       Company's own Integrations tab, and "All honeypots" ->
-      Integrations, app.services.honeypot_event_syslog) — real
+      Integrations, app.services.honeypot_event_syslog) - real
       OpenCanary alerts only, "event":"honeypot_alert" in the JSON body.
 
   Both are sent as RFC 5424 syslog, APP-NAME "HoneypotShelf", with the
   MSG part always a single-line compact JSON object (never
-  key="value" text) — see either module's own docstring in the
+  key="value" text) - see either module's own docstring in the
   honeypot-shelf repo for the exact framing and field list.
 
-  Pairs with honeypotshelf_rules.xml (same folder) — that file's rules
+  Pairs with honeypotshelf_rules.xml (same folder) - that file's rules
   match on `<decoded_as>` these decoders produce and on the `data.*`
   fields they expose, so both need to be loaded together.
 
   Install (Wazuh manager, self-managed):
     1. Copy this file to /var/ossec/etc/decoders/ (and
-       honeypotshelf_rules.xml to /var/ossec/etc/rules/) — or point a
+       honeypotshelf_rules.xml to /var/ossec/etc/rules/) - or point a
        <decoder_dir>/<rule_dir> pair in ossec.conf's <ruleset> block at
        wherever you keep this "wazuh" folder instead:
 
@@ -33,7 +33,7 @@
          </ruleset>
 
     2. Point Honeypot Shelf's syslog target(s) at this manager (or an
-       intermediate syslog-ng/rsyslog relay forwarding to it) — Settings
+       intermediate syslog-ng/rsyslog relay forwarding to it) - Settings
        -> Integrations for the global audit target, each Company's own
        page and/or "All honeypots" -> Integrations for alerts.
     3. `/var/ossec/bin/wazuh-control restart` (or just restart
@@ -44,7 +44,7 @@
 
 <decoder name="honeypotshelf">
   <!-- Matches the RFC 5424 APP-NAME field ("HoneypotShelf") anywhere in
-       the still-unparsed line — deliberately a plain substring search,
+       the still-unparsed line - deliberately a plain substring search,
        not anchored to Wazuh's own RFC 5424 pre-decoding having already
        split out hostname/program_name/msgid, so this keeps working
        whichever way that pre-decoding lands. -->
@@ -54,7 +54,7 @@
 <decoder name="honeypotshelf-audit">
   <!-- "event" is always the first key `json.dumps` writes (Python dicts
        keep insertion order, and app.audit_syslog builds the payload
-       dict with "event" first) — so this prefix reliably locates where
+       dict with "event" first) - so this prefix reliably locates where
        the JSON body starts and JSON_Decoder takes it from there,
        exposing every top-level key as data.<key> (event, id, timestamp,
        action, actor, ip, outcome, target_type, target_id, target_label,
