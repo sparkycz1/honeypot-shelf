@@ -22,7 +22,7 @@ async def _create_pinned_honeypot(db_session_factory, company_id) -> Honeypot:
             name="acme-honey1",
             ip_address="192.0.2.10",
             port=22,
-            username="honeyhive",
+            username="honeypotshelf",
             auth_method=AuthMethod.SSH_KEY,
             host_key_fingerprint="SHA256:fake-fingerprint-for-tests",
         )

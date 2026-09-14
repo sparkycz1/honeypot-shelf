@@ -6,7 +6,7 @@
 
 ```bash
 git clone https://github.com/sparkycz1/honeypot-shelf.git
-cd honeyhive
+cd honeypotshelf
 python3 scripts/setup.py
 ```
 
@@ -251,13 +251,13 @@ crontab -e
 ```
 
 ```cron
-15 3 * * * cd /path/to/honeyhive && ./scripts/backup.sh >> /var/log/honeyhive-backup.log 2>&1
+15 3 * * * cd /path/to/honeypotshelf && ./scripts/backup.sh >> /var/log/honeypotshelf-backup.log 2>&1
 ```
 
-Adjust `/path/to/honeyhive` to the actual checkout path (`pwd` from
+Adjust `/path/to/honeypotshelf` to the actual checkout path (`pwd` from
 inside it), and make sure `/var/log/` (or wherever you point the log) is
-writable by that user — `touch /var/log/honeyhive-backup.log && chown
-that-user /var/log/honeyhive-backup.log` if it isn't yet. Check the log
+writable by that user — `touch /var/log/honeypotshelf-backup.log && chown
+that-user /var/log/honeypotshelf-backup.log` if it isn't yet. Check the log
 after the first scheduled run to confirm it actually succeeded, and
 periodically after that — a cron job that silently stopped working is
 worse than no backup job, since it looks like there's one until the day
@@ -312,9 +312,9 @@ web UI:
 docker compose exec web python scripts/reset_account.py --username admin
 ```
 
-Non-interactively, set `HONEYHIVE_RESET_PASSWORD` in the environment
+Non-interactively, set `HONEYPOTSHELF_RESET_PASSWORD` in the environment
 instead of being prompted (same reasoning as `create_admin.py`'s
-`HONEYHIVE_ADMIN_PASSWORD` — it never shows up in a process listing the
+`HONEYPOTSHELF_ADMIN_PASSWORD` — it never shows up in a process listing the
 way a `--password` flag would).
 
 See [Development.md](Development.md) for running the test suite,

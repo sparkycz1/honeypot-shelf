@@ -473,7 +473,10 @@ def test_build_initialize_command_moves_ssh_to_the_new_port_last():
     from app.ssh.initialize import INITIALIZE_SUCCESS_MARKER, NEW_SSH_PORT
 
     script = build_initialize_command(device_name="acme-honey1", service_user="pi")
-    assert f"echo 'Port {NEW_SSH_PORT}' > /etc/ssh/sshd_config.d/honeyhive-ssh-port.conf" in script
+    assert (
+        f"echo 'Port {NEW_SSH_PORT}' > /etc/ssh/sshd_config.d/honeypotshelf-ssh-port.conf"
+        in script
+    )
     assert "sshd -t" in script
     assert "systemctl restart ssh" in script
     # Validated (and, if invalid, `set -e` aborts) before ever restarting —
@@ -490,12 +493,12 @@ def test_build_initialize_command_honors_a_custom_new_ssh_port():
     script = build_initialize_command(
         device_name="acme-honey1", service_user="pi", new_ssh_port=2222
     )
-    assert "echo 'Port 2222' > /etc/ssh/sshd_config.d/honeyhive-ssh-port.conf" in script
+    assert "echo 'Port 2222' > /etc/ssh/sshd_config.d/honeypotshelf-ssh-port.conf" in script
     assert "Port 22222" not in script
 
 
 def test_build_initialize_command_installs_authorized_keys_when_given():
-    key = "ssh-ed25519 AAAAfake honeyhive"
+    key = "ssh-ed25519 AAAAfake honeypotshelf"
     script = build_initialize_command(
         device_name="acme-honey1",
         service_user="pi",
@@ -577,7 +580,7 @@ def test_wrap_for_sudo_root_needs_no_sudo():
 
 def test_wrap_for_sudo_non_root_without_password_uses_sudo_dash_n():
     wrapped = wrap_for_sudo("echo hi\n", ssh_username="pi", sudo_password=None)
-    assert "sudo -n bash /tmp/.honeyhive-initialize.sh" in wrapped
+    assert "sudo -n bash /tmp/.honeypotshelf-initialize.sh" in wrapped
     assert "sudo -S" not in wrapped
 
 

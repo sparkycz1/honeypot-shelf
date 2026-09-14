@@ -1,6 +1,6 @@
-"""HoneyHive user accounts.
+"""Honeypot Shelf user accounts.
 
-Every account is created inside HoneyHive first — there's no auto-provisioning
+Every account is created inside Honeypot Shelf first — there's no auto-provisioning
 from LDAP or OIDC (see `app.auth.login`, `app.auth.oidc`). `auth_provider`
 just decides *how* that account proves who it is:
 
@@ -116,7 +116,7 @@ class User(Base):
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # Set when an admin assigns a new password (creation, or a reset) — the
     # user is forced to pick their own before doing anything else. Never set
-    # for LDAP/OIDC accounts (there's no HoneyHive-side password to change).
+    # for LDAP/OIDC accounts (there's no Honeypot Shelf-side password to change).
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # A disabled account can't log in and gets no new sessions, but is kept

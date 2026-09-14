@@ -192,7 +192,7 @@ def _vpn_overlay_running(docker_path: str) -> bool:
     result = subprocess.run(  # noqa: S603 - fixed args, no user input
         [
             docker_path, "ps",
-            "--filter", "label=com.docker.compose.project=honeyhive",
+            "--filter", "label=com.docker.compose.project=honeypotshelf",
             "--filter", "label=com.docker.compose.service=vpn",
             "--format", "{{.Names}}",
         ],
@@ -478,17 +478,17 @@ def main() -> None:
         )
 
     print("==> Creating the first superadmin account (username: admin)...")
-    # Passed as a bare `-e HONEYHIVE_ADMIN_PASSWORD` (no `=value`) so Docker
+    # Passed as a bare `-e HONEYPOTSHELF_ADMIN_PASSWORD` (no `=value`) so Docker
     # forwards this process's own environment value into the container's
     # exec'd process — the password itself never appears as a command-line
     # argument, so it never shows up in this host's process listing. See
     # create_admin.py's own module docstring for why that distinction matters.
-    exec_env = {**os.environ, "HONEYHIVE_ADMIN_PASSWORD": admin_password}
+    exec_env = {**os.environ, "HONEYPOTSHELF_ADMIN_PASSWORD": admin_password}
     try:
         subprocess.run(  # noqa: S603 - fixed args, no user input in the command itself
             [
                 docker_path, "compose", *compose_files, "exec", "-T",
-                "-e", "HONEYHIVE_ADMIN_PASSWORD",
+                "-e", "HONEYPOTSHELF_ADMIN_PASSWORD",
                 "web", "python", "scripts/create_admin.py", "--username", "admin",
             ],
             cwd=REPO_ROOT,

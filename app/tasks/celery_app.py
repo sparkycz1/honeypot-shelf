@@ -147,7 +147,7 @@ def _bootstrap_interval_settings() -> dict[str, int]:
         return dict(_INTERVAL_SETTING_DEFAULTS)
 
 celery_app = Celery(
-    "honeyhive",
+    "honeypotshelf",
     broker=settings.redis_url,
     backend=settings.redis_url,
     # Both modules' `@celery_app.task(...)`-decorated functions need to

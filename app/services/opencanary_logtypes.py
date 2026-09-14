@@ -22,7 +22,7 @@ from collections.abc import Callable
 
 # id -> human label. Kept as a flat dict (not an enum) — like
 # `HoneypotEvent.event_type` itself, this list belongs to OpenCanary, not
-# this app, and can grow across an OpenCanary upgrade without a HoneyHive
+# this app, and can grow across an OpenCanary upgrade without a Honeypot Shelf
 # release; an id missing here just falls back to showing the raw number
 # (see `logtype_label` below).
 _LABELS: dict[int, str] = {

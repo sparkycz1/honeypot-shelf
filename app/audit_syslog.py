@@ -7,7 +7,7 @@ queryable, exportable) — this is only ever a live mirror of it, and a
 delivery failure here must never affect the action being audited or raise
 back into the caller. See `log_event`'s call into `forward_to_syslog`.
 
-This is HoneyHive's **global** syslog target — every audit log entry
+This is Honeypot Shelf's **global** syslog target — every audit log entry
 (every human-initiated mutation across the whole app: honeypot/company/
 user CRUD, logins, settings changes, ...), regardless of company. It
 never carries honeypot *alerts* (OpenCanary events) — those never go
@@ -38,7 +38,7 @@ if TYPE_CHECKING:
     from app.db.models.app_settings import AppSettings
     from app.db.models.audit_log import AuditLogEntry
 
-logger = logging.getLogger("HoneyHive.audit_syslog")
+logger = logging.getLogger("Honeypot Shelf.audit_syslog")
 
 _FACILITY_USER = 1  # RFC 5424 facility 1, "user-level messages".
 

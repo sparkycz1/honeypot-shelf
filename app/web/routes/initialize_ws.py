@@ -290,7 +290,7 @@ async def initialize_websocket(websocket: WebSocket, run_id: str) -> None:
                 device.auth_method = AuthMethod.SSH_KEY
                 secret = decrypt_secret(identity.private_key_encrypted)
 
-            # HoneyHive's own shared identity key, plus every current
+            # Honeypot Shelf's own shared identity key, plus every current
             # superadmin's personal key(s) — installed onto the connecting
             # account so both can reach this device directly afterward,
             # without needing the one-time password/key this run itself

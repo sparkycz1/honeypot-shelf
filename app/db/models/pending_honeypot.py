@@ -1,6 +1,6 @@
 """A honeypot that announced itself via POST /api/inform, awaiting review
 — same mechanism and purpose as debcontrol's `PendingMachine`. This is
-the "here's a brand new Pi, nobody in HoneyHive knows about it yet" path
+the "here's a brand new Pi, nobody in Honeypot Shelf knows about it yet" path
 — an *already-registered* honeypot's own OpenCanary events, by contrast,
 are read straight off it over SSH (see `app.services.honeypot_events`),
 nothing to announce.

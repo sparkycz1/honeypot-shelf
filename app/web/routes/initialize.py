@@ -1,5 +1,5 @@
 """"Initialize" — provisions a brand new Raspberry Pi OS 13 device (not yet
-managed by HoneyHive at all) into a working OpenCanary honeypot over SSH.
+managed by Honeypot Shelf at all) into a working OpenCanary honeypot over SSH.
 See `app.ssh.initialize` for exactly what the provisioning script does and
 `app.web.routes.initialize_ws` for where it's actually run — this module
 only ever handles the form (`GET`/`POST /initialize`) and the run page
@@ -10,7 +10,7 @@ the interactive terminal.
 
 Deliberately **not** honeypot-scoped and **doesn't create a `Honeypot`
 row** — it's a standalone tool that runs before a device exists in
-HoneyHive's database at all. Once it succeeds, an operator adds the
+Honeypot Shelf's database at all. Once it succeeds, an operator adds the
 device the normal way (`/honeypots/new`), which discovers and pins its
 host key the usual, non-TOFU way.
 
@@ -97,7 +97,7 @@ class PendingInitializeRun:
     auth_method: str
     password: str | None
     # The honeypot's own VPN, "none"/"netbird"/"wireguard" — independent of
-    # HoneyHive's own choice in Settings -> VPN. See
+    # Honeypot Shelf's own choice in Settings -> VPN. See
     # app.ssh.initialize.build_initialize_command.
     vpn_provider: str
     netbird_setup_key: str | None

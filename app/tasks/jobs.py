@@ -416,7 +416,7 @@ def set_honeypot_readonly(honeypot_id: str, *, enable: bool) -> dict[str, Any]:
 async def _read_honeypot_opencanary_config(honeypot_id: str) -> dict[str, Any]:
     """The Honeypot Config tab's module editor — a fresh `cat` of
     `opencanary.conf` on every load, see `app.ssh.opencanary_config`'s
-    module docstring for why this is never cached in HoneyHive's own DB."""
+    module docstring for why this is never cached in Honeypot Shelf's own DB."""
     async with db_session.AsyncSessionLocal() as session:
         app_settings = await get_or_create_app_settings(session)
         honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
@@ -657,7 +657,7 @@ _ONBOARDING_EXTRA_SECONDS = 90
 
 
 async def _run_honeypot_onboarding(honeypot_id: str) -> dict[str, Any]:
-    """Prepares a freshly-added, not-yet-managed honeypot for HoneyHive —
+    """Prepares a freshly-added, not-yet-managed honeypot for Honeypot Shelf —
     see `app.ssh.onboarding` for exactly what the script does and why this
     isn't a real `ansible-playbook` invocation.
 
@@ -666,8 +666,8 @@ async def _run_honeypot_onboarding(honeypot_id: str) -> dict[str, Any]:
     honeypot (`POST /honeypots`, same as any other honeypot — see
     `app.web.routes.honeypots.run_onboarding_endpoint`), since the whole
     point is to bootstrap a honeypot that has nothing configured for
-    HoneyHive's own shared identity yet. On success, switches the honeypot
-    over to that identity (`username="honeyhive"`, `auth_method=SSH_KEY`,
+    Honeypot Shelf's own shared identity yet. On success, switches the honeypot
+    over to that identity (`username="honeypotshelf"`, `auth_method=SSH_KEY`,
     clearing the stored one-time secret) so every other feature (updates,
     terminal, power, ...) treats it exactly like any other SSH_KEY honeypot
     from then on — there is no separate "onboarded" flag to track.

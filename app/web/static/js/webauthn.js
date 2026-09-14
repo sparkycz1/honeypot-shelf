@@ -124,7 +124,7 @@
   function unsupportedReason() {
     if (window.PublicKeyCredential) return null;
     if (!window.isSecureContext) {
-      return "Passkeys need HTTPS (or http://localhost) — this page is loaded over plain HTTP. Put HoneyHive behind a reverse proxy with TLS (see the wiki's Installation page) to use them.";
+      return "Passkeys need HTTPS (or http://localhost) — this page is loaded over plain HTTP. Put Honeypot Shelf behind a reverse proxy with TLS (see the wiki's Installation page) to use them.";
     }
     return "This browser doesn't support passkeys.";
   }

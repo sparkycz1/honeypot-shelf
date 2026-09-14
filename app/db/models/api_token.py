@@ -8,7 +8,7 @@ deactivating the account) takes effect on the token immediately, the same
 as it would for that user's browser session.
 
 Self-service, like TOTP enrollment: a user creates and revokes their own
-tokens from "My account"; nobody (including HoneyHive itself, after
+tokens from "My account"; nobody (including Honeypot Shelf itself, after
 creation) can read the raw value again — only `token_hash` (SHA-256, same
 scheme as `UserSession.token_hash`) and a cosmetic `token_prefix` are
 stored.

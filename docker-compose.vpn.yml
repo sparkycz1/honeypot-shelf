@@ -5,7 +5,7 @@
 # changing which compose files you run: NetBird (a managed network, handles
 # NAT traversal itself via its coordination/relay servers — either the
 # public NetBird Cloud or your own self-hosted management server) or
-# WireGuard (HoneyHive joins as a plain peer of a WireGuard server you
+# WireGuard (Honeypot Shelf joins as a plain peer of a WireGuard server you
 # already run somewhere reachable — see wiki/Architecture.md's "VPN
 # connectivity: NetBird or WireGuard" section for the full design,
 # including why WireGuard alone can't help a honeypot that's *also* behind
@@ -56,7 +56,7 @@ services:
     # `app.services.vpn_control_server` reads `app.core.config.Settings`
     # same as every other part of this app, which needs it (SECRET_KEY,
     # ENCRYPTION_KEY, ... — see .env.example) to even start.
-    image: honeyhive:local
+    image: honeypotshelf:local
     env_file:
       - .env
     environment:

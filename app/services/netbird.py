@@ -1,4 +1,4 @@
-"""Controls HoneyHive's *own* NetBird connection — not to be confused with
+"""Controls Honeypot Shelf's *own* NetBird connection — not to be confused with
 `app.ssh.initialize`'s NetBird setup, which joins a honeypot being
 provisioned to your network. This module is about `web`/`worker`
 themselves: when a honeypot only has a NetBird address (e.g. it sits

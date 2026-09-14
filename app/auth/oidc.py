@@ -4,7 +4,7 @@ JWKS once it's fetched `server_metadata_url`).
 
 No account is ever created from this — see the module docstring on
 `app.db.models.user`. `handle_callback` only returns the provider's claims;
-matching that to an existing HoneyHive account (by comparing
+matching that to an existing Honeypot Shelf account (by comparing
 `AppSettings.oidc_username_claim`) happens in the route
 (`app/web/routes/auth.py`), same as it would for any other claim-based
 identity check.

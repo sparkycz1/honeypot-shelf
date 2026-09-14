@@ -622,7 +622,7 @@ async def reset_password(
     if user.auth_provider != AuthProvider.LOCAL:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only local accounts have a HoneyHive password to reset.",
+            detail="Only local accounts have a Honeypot Shelf password to reset.",
         )
     if len(new_password) < MIN_PASSWORD_LENGTH:
         return templates.TemplateResponse(

@@ -47,7 +47,7 @@ class HoneypotEvent(Base):
     # OpenCanary's own event type, e.g. "SSH_LOGIN_ATTEMPT", "PORTSCAN",
     # "HTTP_GET" — see the OpenCanary wiki's module list for the full set.
     # Free text, not an enum: OpenCanary modules (and their logtypes) are
-    # configured per-honeypot and can change without a HoneyHive release.
+    # configured per-honeypot and can change without a Honeypot Shelf release.
     event_type: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
 
     occurred_at: Mapped[datetime] = mapped_column(nullable=False, index=True)

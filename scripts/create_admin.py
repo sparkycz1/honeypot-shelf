@@ -10,7 +10,7 @@ Usage (inside the running `web` container):
     docker compose exec web python scripts/create_admin.py --username admin
 
 Prompts for a password interactively. For non-interactive/scripted use, set
-`HONEYHIVE_ADMIN_PASSWORD` in the environment instead of a `--password`
+`HONEYPOTSHELF_ADMIN_PASSWORD` in the environment instead of a `--password`
 flag — a flag would show up in `docker compose exec`'s process listing, an
 environment variable doesn't.
 
@@ -80,7 +80,7 @@ def main() -> None:
     parser.add_argument("--username", required=True, help="Login name for the new superadmin.")
     args = parser.parse_args()
 
-    password = os.environ.get("HONEYHIVE_ADMIN_PASSWORD")
+    password = os.environ.get("HONEYPOTSHELF_ADMIN_PASSWORD")
     if not password:
         password = getpass.getpass("Password: ")
         if getpass.getpass("Confirm password: ") != password:

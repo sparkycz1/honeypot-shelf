@@ -3,7 +3,7 @@ overall design (why a token authorizes whatever the owning user's company +
 access level currently permits, rather than a snapshot taken at creation
 time).
 
-Token format: a random value prefixed `hhpat_` (HoneyHive Personal Access
+Token format: a random value prefixed `hhpat_` (Honeypot Shelf Personal Access
 Token) so a leaked one is recognizable in logs/scanners, same idea as
 GitHub/Stripe-style prefixed tokens. Only its SHA-256 hash is ever stored —
 same scheme as `app.auth.sessions`'s session tokens.

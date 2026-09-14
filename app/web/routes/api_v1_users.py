@@ -301,7 +301,7 @@ async def reset_password_api(
     if user.auth_provider != AuthProvider.LOCAL:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only local accounts have a HoneyHive password to reset.",
+            detail="Only local accounts have a Honeypot Shelf password to reset.",
         )
     user.password_hash = hash_password(payload.new_password)
     user.must_change_password = True

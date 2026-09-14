@@ -1,7 +1,7 @@
 """A persisted record of one "Initialize" run (`app.web.routes.initialize_ws`)
 — unlike `HoneypotUpdateRun`, this isn't tied to a `Honeypot` row (the whole
 point of Initialize is provisioning a device *before* it's added to
-HoneyHive, see `app.web.routes.initialize`'s module docstring), so this is
+Honeypot Shelf, see `app.web.routes.initialize`'s module docstring), so this is
 its own standalone table rather than reusing that one.
 
 Written once, at the end of the run — there's no PENDING/RUNNING status the

@@ -30,9 +30,9 @@ class Settings(BaseSettings):
     # `database_url` is built from these parts if not set explicitly, so the
     # password only has to be written once. Set `database_url` directly
     # instead if you need something these parts can't express.
-    postgres_user: str = Field(default="honeyhive", alias="POSTGRES_USER")
+    postgres_user: str = Field(default="honeypotshelf", alias="POSTGRES_USER")
     postgres_password: SecretStr = Field(alias="POSTGRES_PASSWORD")
-    postgres_db: str = Field(default="honeyhive", alias="POSTGRES_DB")
+    postgres_db: str = Field(default="honeypotshelf", alias="POSTGRES_DB")
     # Defaults match the docker-compose service name — override for a local,
     # non-Docker Postgres (e.g. "localhost").
     postgres_host: str = Field(default="db", alias="POSTGRES_HOST")
@@ -68,7 +68,7 @@ class Settings(BaseSettings):
     # interval settings at its own process start. Ported from an identical
     # debcontrol change.
 
-    # --- NetBird for HoneyHive itself (app.services.netbird, Settings ->
+    # --- NetBird for Honeypot Shelf itself (app.services.netbird, Settings ->
     # NetBird) — lets `web`/`worker` reach a honeypot that's only addressable
     # over NetBird (e.g. behind a NAT with no forwarded SSH port), by sharing
     # the `netbird` sidecar container's network namespace (see
@@ -91,7 +91,7 @@ class Settings(BaseSettings):
         default=30, alias="NETBIRD_COMMAND_TIMEOUT_SECONDS"
     )
 
-    # --- WireGuard for HoneyHive itself (app.services.wireguard, Settings
+    # --- WireGuard for Honeypot Shelf itself (app.services.wireguard, Settings
     # -> VPN) — the other, mutually-exclusive VPN provider (see
     # `AppSettings.VpnProvider`). Unlike NetBird, plain `wireguard-tools`
     # has no daemon+CLI split of its own, so `app.services.vpn_control_server`

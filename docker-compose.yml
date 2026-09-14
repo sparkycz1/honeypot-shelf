@@ -1,4 +1,4 @@
-name: honeyhive
+name: honeypotshelf
 
 x-app-image: &app-image
   build:
@@ -10,7 +10,7 @@ x-app-image: &app-image
     # scripts/upgrade.sh does this automatically. Defaults to "unknown".
     args:
       GIT_COMMIT: ${GIT_COMMIT:-unknown}
-  image: honeyhive:local
+  image: honeypotshelf:local
   env_file:
     - .env
   environment:

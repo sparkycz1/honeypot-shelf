@@ -46,7 +46,7 @@ fresh instance running.
 
 ```bash
 git clone https://github.com/sparkycz1/honeypot-shelf.git
-cd honeyhive
+cd honeypot-shelf
 python3 scripts/setup.py
 ```
 

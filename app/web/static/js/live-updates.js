@@ -102,7 +102,7 @@
 
   // --- Browser notifications ------------------------------------------
 
-  const NOTIFY_PREF_KEY = "honeyhive:notifications-enabled";
+  const NOTIFY_PREF_KEY = "honeypotshelf:notifications-enabled";
 
   const KIND_MESSAGES = {
     status: "Reachability status changed",
@@ -140,7 +140,7 @@
     const body = KIND_MESSAGES[kind] || "Something changed";
     let notification;
     try {
-      notification = new Notification(honeypotName, { body, tag: `honeyhive-${honeypotId}` });
+      notification = new Notification(honeypotName, { body, tag: `honeypotshelf-${honeypotId}` });
     } catch {
       return; // some browsers throw if constructed from a background/service context
     }

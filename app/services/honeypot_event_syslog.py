@@ -46,7 +46,7 @@ if TYPE_CHECKING:
     from app.db.models.honeypot import Honeypot
     from app.db.models.honeypot_event import HoneypotEvent
 
-logger = logging.getLogger("HoneyHive.honeypot_event_syslog")
+logger = logging.getLogger("Honeypot Shelf.honeypot_event_syslog")
 
 # RFC 5424 facility 4, "security/authorization messages" — a closer fit
 # for an intrusion-detection alert than facility 1 ("user-level

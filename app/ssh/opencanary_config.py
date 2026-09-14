@@ -1,7 +1,7 @@
 """Editing a honeypot's own `opencanary.conf` over SSH — the Honeypot
 Config tab's module editor.
 
-**Deliberately no HoneyHive-side persistence** — every load is a fresh
+**Deliberately no Honeypot Shelf-side persistence** — every load is a fresh
 `cat` of the file over SSH, and saving writes it straight back, the same
 "the honeypot's own state is the only copy of the truth" philosophy the
 Logs/Status tabs already use (see their own module docstrings). A cached
@@ -435,9 +435,9 @@ def build_write_command(config: dict[str, Any]) -> str:
     fight a piped password for the same stdin.
     """
     payload = json.dumps(config, indent=4)
-    config_marker = "HONEYHIVE_OPENCANARY_CONFIG"
-    config_path = "/tmp/.honeyhive-opencanary.conf"  # noqa: S108 - written then removed below
-    script_path = "/tmp/.honeyhive-opencanary-apply.sh"  # noqa: S108 - written then removed below
+    config_marker = "HONEYPOTSHELF_OPENCANARY_CONFIG"
+    config_path = "/tmp/.honeypotshelf-opencanary.conf"  # noqa: S108 - written then removed below
+    script_path = "/tmp/.honeypotshelf-opencanary-apply.sh"  # noqa: S108 - written then removed below
 
     service_lines = "systemctl enable --now smbd nmbd" if config.get("smb.enabled") else (
         "systemctl disable --now smbd nmbd"
@@ -452,7 +452,7 @@ def build_write_command(config: dict[str, Any]) -> str:
     write_config = (
         f"cat > {shlex.quote(config_path)} <<'{config_marker}'\n{payload}\n{config_marker}\n"
     )
-    script_marker = "HONEYHIVE_OPENCANARY_APPLY"
+    script_marker = "HONEYPOTSHELF_OPENCANARY_APPLY"
     write_script = (
         f"cat > {shlex.quote(script_path)} <<'{script_marker}'\n{script}{script_marker}\n"
     )

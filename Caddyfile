@@ -1,4 +1,4 @@
-# Caddy config for HoneyHive — TLS 1.3 only, HTTP/3, hardened defaults.
+# Caddy config for Honeypot Shelf — TLS 1.3 only, HTTP/3, hardened defaults.
 # See docker-compose.caddy.yml and the wiki page "Reverse Proxy - Caddy"
 # for how this is wired up.
 

@@ -64,7 +64,7 @@ class UserCreate(_CompanyScopeMixin):
     email: str | None = Field(default=None, max_length=255)
     auth_provider: AuthProvider
     # Required (and validated) only for AuthProvider.LOCAL — see
-    # `_check_password_required`. LDAP/OIDC accounts have no HoneyHive-side
+    # `_check_password_required`. LDAP/OIDC accounts have no Honeypot Shelf-side
     # password at all.
     password: str | None = Field(default=None, max_length=255)
     api_access_enabled: bool = False

@@ -1,5 +1,5 @@
 """Turning one OpenCanary JSON payload into a `HoneypotEvent` row — the one
-way a row gets created now: HoneyHive itself SSH-polling OpenCanary's own
+way a row gets created now: Honeypot Shelf itself SSH-polling OpenCanary's own
 log (`app.ssh.canary_activity`, `app.tasks.jobs.poll_honeypot_canary_log`).
 Hands OpenCanary's payload shape to `build_event` close to verbatim — see
 `app.db.models.honeypot_event`'s module docstring for that shape.

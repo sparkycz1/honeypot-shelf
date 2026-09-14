@@ -38,9 +38,9 @@ EOF
 chmod 440 /etc/sudoers.d/{{ honeypot.username }}
 visudo -cf /etc/sudoers.d/{{ honeypot.username }}</code></pre>
         <details>
-          <summary>{{ t(request, 'honeypots.edit.readiness_let_honeyhive_summary') }}</summary>
+          <summary>{{ t(request, 'honeypots.edit.readiness_let_honeypotshelf_summary') }}</summary>
           <p class="hint">
-            {{ t(request, 'honeypots.edit.readiness_let_honeyhive_hint') }}
+            {{ t(request, 'honeypots.edit.readiness_let_honeypotshelf_hint') }}
           </p>
           <form method="post" action="/honeypots/{{ honeypot.id }}/run-onboarding-with-credential"
                 class="form" autocomplete="off"

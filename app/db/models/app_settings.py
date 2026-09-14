@@ -58,7 +58,7 @@ DEFAULT_SMTP_PORT = 587
 
 
 class VpnProvider(enum.StrEnum):
-    """Which of the two VPN options (if either) HoneyHive's own SSH
+    """Which of the two VPN options (if either) Honeypot Shelf's own SSH
     management plane is currently joined to — see
     `app.services.netbird`/`app.services.wireguard` and wiki/Architecture.md's
     "VPN connectivity" section. Mutually exclusive by construction: this
@@ -210,7 +210,7 @@ class AppSettings(Base):
         LargeBinary, nullable=True
     )
     # Which ID-token claim is compared against a user's `username` to decide
-    # which HoneyHive account just logged in — see User.username. Configurable
+    # which Honeypot Shelf account just logged in — see User.username. Configurable
     # since it varies by provider.
     oidc_username_claim: Mapped[str] = mapped_column(
         String(100), default=DEFAULT_OIDC_USERNAME_CLAIM, nullable=False
@@ -224,10 +224,10 @@ class AppSettings(Base):
     # login.html.
     oidc_provider_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
-    # --- VPN for HoneyHive itself (app.services.netbird/wireguard,
+    # --- VPN for Honeypot Shelf itself (app.services.netbird/wireguard,
     # Settings -> VPN) — a different thing from the NetBird setup key
     # entered on an Initialize run (that joins the *honeypot* to your
-    # network; this joins *HoneyHive's own SSH-management-plane
+    # network; this joins *Honeypot Shelf's own SSH-management-plane
     # containers*, so a honeypot that's only reachable over a VPN — e.g.
     # sitting behind a NAT with no forwarded port — still works with
     # everything else in this app). Unlike the Initialize one, this
@@ -249,7 +249,7 @@ class AppSettings(Base):
     )
     netbird_management_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     netbird_setup_key_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
-    # The whole pasted wg-quick `.conf` HoneyHive itself is a peer with —
+    # The whole pasted wg-quick `.conf` Honeypot Shelf itself is a peer with —
     # see wiki/Architecture.md's "VPN connectivity" section for why this is
     # one opaque encrypted blob rather than separate private-key/peer/
     # endpoint/allowed-ips fields: it's the exact file a WireGuard server

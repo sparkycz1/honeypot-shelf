@@ -57,7 +57,7 @@ if ! docker compose ps db --format '{{.State}}' 2>/dev/null | grep -q .; then
   exit 1
 fi
 
-echo "==> Dumping database (${POSTGRES_DB:-honeyhive})..."
+echo "==> Dumping database (${POSTGRES_DB:-honeypotshelf})..."
 docker compose exec -T db pg_dump -U "${POSTGRES_USER}" "${POSTGRES_DB}" \
   | gzip > "${dest}/db.sql.gz"
 

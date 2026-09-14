@@ -1638,7 +1638,7 @@ async def run_onboarding_with_credential_endpoint(
     current_user: User = Depends(get_current_user),
 ) -> Response:
     """The readiness banner's "Fix it" flow for a honeypot that's *already*
-    onboarded (SSH_KEY auth, as the app's own "honeyhive" identity) but
+    onboarded (SSH_KEY auth, as the app's own "honeypotshelf" identity) but
     missing something outside that identity's own sudo scope (e.g.
     `dmidecode`, added as a requirement after this honeypot was first
     onboarded) — `run_honeypot_onboarding` needs a root-equivalent login to
@@ -1650,7 +1650,7 @@ async def run_onboarding_with_credential_endpoint(
     putting this honeypot into the same shape a password-auth honeypot is
     already in — `auth_method=PASSWORD` + the submitted one-time
     credential — so the task's own existing logic (connect, run the
-    script, and on success switch back to `honeyhive`/SSH_KEY/no stored
+    script, and on success switch back to `honeypotshelf`/SSH_KEY/no stored
     secret) handles the rest unchanged. **On failure, this endpoint itself
     restores the honeypot's previous username/auth method** rather than
     leaving a real root password sitting in `secret_encrypted` on a
@@ -2288,7 +2288,7 @@ async def preview_honeypot_update(
     """Simulate (via apt's dry-run mode — nothing is changed on the honeypot)
     exactly what `POST /honeypots/{id}/updates` would do, so a human can see
     what would be removed (the risky part of `autoremove`) before actually
-    confirming it. A GET, not a POST: it's read-only against HoneyHive's
+    confirming it. A GET, not a POST: it's read-only against Honeypot Shelf's
     own DB (nothing is persisted here, unlike "Check for updates now",
     which writes the counts/lists it finds) even though it does perform a
     real SSH round trip — same reasoning `/honeypots/package-search` and

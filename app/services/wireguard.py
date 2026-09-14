@@ -1,6 +1,6 @@
-"""Controls HoneyHive's *own* WireGuard connection — the other,
+"""Controls Honeypot Shelf's *own* WireGuard connection — the other,
 mutually-exclusive VPN provider alongside `app.services.netbird` (see
-`AppSettings.VpnProvider`). HoneyHive doesn't run its own WireGuard
+`AppSettings.VpnProvider`). Honeypot Shelf doesn't run its own WireGuard
 server: it joins an existing one — the same WireGuard server the operator
 already runs somewhere reachable — as a plain peer, exactly the
 relationship a honeypot has to it too (via Initialize's own WireGuard

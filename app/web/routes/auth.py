@@ -98,14 +98,14 @@ _OIDC_ERROR_MESSAGES = {
         "The OIDC provider didn't complete the login (it may have been cancelled or timed out)."
     ),
     "no_account": (
-        "No enabled HoneyHive account matches your OIDC identity. "
+        "No enabled Honeypot Shelf account matches your OIDC identity. "
         "Ask an administrator to check the account is set up for OIDC login."
     ),
     "discovery_failed": (
         "Could not reach the OIDC provider's discovery document. Ask an administrator to check "
         "Settings → Integrations: the Issuer URL should be the provider's plain issuer "
         "(e.g. https://idp.example.com/realms/yours), not the full "
-        "/.well-known/openid-configuration URL — HoneyHive appends that suffix itself."
+        "/.well-known/openid-configuration URL — Honeypot Shelf appends that suffix itself."
     ),
 }
 
@@ -947,7 +947,7 @@ async def change_own_password(
     assert user is not None
     errors: list[str] = []
     if user.auth_provider != AuthProvider.LOCAL:
-        errors.append("Only local accounts have a HoneyHive password to change.")
+        errors.append("Only local accounts have a Honeypot Shelf password to change.")
     elif user.password_hash is None or not verify_password(user.password_hash, current_password):
         errors.append("Current password is incorrect.")
     elif new_password != confirm_password:
@@ -1374,7 +1374,7 @@ async def push_own_ssh_keys(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Response:
-    """Push every current superadmin's personal key(s), plus HoneyHive's
+    """Push every current superadmin's personal key(s), plus Honeypot Shelf's
     own shared identity key, onto every honeypot with a pinned host key —
     the existing-fleet equivalent of what Initialize does for a brand new
     device (`app.web.routes.initialize_ws`). Same idempotent, strictly

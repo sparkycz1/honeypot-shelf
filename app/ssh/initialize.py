@@ -39,11 +39,11 @@ reason `app.ssh.onboarding` gives: one `set -e` shell script over the SSH
 connection this app already has, no Ansible dependency added to the
 worker image. Unlike onboarding (which only ever touches an
 already-known, already-pinned `Honeypot` row), this targets a device that
-isn't in HoneyHive's database at all yet — see
+isn't in Honeypot Shelf's database at all yet — see
 `app.web.routes.initialize` for how the connection itself is authenticated
 and host-key-trusted for that case.
 
-Also installed: `authorized_keys` (HoneyHive's own shared identity public
+Also installed: `authorized_keys` (Honeypot Shelf's own shared identity public
 key, plus every current superadmin's personal key(s) from My account →
 SSH public keys — see `app.web.routes.initialize_ws`'s caller) via
 `app.ssh.authorized_keys.build_authorized_keys_append_command` — the same
@@ -51,7 +51,7 @@ idempotent, additive, home-dir-aware pattern `app.ssh.onboarding` and
 `app.tasks.jobs.push_superadmin_ssh_keys` use, skipped entirely if the
 caller passes none — and the exact scoped, passwordless sudo grant
 (`app.ssh.onboarding.build_sudoers_grant_command`) `app.ssh.readiness`
-checks for, so a freshly Initialized device never shows up in HoneyHive
+checks for, so a freshly Initialized device never shows up in Honeypot Shelf
 already failing every one of those checks the way one used to before this
 existed.
 
@@ -91,7 +91,7 @@ from app.ssh.onboarding import build_sudoers_grant_command
 
 # Printed as the script's last line on success — same "did it actually run
 # to completion" reasoning as app.ssh.onboarding.ONBOARD_SUCCESS_MARKER.
-INITIALIZE_SUCCESS_MARKER = "HONEYHIVE_INITIALIZE_OK"
+INITIALIZE_SUCCESS_MARKER = "HONEYPOTSHELF_INITIALIZE_OK"
 
 # A line `f"{STEP_MARKER_PREFIX}<label>"` on its own announces the start of
 # one phase — parsed out of the live output stream, never shown as raw
@@ -397,7 +397,7 @@ def build_initialize_command(
     OpenCanary venv + systemd service, hostname/`/etc/hosts`, `vim`/bash
     config, one of NetBird/WireGuard/nothing per `vpn_provider` (see
     `app.web.routes.initialize`'s VPN field — this is the honeypot's own
-    connection, not HoneyHive's own; see wiki/Architecture.md's "VPN
+    connection, not Honeypot Shelf's own; see wiki/Architecture.md's "VPN
     connectivity" section for how the two relate), OpenCanary's own config
     (`--copyconfig`), and the portscan/Samba host-side prep described in
     the module docstring above.
@@ -437,7 +437,7 @@ def build_initialize_command(
         _heredoc(
             "/etc/systemd/system/opencanary.service",
             _opencanary_service_unit(),
-            "HONEYHIVE_OPENCANARY_UNIT",
+            "HONEYPOTSHELF_OPENCANARY_UNIT",
         ).rstrip()
     )
     lines.append("systemctl daemon-reload")
@@ -470,12 +470,12 @@ def build_initialize_command(
         "[ -x /usr/bin/vim.basic ] && "
         "update-alternatives --set editor /usr/bin/vim.basic) || true"
     )
-    lines.append(_heredoc("/etc/vim/vimrc", _VIMRC, "HONEYHIVE_VIMRC").rstrip())
-    lines.append(_heredoc("/etc/bash.bashrc", _BASHRC, "HONEYHIVE_BASHRC").rstrip())
+    lines.append(_heredoc("/etc/vim/vimrc", _VIMRC, "HONEYPOTSHELF_VIMRC").rstrip())
+    lines.append(_heredoc("/etc/bash.bashrc", _BASHRC, "HONEYPOTSHELF_BASHRC").rstrip())
 
     # --- VPN: at most one of NetBird or WireGuard, per `vpn_provider` —
     # this is the honeypot's *own* connection (mirrors, but is independent
-    # of, HoneyHive's own VPN choice in Settings -> VPN). "none" (the
+    # of, Honeypot Shelf's own VPN choice in Settings -> VPN). "none" (the
     # default) skips this whole section — neither package is installed
     # unless actually selected. ---
     if vpn_provider == "netbird":
@@ -506,17 +506,17 @@ def build_initialize_command(
                 up_cmd += f" --management-url {shlex.quote(netbird_management_url.strip())}"
             lines.append(up_cmd)
     elif vpn_provider == "wireguard" and wireguard_config:
-        # HoneyHive doesn't generate WireGuard keys or run its own server
+        # Honeypot Shelf doesn't generate WireGuard keys or run its own server
         # (see wiki/Architecture.md) — this is the exact peer config an
         # operator already has from wherever they run their WireGuard
         # server, brought up verbatim, the same as Settings -> VPN does
-        # for HoneyHive's own side.
+        # for Honeypot Shelf's own side.
         lines.append(_step("Installing WireGuard"))
         lines.append("apt-get install -y wireguard-tools")
         lines.append(_step("Joining the WireGuard network"))
         lines.append(
             _heredoc(
-                "/etc/wireguard/wg0.conf", wireguard_config.strip() + "\n", "HONEYHIVE_WG_CONF"
+                "/etc/wireguard/wg0.conf", wireguard_config.strip() + "\n", "HONEYPOTSHELF_WG_CONF"
             )
         )
         lines.append("chmod 600 /etc/wireguard/wg0.conf")
@@ -584,7 +584,7 @@ def build_initialize_command(
     lines.append(f"touch {_SMB_SHARE_PATH}/testing.txt")
     lines.append(
         _heredoc(
-            "/etc/samba/smb.conf", _smb_conf(device_name.strip()), "HONEYHIVE_SMB_CONF"
+            "/etc/samba/smb.conf", _smb_conf(device_name.strip()), "HONEYPOTSHELF_SMB_CONF"
         ).rstrip()
     )
     lines.append(
@@ -615,7 +615,7 @@ def build_initialize_command(
     # this one, purely cosmetic, adjustment). ---
     lines.append(_step("Pointing the config at the prepared portscan/Samba/log paths"))
     lines.append(
-        "python3 - <<'HONEYHIVE_INITIALIZE_CFG'\n"
+        "python3 - <<'HONEYPOTSHELF_INITIALIZE_CFG'\n"
         "import json\n"
         'path = "/etc/opencanaryd/opencanary.conf"\n'
         "with open(path) as f:\n"
@@ -628,10 +628,10 @@ def build_initialize_command(
         "    pass\n"
         "with open(path, \"w\") as f:\n"
         "    json.dump(cfg, f, indent=4)\n"
-        "HONEYHIVE_INITIALIZE_CFG"
+        "HONEYPOTSHELF_INITIALIZE_CFG"
     )
 
-    # --- Install every given authorized_keys entry (HoneyHive's own
+    # --- Install every given authorized_keys entry (Honeypot Shelf's own
     # shared identity key, plus every current superadmin's personal
     # key(s) — see app.web.routes.initialize_ws's caller) onto the
     # account Initialize connected as, so both can reach the device
@@ -647,10 +647,10 @@ def build_initialize_command(
         lines.append(build_authorized_keys_append_command(ssh_username, list(authorized_keys)))
 
     # --- Grant the same scoped, passwordless sudo app.ssh.onboarding
-    # grants its own dedicated `honeyhive` user — apt-get/shutdown/
+    # grants its own dedicated `honeypotshelf` user — apt-get/shutdown/
     # dmidecode/systemctl(+flatpak/snap) — to the account Initialize
     # connected as. Without this, a freshly Initialized device used to
-    # show up in HoneyHive already failing every one of
+    # show up in Honeypot Shelf already failing every one of
     # app.ssh.readiness's checks (and, in turn, things that quietly
     # depend on the same sudo, like the Honeypot Config tab's "Apply"
     # button) until an operator separately ran "Run initial setup" or the
@@ -676,7 +676,7 @@ def build_initialize_command(
     lines.append(_step(f"Moving SSH to port {new_ssh_port}"))
     lines.append("mkdir -p /etc/ssh/sshd_config.d")
     lines.append(
-        f"echo 'Port {new_ssh_port}' > /etc/ssh/sshd_config.d/honeyhive-ssh-port.conf"
+        f"echo 'Port {new_ssh_port}' > /etc/ssh/sshd_config.d/honeypotshelf-ssh-port.conf"
     )
     lines.append("sshd -t")
     lines.append("systemctl restart ssh")
@@ -728,8 +728,8 @@ def wrap_for_sudo(script: str, *, ssh_username: str, sudo_password: str | None) 
     """
     if ssh_username == "root":
         return script
-    marker = "HONEYHIVE_INITIALIZE_SCRIPT"
-    script_path = "/tmp/.honeyhive-initialize.sh"  # noqa: S108 - always written then removed below
+    marker = "HONEYPOTSHELF_INITIALIZE_SCRIPT"
+    script_path = "/tmp/.honeypotshelf-initialize.sh"  # noqa: S108 - always written then removed below
     write_script = f"cat > {script_path} <<'{marker}'\n{script}{marker}\n"
     if sudo_password:
         quoted_password = shlex.quote(sudo_password)

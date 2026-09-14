@@ -1,14 +1,14 @@
 """Builds the shell script that prepares a fresh, not-yet-managed Debian/
-Raspbian honeypot for HoneyHive, run directly over SSH (see
+Raspbian honeypot for Honeypot Shelf, run directly over SSH (see
 `app.tasks.jobs._run_honeypot_onboarding`, the only caller):
 
-1. Create a dedicated `honeyhive` user (idempotent — `id -u` first).
+1. Create a dedicated `honeypotshelf` user (idempotent — `id -u` first).
 2. Install this app's own SSH public key into that user's
    `authorized_keys` (idempotent — `grep -qxF` first, same convention as
    `app.tasks.jobs._push_pending_ssh_key`).
-3. Grant it passwordless sudo, scoped to exactly what HoneyHive needs
+3. Grant it passwordless sudo, scoped to exactly what Honeypot Shelf needs
    (`apt-get`, `shutdown`, `dmidecode`, `systemctl`, `raspi-config` — the
-   read-only-root toggle — and `bash /tmp/.honeyhive-*` — running this
+   read-only-root toggle — and `bash /tmp/.honeypotshelf-*` — running this
    app's own generated scripts, e.g. the Honeypot Config tab's module
    editor restarting `opencanary` and toggling `smbd`/`nmbd` — and
    `flatpak`/`snap` if either is present) — see
@@ -28,7 +28,7 @@ this, not replaced by it.)
 
 Requires connecting as root (or an account that already behaves like
 root) — that one-time credential is the whole point of onboarding a
-honeypot that has nothing configured for HoneyHive yet, so there is
+honeypot that has nothing configured for Honeypot Shelf yet, so there is
 deliberately no `sudo` escalation anywhere in this script to fall back on
 if the connecting account isn't already root.
 """
@@ -37,13 +37,13 @@ from __future__ import annotations
 
 import shlex
 
-# The account HoneyHive connects as afterwards.
-ONBOARD_USERNAME = "honeyhive"
+# The account Honeypot Shelf connects as afterwards.
+ONBOARD_USERNAME = "honeypotshelf"
 
 # Printed as the script's last line on success, so a caller can tell "ran
 # to completion" apart from "produced some output but got cut off partway"
 # without relying on exit status alone.
-ONBOARD_SUCCESS_MARKER = "HONEYHIVE_ONBOARD_OK"
+ONBOARD_SUCCESS_MARKER = "HONEYPOTSHELF_ONBOARD_OK"
 
 
 def build_sudoers_grant_command(username: str) -> str:
@@ -54,11 +54,11 @@ def build_sudoers_grant_command(username: str) -> str:
     readiness check doesn't probe directly but real features still need:
     `raspi-config` (the Honeypot Config tab's read-only-root toggle,
     `app.ssh.readonly.build_toggle_command`) and running this app's own
-    generated scripts under `/tmp/.honeyhive-*` via `bash` (the OpenCanary
+    generated scripts under `/tmp/.honeypotshelf-*` via `bash` (the OpenCanary
     module editor's "Apply" — `app.ssh.opencanary_config.
-    build_write_command` writes `/tmp/.honeyhive-opencanary-apply.sh`,
+    build_write_command` writes `/tmp/.honeypotshelf-opencanary-apply.sh`,
     restarting `opencanary` and toggling `smbd`/`nmbd` to match, and
-    `app.ssh.initialize` writes `/tmp/.honeyhive-initialize.sh` the same
+    `app.ssh.initialize` writes `/tmp/.honeypotshelf-initialize.sh` the same
     way, all in one script for exactly the same one-round-trip reasoning
     `app.ssh.updates.build_update_command` documents). Confirmed live that
     omitting either of these breaks that feature outright (`sudo: a
@@ -68,11 +68,11 @@ def build_sudoers_grant_command(username: str) -> str:
     exists specifically so neither ever needs a human sudo password typed
     in over the terminal tab instead.
 
-    The `bash` grant is restricted to the `/tmp/.honeyhive-*` prefix (a
+    The `bash` grant is restricted to the `/tmp/.honeypotshelf-*` prefix (a
     sudoers command-argument glob, matched literally, not a shell glob)
     every script this app writes there uses — not a blanket "run any
     command as root" grant, even though in practice an account already
-    this trusted (it holds the very credential HoneyHive itself uses to
+    this trusted (it holds the very credential Honeypot Shelf itself uses to
     manage this honeypot) getting broader access wouldn't meaningfully
     change what it could already do to the honeypot through the features
     above alone.
@@ -82,27 +82,27 @@ def build_sudoers_grant_command(username: str) -> str:
     syntax error here would otherwise silently break sudo for the whole
     system on next use, not just for this grant).
 
-    Shared by `build_onboarding_command` (the dedicated `honeyhive` user,
+    Shared by `build_onboarding_command` (the dedicated `honeypotshelf` user,
     granted once during onboarding) and `app.ssh.initialize.
     build_initialize_command` (whichever account Initialize connects as,
     granted during initial provisioning — see that module for why this
     exists there too: without it, every freshly Initialized device used to
-    show up in HoneyHive already missing every one of these, exactly the
+    show up in Honeypot Shelf already missing every one of these, exactly the
     gap `app.ssh.readiness`'s banner exists to catch).
     """
     user = shlex.quote(username)
     return (
-        f"cat > /etc/sudoers.d/{user} <<'HONEYHIVE_SUDOERS_APT'\n"
+        f"cat > /etc/sudoers.d/{user} <<'HONEYPOTSHELF_SUDOERS_APT'\n"
         f"{username} ALL=(root) NOPASSWD: /usr/bin/apt-get, /usr/sbin/shutdown, "
         "/usr/sbin/dmidecode, /usr/bin/systemctl, /usr/bin/raspi-config, "
-        "/usr/bin/bash /tmp/.honeyhive-*\n"
-        "HONEYHIVE_SUDOERS_APT\n"
+        "/usr/bin/bash /tmp/.honeypotshelf-*\n"
+        "HONEYPOTSHELF_SUDOERS_APT\n"
         f"chmod 440 /etc/sudoers.d/{user}; "
         f"visudo -cf /etc/sudoers.d/{user}; "
         "if command -v flatpak >/dev/null 2>&1 || command -v snap >/dev/null 2>&1; then "
-        f"cat > /etc/sudoers.d/{user}-flatpak-snap <<'HONEYHIVE_SUDOERS_FS'\n"
+        f"cat > /etc/sudoers.d/{user}-flatpak-snap <<'HONEYPOTSHELF_SUDOERS_FS'\n"
         f"{username} ALL=(root) NOPASSWD: /usr/bin/flatpak, /usr/bin/snap\n"
-        "HONEYHIVE_SUDOERS_FS\n"
+        "HONEYPOTSHELF_SUDOERS_FS\n"
         f"chmod 440 /etc/sudoers.d/{user}-flatpak-snap; "
         f"visudo -cf /etc/sudoers.d/{user}-flatpak-snap; "
         "fi"

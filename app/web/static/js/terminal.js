@@ -155,7 +155,7 @@
   function clipboardUnavailableReason() {
     if (navigator.clipboard) return null;
     if (!window.isSecureContext) {
-      return "Clipboard access needs HTTPS (or http://localhost) — this page is loaded over plain HTTP. Put HoneyHive behind a reverse proxy with TLS (see the wiki's Installation page), or use Ctrl+Shift+C/V manually via the terminal's own keyboard shortcuts once it is.";
+      return "Clipboard access needs HTTPS (or http://localhost) — this page is loaded over plain HTTP. Put Honeypot Shelf behind a reverse proxy with TLS (see the wiki's Installation page), or use Ctrl+Shift+C/V manually via the terminal's own keyboard shortcuts once it is.";
     }
     return "This browser doesn't support clipboard access.";
   }

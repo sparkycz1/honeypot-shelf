@@ -69,13 +69,13 @@ postgres_db="${POSTGRES_DB}"
 
 compose_files=(-f docker-compose.yml)
 if docker ps -a \
-    --filter "label=com.docker.compose.project=honeyhive" \
+    --filter "label=com.docker.compose.project=honeypotshelf" \
     --filter "label=com.docker.compose.service=caddy" \
     --format '{{.Names}}' | grep -q .; then
   compose_files+=(-f docker-compose.caddy.yml)
 fi
 if docker ps -a \
-    --filter "label=com.docker.compose.project=honeyhive" \
+    --filter "label=com.docker.compose.project=honeypotshelf" \
     --filter "label=com.docker.compose.service=vpn" \
     --format '{{.Names}}' | grep -q .; then
   compose_files+=(-f docker-compose.vpn.yml)

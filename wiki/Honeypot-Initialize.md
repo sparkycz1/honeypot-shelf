@@ -41,7 +41,7 @@ host key, nothing to onboard. Once it succeeds, add the device the normal
 way ([Installation](Installation.md)/`/honeypots/new`), which discovers
 and pins its host key the usual, non-TOFU way, then (optionally) run its
 own "Run initial setup" to hand SSH management over to Honeypot Shelf's
-shared `honeyhive` identity.
+shared `honeypotshelf` identity.
 
 ## Fields
 
@@ -92,7 +92,7 @@ requirements" banner otherwise asks an operator to fix by hand: `apt-get`
 (the RAM speed fact), `systemctl` (the Honeypot Config tab's module
 editor) — plus `flatpak`/`snap` if present. Skipped for a `root`
 connection. Same grant `app.ssh.onboarding` gives its own dedicated
-`honeyhive` user — a freshly Initialized device no longer shows up
+`honeypotshelf` user — a freshly Initialized device no longer shows up
 already failing every readiness check.
 
 ## The device reboots, and Initialize waits for it to come back
@@ -112,7 +112,7 @@ is reported failed with that explanation — check the device by hand.
 
 The last step moves sshd off port 22 to the "New SSH port" field
 (**22222** by default, `app.ssh.initialize.NEW_SSH_PORT`), via a drop-in
-file (`/etc/ssh/sshd_config.d/honeyhive-ssh-port.conf`) rather than
+file (`/etc/ssh/sshd_config.d/honeypotshelf-ssh-port.conf`) rather than
 editing the distro's own `sshd_config` — idempotent, leaves the
 maintained file untouched. It's last for a reason: every earlier step has
 already fully succeeded over the *original* connection by the time this

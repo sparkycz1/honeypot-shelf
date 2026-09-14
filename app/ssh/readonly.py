@@ -36,7 +36,7 @@ files, anything — still succeeds exactly as before, into RAM; it's only
 *discarded on the next reboot* rather than persisted to the SD card. That
 discard-on-reboot is the entire point (protect the card from wear), and
 it's fine for all of the above: OpenCanary's own alert history already
-lives in HoneyHive's own DB (pushed or SSH-polled, see
+lives in Honeypot Shelf's own DB (pushed or SSH-polled, see
 `app.services.honeypot_events`), never depends on anything under
 `/var/log` surviving a reboot; `/mnt/tmpfs` (also `app.ssh.initialize`)
 stays worth having independently of this toggle, for a honeypot that

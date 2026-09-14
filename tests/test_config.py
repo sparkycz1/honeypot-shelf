@@ -35,7 +35,7 @@ def test_database_url_is_built_from_postgres_parts(
     monkeypatch.setenv("POSTGRES_PASSWORD", "hunter2")
     monkeypatch.setenv("REDIS_PASSWORD", "hunter2")
     settings = Settings()
-    assert settings.database_url == "postgresql+asyncpg://honeyhive:hunter2@db:5432/honeyhive"
+    assert settings.database_url == "postgresql+asyncpg://honeypotshelf:hunter2@db:5432/honeypotshelf"
 
 
 def test_redis_url_is_built_from_redis_parts(
@@ -56,7 +56,7 @@ def test_built_urls_percent_encode_special_characters(
     monkeypatch.setenv("REDIS_PASSWORD", "p@ss/word:1")
     settings = Settings()
     assert settings.database_url == (
-        "postgresql+asyncpg://honeyhive:p%40ss%2Fword%3A1@db:5432/honeyhive"
+        "postgresql+asyncpg://honeypotshelf:p%40ss%2Fword%3A1@db:5432/honeypotshelf"
     )
     assert settings.redis_url == "redis://:p%40ss%2Fword%3A1@redis:6379/0"
 
@@ -79,4 +79,4 @@ def test_postgres_host_and_port_are_overridable(
     monkeypatch.setenv("POSTGRES_HOST", "localhost")
     monkeypatch.setenv("POSTGRES_PORT", "5433")
     settings = Settings()
-    assert settings.database_url == "postgresql+asyncpg://honeyhive:hunter2@localhost:5433/honeyhive"
+    assert settings.database_url == "postgresql+asyncpg://honeypotshelf:hunter2@localhost:5433/honeypotshelf"
