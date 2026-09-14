@@ -1,84 +1,16 @@
 <!--
-  Wazuh decoders + rules for Honeypot Shelf's two syslog feeds:
-
-    - The global audit log target (Settings -> Integrations,
-      app.audit_syslog) — every human-initiated mutation across the
-      whole app, "event":"audit" in the JSON body.
-    - The per-company / fleet-wide honeypot-alert targets (each
-      Company's own Integrations tab, and "All honeypots" ->
-      Integrations, app.services.honeypot_event_syslog) — real
-      OpenCanary alerts only, "event":"honeypot_alert" in the JSON body.
-
-  Both are sent as RFC 5424 syslog, APP-NAME "HoneypotShelf", with the
-  MSG part always a single-line compact JSON object (never
-  key="value" text) — see either module's own docstring in the
-  honeypot-shelf repo for the exact framing and field list.
-
-  Install (Wazuh manager, self-managed):
-    1. Copy this whole "honeypotshelf_rules" folder under
-       /var/ossec/etc/rules/ (or /var/ossec/etc/decoders/ — the decoder
-       and rule loaders each only look at the tag names they know, so
-       this single file can safely be picked up from either directory;
-       pick whichever your <ruleset> block already scans, or add both):
-
-         <ruleset>
-           <decoder_dir>etc/decoders</decoder_dir>
-           <rule_dir>etc/rules</rule_dir>
-           ...
-           <decoder_dir>etc/rules/honeypotshelf_rules</decoder_dir>
-           <rule_dir>etc/rules/honeypotshelf_rules</rule_dir>
-         </ruleset>
-
-    2. Point Honeypot Shelf's syslog target(s) at this manager (or an
-       intermediate syslog-ng/rsyslog relay forwarding to it) — Settings
-       -> Integrations for the global audit target, each Company's own
-       page and/or "All honeypots" -> Integrations for alerts.
-    3. `/var/ossec/bin/wazuh-control restart` (or just restart
-       wazuh-manager) to load this file.
-    4. Verify with `/var/ossec/bin/wazuh-logtest` against a captured
-       line before relying on it in production, as always.
+  Wazuh rules for Honeypot Shelf's two syslog feeds — pairs with
+  honeypotshelf_decoders.xml (same folder), which must be loaded first:
+  these rules match on the `<decoded_as>` names that file's decoders
+  produce (honeypotshelf-audit / honeypotshelf-honeypot-alert) and on
+  the `data.*` fields they expose from each feed's JSON body. See that
+  file's own header comment for the full install steps and for what
+  each feed actually carries.
 
   Rule id range: 107000-107099 (this deployment's own reserved custom
   range — Wazuh reserves 100000-119999 for local/custom rules; nothing
   else in this environment is expected to also claim 107000+).
 -->
-
-<!-- =================== DECODERS =================== -->
-
-<decoder name="honeypotshelf">
-  <!-- Matches the RFC 5424 APP-NAME field ("HoneypotShelf") anywhere in
-       the still-unparsed line — deliberately a plain substring search,
-       not anchored to Wazuh's own RFC 5424 pre-decoding having already
-       split out hostname/program_name/msgid, so this keeps working
-       whichever way that pre-decoding lands. -->
-  <prematch>\bHoneypotShelf\b</prematch>
-</decoder>
-
-<decoder name="honeypotshelf-audit">
-  <!-- "event" is always the first key `json.dumps` writes (Python dicts
-       keep insertion order, and app.audit_syslog builds the payload
-       dict with "event" first) — so this prefix reliably locates where
-       the JSON body starts and JSON_Decoder takes it from there,
-       exposing every top-level key as data.<key> (event, id, timestamp,
-       action, actor, ip, outcome, target_type, target_id, target_label,
-       summary, details). -->
-  <parent>honeypotshelf</parent>
-  <prematch>\{"event":"audit"</prematch>
-  <plugin_decoder>JSON_Decoder</plugin_decoder>
-</decoder>
-
-<decoder name="honeypotshelf-honeypot-alert">
-  <!-- Same idea, for app.services.honeypot_event_syslog's payload
-       shape: event, id, timestamp, companies, honeypot, honeypot_ip,
-       type (OpenCanary's own numeric logtype id, as a string), label
-       (the human-readable name for it), src_ip, src_port, dst_port,
-       source, raw (OpenCanary's own untouched event JSON). -->
-  <parent>honeypotshelf</parent>
-  <prematch>\{"event":"honeypot_alert"</prematch>
-  <plugin_decoder>JSON_Decoder</plugin_decoder>
-</decoder>
-
-<!-- =================== RULES =================== -->
 
 <group name="honeypotshelf,">
 
