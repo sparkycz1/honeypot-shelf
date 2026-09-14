@@ -56,14 +56,15 @@ async def _create_admin(username: str, password: str) -> None:
             print(f'error: a user named "{username}" already exists.', file=sys.stderr)
             raise SystemExit(1)
 
+        # A superadmin holds no `CompanyMembership` rows at all (see
+        # `app.db.models.user`'s module docstring) — nothing else to set
+        # here.
         user = User(
             username=username,
             auth_provider=AuthProvider.LOCAL,
             password_hash=hash_password(password),
             must_change_password=True,
             is_superadmin=True,
-            company_id=None,
-            access_level=None,
         )
         db.add(user)
         await db.commit()
