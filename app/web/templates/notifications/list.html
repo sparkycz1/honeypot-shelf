@@ -5,7 +5,10 @@
 {% block content %}
   <div class="page-header">
     <h1>{{ t(request, "notifications.title") }}</h1>
-    <a href="/account">{{ t(request, "notifications.back_to_account") }}</a>
+    <div class="page-header-actions">
+      <a href="/account/notifications/history">{{ t(request, "notifications.history.link") }}</a>
+      <a href="/account">{{ t(request, "notifications.back_to_account") }}</a>
+    </div>
   </div>
 
   {% if errors %}
@@ -15,6 +18,11 @@
   {% endif %}
   {% if saved %}
     <div class="alert alert-ok"><p>{{ t(request, "notifications.saved_notice") }}</p></div>
+  {% endif %}
+  {% if test_error %}
+    <div class="alert alert-error"><p>{{ t(request, "notifications.test.failed", error=test_error) }}</p></div>
+  {% elif test_sent %}
+    <div class="alert alert-ok"><p>{{ t(request, "notifications.test.sent") }}</p></div>
   {% endif %}
 
   <section class="panel">
@@ -46,7 +54,7 @@
     {% if not honeypots %}
       <p class="hint">{{ t(request, "notifications.subscriptions.none_visible") }}</p>
     {% else %}
-      <form method="post" action="/account/notifications" class="form form-wide" autocomplete="off">
+      <form method="post" action="/account/notifications" id="notifications-form" class="form form-wide" autocomplete="off">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <table class="data-table">
           <thead>
@@ -55,6 +63,9 @@
               <th>{{ t(request, "notifications.subscriptions.alert_column") }}</th>
               <th>{{ t(request, "notifications.subscriptions.unavailable_column") }}</th>
               <th>{{ t(request, "notifications.subscriptions.minutes_column") }}</th>
+              <th>{{ t(request, "notifications.subscriptions.channel_column") }}</th>
+              <th>{{ t(request, "notifications.subscriptions.webhook_column") }}</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -76,11 +87,35 @@
                   <input type="number" name="minutes_{{ honeypot.id }}" min="{{ min_minutes }}" max="{{ max_minutes }}"
                          value="{{ sub.unavailable_after_minutes if sub else 10 }}" style="width: 6rem;">
                 </td>
+                <td>
+                  <select name="channel_{{ honeypot.id }}"
+                          aria-label="{{ t(request, 'notifications.subscriptions.channel_aria', name=honeypot.name) }}">
+                    <option value="email" {% if not sub or sub.delivery_channel.value == 'email' %}selected{% endif %}>
+                      {{ t(request, "notifications.subscriptions.channel_email") }}
+                    </option>
+                    <option value="webhook" {% if sub and sub.delivery_channel.value == 'webhook' %}selected{% endif %}>
+                      {{ t(request, "notifications.subscriptions.channel_webhook") }}
+                    </option>
+                  </select>
+                </td>
+                <td>
+                  <input type="url" name="webhook_{{ honeypot.id }}" maxlength="1000"
+                         placeholder="https://example.com/hook"
+                         value="{{ sub.webhook_url if sub and sub.webhook_url else '' }}"
+                         aria-label="{{ t(request, 'notifications.subscriptions.webhook_aria', name=honeypot.name) }}">
+                </td>
+                <td>
+                  <button type="submit" form="notifications-form" formaction="/account/notifications/test/{{ honeypot.id }}"
+                          formnovalidate class="button button-secondary">
+                    {{ t(request, "notifications.test.button") }}
+                  </button>
+                </td>
               </tr>
             {% endfor %}
           </tbody>
         </table>
         <p class="hint">{{ t(request, "notifications.subscriptions.minutes_hint") }}</p>
+        <p class="hint">{{ t(request, "notifications.subscriptions.webhook_hint") }}</p>
         <button type="submit" class="button">{{ t(request, "common.save") }}</button>
       </form>
     {% endif %}

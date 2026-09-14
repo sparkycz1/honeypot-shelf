@@ -11,21 +11,26 @@ how this differs from debcontrol's own, much larger Notifications system.
 from __future__ import annotations
 
 import uuid
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_event
 from app.auth.dependencies import get_current_user
-from app.auth.scope import honeypots_visible_to
+from app.auth.scope import can_see_honeypot, honeypots_visible_to
+from app.core.app_settings import get_or_create_app_settings
 from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie, verify_csrf
 from app.db.models.honeypot import Honeypot
 from app.db.models.honeypot_notification_subscription import HoneypotNotificationSubscription
+from app.db.models.notification_log import NotificationChannel, NotificationLog
 from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.user import looks_like_email
+from app.services.notifications import send_test_notification
+from app.services.webhook import UnsafeWebhookTargetError, validate_webhook_url
 from app.web.templating import templates
 
 router = APIRouter(prefix="/account/notifications")
@@ -60,6 +65,8 @@ async def list_notification_subscriptions(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     saved: str = "",
+    test_sent: str = "",
+    test_error: str = "",
 ) -> Response:
     user = await db.get(User, current_user.id)
     assert user is not None
@@ -78,6 +85,8 @@ async def list_notification_subscriptions(
             "max_minutes": _MAX_UNAVAILABLE_AFTER_MINUTES,
             "csrf_token": csrf_token,
             "saved": bool(saved),
+            "test_sent": bool(test_sent),
+            "test_error": test_error or None,
         },
     )
     if new_cookie:
@@ -151,6 +160,7 @@ async def update_notification_subscriptions(
 
     form = await request.form()
     changed_count = 0
+    errors: list[str] = []
     for honeypot in honeypots:
         key = str(honeypot.id)
         wants_alert = form.get(f"alert_{key}") == "on"
@@ -169,15 +179,64 @@ async def update_notification_subscriptions(
                 changed_count += 1
             continue
 
+        raw_channel = str(form.get(f"channel_{key}") or "email").strip().lower()
+        channel = (
+            NotificationChannel.WEBHOOK
+            if raw_channel == "webhook"
+            else NotificationChannel.EMAIL
+        )
+        webhook_url = str(form.get(f"webhook_{key}") or "").strip() or None
+        if channel == NotificationChannel.WEBHOOK:
+            if not webhook_url:
+                errors.append(
+                    f'"{honeypot.name}": a webhook URL is required when the channel is webhook.'
+                )
+                continue
+            try:
+                validate_webhook_url(webhook_url)
+            except UnsafeWebhookTargetError as exc:
+                errors.append(f'"{honeypot.name}": {exc}')
+                continue
+
         if sub is None:
             sub = HoneypotNotificationSubscription(user_id=user.id, honeypot_id=honeypot.id)
             db.add(sub)
         sub.notify_on_alert = wants_alert
         sub.notify_on_unavailable = wants_unavailable
         sub.unavailable_after_minutes = minutes
+        sub.delivery_channel = channel
+        sub.webhook_url = webhook_url
         if not wants_unavailable:
             sub.unavailable_notified_at = None
         changed_count += 1
+
+    if errors:
+        # Deliberately no explicit `db.rollback()` here: nothing has been
+        # committed yet, and rolling back would expire every attribute on
+        # `user` (SQLAlchemy's default post-rollback behavior) — the
+        # template's own `user.email`/`user.notification_target_email`
+        # access would then try to lazy-load outside an async-safe
+        # context and raise `MissingGreenlet`. The request's own `db`
+        # session is discarded uncommitted at teardown regardless (see
+        # `app.db.session.get_db`).
+        csrf_token, new_cookie = get_or_create_csrf_token(request)
+        response = templates.TemplateResponse(
+            request,
+            "notifications/list.html",
+            {
+                "user": user,
+                "honeypots": honeypots,
+                "subscriptions": existing,
+                "min_minutes": _MIN_UNAVAILABLE_AFTER_MINUTES,
+                "max_minutes": _MAX_UNAVAILABLE_AFTER_MINUTES,
+                "csrf_token": csrf_token,
+                "saved": False,
+                "errors": errors,
+            },
+        )
+        if new_cookie:
+            set_csrf_cookie(response, new_cookie)
+        return response
 
     await db.commit()
     if changed_count:
@@ -193,3 +252,80 @@ async def update_notification_subscriptions(
     return RedirectResponse(
         url="/account/notifications?saved=1", status_code=status.HTTP_303_SEE_OTHER
     )
+
+
+@router.post("/test/{honeypot_id}", dependencies=[Depends(verify_csrf)])
+async def send_test(
+    request: Request,
+    honeypot_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """"Send test" button — fires one synthetic alert notification through
+    the channel/target the submitted form's own row for this honeypot
+    currently shows (so it tests what's about to be saved, unsaved changes
+    included), falling back to the user's existing saved subscription for
+    this honeypot, and finally to their plain resolved email if neither
+    applies. Out-of-scope (a honeypot this user can't see, or that no
+    longer exists) 404s rather than leaking existence, same as every other
+    honeypot-scoped route — see `app.auth.scope`'s module docstring."""
+    user = await db.get(User, current_user.id)
+    assert user is not None
+    honeypot = await db.get(Honeypot, honeypot_id)
+    if honeypot is None or not can_see_honeypot(user, honeypot):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+    form = await request.form()
+    key = str(honeypot_id)
+    raw_channel = str(form.get(f"channel_{key}") or "").strip().lower()
+    webhook_url = str(form.get(f"webhook_{key}") or "").strip() or None
+    existing = (await _own_subscriptions(db, user.id)).get(honeypot_id)
+
+    channel: NotificationChannel
+    target: str | None
+    if raw_channel == "webhook" and webhook_url:
+        channel, target = NotificationChannel.WEBHOOK, webhook_url
+    elif raw_channel == "email":
+        channel, target = NotificationChannel.EMAIL, user.notification_target_email
+    elif existing is not None:
+        channel = existing.delivery_channel
+        target = (
+            existing.webhook_url
+            if channel == NotificationChannel.WEBHOOK
+            else user.notification_target_email
+        )
+    else:
+        channel, target = NotificationChannel.EMAIL, user.notification_target_email
+
+    error: str | None
+    if not target:
+        error = "No email address or webhook URL is set for this honeypot."
+    else:
+        app_settings = await get_or_create_app_settings(db)
+        error = await send_test_notification(
+            db, app_settings, user=user, honeypot=honeypot, channel=channel, target=target
+        )
+
+    query = "test_sent=1" if not error else f"test_error={quote(error, safe='')}"
+    return RedirectResponse(
+        url=f"/account/notifications?{query}", status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
+@router.get("/history")
+async def notification_history(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """The current user's own last 200 notification send attempts (real or
+    test) — never another user's, since this whole feature has no
+    admin/superadmin gate (see this module's docstring)."""
+    result = await db.execute(
+        select(NotificationLog)
+        .where(NotificationLog.user_id == current_user.id)
+        .order_by(NotificationLog.created_at.desc())
+        .limit(200)
+    )
+    entries = list(result.scalars().all())
+    return templates.TemplateResponse(request, "notifications/history.html", {"entries": entries})

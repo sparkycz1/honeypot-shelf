@@ -28,13 +28,24 @@
     <div class="alert alert-warn"><p>{{ t(request, "users.list.bulk_skipped_notice", count=bulk_skipped) }}</p></div>
   {% endif %}
 
+  {#
+    The bulk-select checkboxes/buttons below submit to this form via the
+    HTML `form="bulk-actions-form"` attribute rather than by being nested
+    inside it — nesting an inline per-row <form> (the "Sign in as" button
+    below) inside another <form> is invalid HTML; a browser silently drops
+    the inner start tag and reparents its controls onto the *outer* form
+    instead, which used to make "Sign in as" submit to this form's own
+    (nonexistent) action, i.e. POST /users, the create-user route (422).
+    Found and fixed during an app-wide audit — see tests/test_impersonation.py.
+  #}
   <form method="post" class="form form-wide" id="bulk-actions-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  </form>
 
     <table class="data-table">
       <thead>
         <tr>
-          <th><input type="checkbox" data-select-all="user_ids" aria-label="{{ t(request, 'users.list.select_all_aria') }}"></th>
+          <th><input type="checkbox" data-select-all="user_ids" form="bulk-actions-form" aria-label="{{ t(request, 'users.list.select_all_aria') }}"></th>
           <th>{{ t(request, "users.field.username") }}</th>
           <th>{{ t(request, "account.profile.access") }}</th>
           <th>{{ t(request, "users.field.auth_provider") }}</th>
@@ -48,7 +59,7 @@
       <tbody>
         {% for u in users %}
           <tr>
-            <td><input type="checkbox" name="user_ids" value="{{ u.id }}" aria-label="{{ t(request, 'users.list.select_aria', name=(u.display_name or u.username)) }}"></td>
+            <td><input type="checkbox" name="user_ids" value="{{ u.id }}" form="bulk-actions-form" aria-label="{{ t(request, 'users.list.select_aria', name=(u.display_name or u.username)) }}"></td>
             <td>{{ u.display_name or u.username }}</td>
             <td>
               {% if u.is_superadmin %}<span class="badge">{{ t(request, "users.list.superadmin_badge") }}</span>
@@ -84,24 +95,23 @@
 
     <div class="page-header-actions" id="bulk-actions-bar">
       <span class="hint">{{ t(request, "users.list.with_selected") }}</span>
-      <select name="company_id" aria-label="{{ t(request, 'users.list.bulk_company_aria') }}">
+      <select name="company_id" form="bulk-actions-form" aria-label="{{ t(request, 'users.list.bulk_company_aria') }}">
         <option value="">{{ t(request, "users.list.bulk_company_placeholder") }}</option>
         {% for company in companies %}
           <option value="{{ company.id }}">{{ company.name }}</option>
         {% endfor %}
       </select>
-      <select name="access_level" aria-label="{{ t(request, 'users.list.bulk_access_level_aria') }}">
+      <select name="access_level" form="bulk-actions-form" aria-label="{{ t(request, 'users.list.bulk_access_level_aria') }}">
         {% for level in access_levels %}
           <option value="{{ level.value }}">{{ t(request, "users.field.access_level_read_write") if level.value == "read_write" else t(request, "users.field.access_level_read_only") }}</option>
         {% endfor %}
       </select>
-      <button type="submit" formaction="/users/bulk/assign-company" class="button button-secondary">
+      <button type="submit" form="bulk-actions-form" formaction="/users/bulk/assign-company" class="button button-secondary">
         {{ t(request, "users.list.bulk_assign_company") }}
       </button>
-      <button type="submit" formaction="/users/bulk/delete" class="button button-danger"
+      <button type="submit" form="bulk-actions-form" formaction="/users/bulk/delete" class="button button-danger"
               data-confirm="{{ t(request, 'users.list.confirm_bulk_delete') }}">
         {{ t(request, "users.list.bulk_delete") }}
       </button>
     </div>
-  </form>
 {% endblock %}

@@ -212,6 +212,22 @@ class Settings(BaseSettings):
 
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
+    # Deploy-wide starting UI language (`app.i18n.get_locale`'s `default`
+    # kwarg) — what an account with no explicit `User.locale` of its own (a
+    # fresh account, or an anonymous request before any account is known)
+    # renders in, instead of always English. Anyone can still switch for
+    # themselves at any time in My account -> Language, unaffected by this.
+    # Normalized lowercase/stripped; an unrecognized value still falls back
+    # to English exactly like an unrecognized `User.locale` already does
+    # (see `app.i18n.get_locale`). Ported from an identical debcontrol
+    # feature (`DEFAULT_LANGUAGE`).
+    default_language: str = Field(default="en", alias="DEFAULT_LANGUAGE")
+
+    @field_validator("default_language")
+    @classmethod
+    def _normalize_default_language(cls, value: str) -> str:
+        return value.strip().lower() or "en"
+
     # IANA timezone name (e.g. "Europe/Prague") the UI renders timestamps
     # in. Falls back to UTC if unset or not a recognized zone. Data is
     # always stored in Postgres as UTC regardless of this — only display

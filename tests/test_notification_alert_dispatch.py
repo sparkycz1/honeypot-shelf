@@ -88,8 +88,8 @@ async def test_new_alert_emails_only_subscribed_active_recipients(
 
     sent_to: list[str] = []
 
-    async def fake_notify_alert(app_settings, *, recipients, honeypot, **kwargs):
-        sent_to.extend(u.username for u in recipients)
+    async def fake_notify_alert(app_settings, *, subscriptions, honeypot, **kwargs):
+        sent_to.extend(sub.user.username for sub in subscriptions)
 
     monkeypatch.setattr("app.tasks.jobs.notify_alert", fake_notify_alert)
 
@@ -99,7 +99,13 @@ async def test_new_alert_emails_only_subscribed_active_recipients(
     assert sent_to == ["subscribed-user"]
 
 
-async def test_no_notification_dispatch_when_smtp_disabled(db_session_factory, monkeypatch):
+async def test_no_email_sent_when_smtp_disabled(db_session_factory, monkeypatch):
+    """Unlike a webhook subscription (which fires regardless — see
+    `app.services.notifications.notify_alert`), an email-channel
+    subscription must not actually send when SMTP is off. `notify_alert`
+    itself is still called (and still queries subscriptions) — it's the
+    per-subscription dispatch inside it that skips the send — so this
+    patches the real send function rather than `notify_alert` itself."""
     monkeypatch.setattr("app.db.session.AsyncSessionLocal", db_session_factory)
     honeypot_id = await _setup(db_session_factory, smtp_enabled=False)
 
@@ -115,11 +121,11 @@ async def test_no_notification_dispatch_when_smtp_disabled(db_session_factory, m
 
     called = False
 
-    async def fake_notify_alert(*args, **kwargs):
+    def fake_send_email(*args, **kwargs):
         nonlocal called
         called = True
 
-    monkeypatch.setattr("app.tasks.jobs.notify_alert", fake_notify_alert)
+    monkeypatch.setattr("app.services.notifications.send_email", fake_send_email)
 
     await _poll_honeypot_canary_log(str(honeypot_id))
 

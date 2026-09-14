@@ -7,7 +7,7 @@
 ```bash
 git clone https://github.com/sparkycz1/honeypot-shelf.git
 cd honeyhive
-python scripts/setup.py
+python3 scripts/setup.py
 ```
 
 `scripts/setup.py` is a self-contained, pure-stdlib wizard (needs only a
@@ -20,8 +20,11 @@ sidecar (`docker-compose.vpn.yml` — no provider/key/config asked here,
 that's all Settings → VPN once the app is running, see
 [Architecture](Architecture.md)'s "VPN connectivity" section), whether the
 app's port should only accept local connections, the facts/reachability
-check intervals, event retention, the superadmin password — or
-auto-generates one — and the host port), writes `.env`, applies the
+check intervals, event retention, the deploy-wide default UI language
+(`DEFAULT_LANGUAGE` — what a fresh account/anonymous request renders in;
+anyone can still switch for themselves any time in My account →
+Language), the superadmin password — or auto-generates one — and the host
+port), writes `.env`, applies the
 Alembic migration, brings the stack up, waits for it to become healthy,
 and creates the first superadmin account (`admin`). Re-running against an
 existing `.env` just tops it up with any new `.env.example` variables and
@@ -43,7 +46,7 @@ If you'd rather configure everything by hand instead of using
 
 ```bash
 cp .env.example .env
-python scripts/generate_secrets.py
+python3 scripts/generate_secrets.py
 ```
 
 Paste the printed values (`SECRET_KEY`, `ENCRYPTION_KEY`,
@@ -138,6 +141,17 @@ that.
 > (`.env.example`) — trusting it from anyone would let an attacker defeat
 > the login rate limiter by spoofing a new "source" every attempt. Turn it
 > on once `TRUSTED_PROXY_IPS` is narrowed to your real proxy (not `*`).
+
+### Postgres tuning
+
+`docker-compose.yml`'s `db` service applies a handful of Postgres tuning
+flags from the very first `docker compose up` (`shared_buffers`,
+`effective_cache_size`, `work_mem`, `maintenance_work_mem`, and two
+`autovacuum_*_scale_factor` settings) — sized for a fleet up to roughly
+100 honeypots while staying RAM-conscious, well under Postgres' own stock
+"assume a big dedicated box" numbers. Override any of them via the
+matching `POSTGRES_*` variable in `.env` (see `.env.example`) for a
+bigger fleet/host, or a smaller/constrained one.
 
 ## Custom logo & favicon
 

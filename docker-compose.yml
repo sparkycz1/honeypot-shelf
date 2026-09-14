@@ -34,6 +34,27 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
       TZ: ${TZ:-UTC}
+    # Tuning knobs, active from the very first `docker compose up` — sized
+    # for a fleet up to roughly 100 honeypots while staying RAM-conscious
+    # (well under Postgres' own stock "assume a big dedicated box"
+    # numbers), with autovacuum scale factors lowered so it keeps up with
+    # this app's nightly retention purges. Fully overridable via the same
+    # .env vars for a bigger fleet/host — see wiki/Installation.md.
+    # Ported from an identical debcontrol change.
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=${POSTGRES_SHARED_BUFFERS:-256MB}"
+      - "-c"
+      - "effective_cache_size=${POSTGRES_EFFECTIVE_CACHE_SIZE:-768MB}"
+      - "-c"
+      - "work_mem=${POSTGRES_WORK_MEM:-8MB}"
+      - "-c"
+      - "maintenance_work_mem=${POSTGRES_MAINTENANCE_WORK_MEM:-128MB}"
+      - "-c"
+      - "autovacuum_vacuum_scale_factor=${POSTGRES_AUTOVACUUM_VACUUM_SCALE_FACTOR:-0.05}"
+      - "-c"
+      - "autovacuum_analyze_scale_factor=${POSTGRES_AUTOVACUUM_ANALYZE_SCALE_FACTOR:-0.02}"
     # Mounted at the parent directory, not .../data — as of the postgres:18
     # image, PGDATA defaults to a major-version-specific subdirectory it
     # manages itself (/var/lib/postgresql/18/docker), mirroring

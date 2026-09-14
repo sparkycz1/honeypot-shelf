@@ -123,3 +123,41 @@ async def test_impersonation_is_audit_logged(client, db_session_factory):
     audit_page = await client.get("/audit")
     assert "user.impersonate.start" in audit_page.text
     assert "user.impersonate.stop" in audit_page.text
+
+
+async def test_users_list_has_no_nested_forms(client, db_session_factory):
+    """Regression guard for a real bug: the per-row "Sign in as" <form>
+    used to sit nested inside the page's own bulk-actions <form> — invalid
+    HTML that a browser silently mangles (see users/list.html's own
+    comment) — which made the button submit to POST /users (create-user,
+    422) instead of POST /users/{id}/impersonate. A lightweight
+    depth-counting scan, not a full HTML parser: any '<form' encountered
+    before the matching '</form>' of an already-open one means nesting."""
+    await _create_user(db_session_factory, username="nested-form-check")
+    response = await client.get("/users")
+    assert response.status_code == 200
+
+    depth = 0
+    for token in re.findall(r"</?form\b", response.text):
+        if token == "<form":
+            assert depth == 0, "found a <form> nested inside another <form> on /users"
+            depth += 1
+        else:
+            assert depth == 1, "found a </form> with no matching open <form> on /users"
+            depth -= 1
+    assert depth == 0
+
+
+async def test_users_list_impersonate_form_targets_the_impersonate_route(
+    client, db_session_factory
+):
+    target, _ = await _create_user(db_session_factory, username="form-action-check")
+    response = await client.get("/users")
+    assert response.status_code == 200
+    match = re.search(
+        rf'<form method="post" action="([^"]*)" class="inline-form"[^>]*'
+        rf'confirm=[^>]*{target.username}',
+        response.text,
+    )
+    assert match is not None, "couldn't find the target's own impersonate <form>"
+    assert match.group(1) == f"/users/{target.id}/impersonate"

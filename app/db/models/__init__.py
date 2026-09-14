@@ -20,6 +20,7 @@ from app.db.models.honeypot_service import HoneypotService
 from app.db.models.honeypot_tag import Tag
 from app.db.models.honeypot_update_run import HoneypotUpdateRun
 from app.db.models.initialize_run import InitializeRun
+from app.db.models.notification_log import NotificationChannel, NotificationKind, NotificationLog
 from app.db.models.pending_honeypot import PendingHoneypot
 from app.db.models.saved_honeypot_view import SavedHoneypotView
 from app.db.models.scheduled_task import ScheduledTask
@@ -48,6 +49,9 @@ __all__ = [
     "HoneypotService",
     "HoneypotUpdateRun",
     "InitializeRun",
+    "NotificationChannel",
+    "NotificationKind",
+    "NotificationLog",
     "PendingHoneypot",
     "SSHIdentity",
     "SavedHoneypotView",

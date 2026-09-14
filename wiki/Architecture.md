@@ -480,6 +480,34 @@ design and every failure-is-a-silent-no-op reasoning (SMTP not
 configured, no recipient email set, the relay refusing the connection —
 none of this may ever break the background sweep that triggered it).
 
+**Delivery channel, history, and "Send test"** (ported from an identical
+debcontrol feature — webhook delivery, notification history/retention,
+send-test button — adapted to this app's per-subscription model rather
+than debcontrol's per-rule one): each `HoneypotNotificationSubscription`
+picks its own `delivery_channel` — email (default) or a plain JSON
+webhook POST (`app.services.webhook.send_webhook`) instead, which fires
+even when SMTP is off. Every send attempt (real or test) is logged to
+`NotificationLog` — `app.tasks.jobs.purge_old_notification_logs` prunes
+it on `AppSettings.notification_log_retention_days` (Settings → Checks &
+retention, default 90 days), and each user's own last 200 attempts are at
+My account → Notifications → Notification history (never another user's
+— this feature has no admin/superadmin gate at all). "Send test"
+(`app.services.notifications.send_test_notification`) fires one synthetic
+alert straight to the channel/target a subscription row currently shows,
+bypassing subscription state entirely.
+
+Because a webhook URL here is entered by *any* logged-in user, not just a
+superadmin authoring a rule (debcontrol's own trust boundary), a webhook
+subscription is a real SSRF vector without a guard — a low-privileged
+account could otherwise point it at a cloud metadata endpoint or another
+container on the compose network and use `worker` as a network probe.
+`app.services.webhook.validate_webhook_url` resolves the hostname and
+rejects anything that isn't a public, routable address (loopback, link-
+local, private, reserved, multicast, unspecified all refused) — checked
+both when a subscription is saved (fail fast) and again immediately
+before every send (defends against the resolved address changing between
+the two, a classic SSRF DNS-rebind).
+
 ### Settings → Checks & retention: database-backed, not `.env`
 
 `ssh_connect_timeout`, `update_timeout_seconds`,

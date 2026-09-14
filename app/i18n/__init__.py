@@ -124,13 +124,23 @@ def available_locales() -> list[Locale]:
     return [default, *rest]
 
 
-def get_locale(code: str | None) -> Locale:
-    """The requested locale, or the default if `code` is `None`/unknown — a
+def get_locale(code: str | None, *, default: str = DEFAULT_LOCALE_CODE) -> Locale:
+    """The requested locale, or `default` if `code` is `None`/unknown — a
     user who never chose one, or whose chosen locale's file was since
-    removed (see `User.locale`'s own docstring)."""
+    removed (see `User.locale`'s own docstring). `default` is the
+    deploy-wide `Settings.default_language` (Middleware passes it for both
+    an anonymous request and an authenticated user with `locale IS NULL`)
+    — kept distinct from `DEFAULT_LOCALE_CODE` (the always-English
+    translation-gap fallback in `translate()`, never configurable): an
+    operator-chosen starting language is one thing, the safety net for a
+    string a locale file hasn't translated yet is another, and the two
+    must never be conflated. An unrecognized `default` itself still falls
+    back to `DEFAULT_LOCALE_CODE`, same as an unrecognized `code`."""
     locales = _registry()
     if code and code in locales:
         return locales[code]
+    if default in locales:
+        return locales[default]
     return locales[DEFAULT_LOCALE_CODE]
 
 

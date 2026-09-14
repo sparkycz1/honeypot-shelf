@@ -54,6 +54,7 @@ from app.db.models.honeypot_package import HoneypotPackage
 from app.db.models.honeypot_reachability_sample import HoneypotReachabilitySample
 from app.db.models.honeypot_service import HoneypotService
 from app.db.models.honeypot_update_run import HoneypotUpdateRun, UpdateRunStatus, UpgradeStrategy
+from app.db.models.notification_log import NotificationLog
 from app.services.company_stats import compute_company_stats
 from app.services.honeypot_event_syslog import forward_honeypot_event_to_syslog
 from app.services.honeypot_events import build_event
@@ -979,7 +980,9 @@ async def _evaluate_unavailability_notifications(
                 if sub.unavailable_notified_at is not None:
                     sub.unavailable_notified_at = None
                     changed = True
-                    await notify_recovered(app_settings, user=sub.user, honeypot=honeypot)
+                    await notify_recovered(
+                        app_settings, subscription=sub, honeypot=honeypot, db=session
+                    )
                 continue
             if sub.unavailable_notified_at is not None or honeypot.unreachable_since is None:
                 continue
@@ -989,9 +992,10 @@ async def _evaluate_unavailability_notifications(
                 changed = True
                 await notify_unavailable(
                     app_settings,
-                    user=sub.user,
+                    subscription=sub,
                     honeypot=honeypot,
                     threshold_minutes=sub.unavailable_after_minutes,
+                    db=session,
                 )
     if changed:
         await session.commit()
@@ -1410,7 +1414,11 @@ async def _poll_honeypot_canary_log(honeypot_id: str) -> dict[str, Any]:
         for row in new_rows:
             await forward_honeypot_event_to_syslog(session, honeypot, row)
 
-        if new_rows and app_settings.smtp_enabled:
+        if new_rows:
+            # Not gated on `app_settings.smtp_enabled` here — a webhook
+            # subscription fires regardless (see `notify_alert`); each
+            # subscription's own delivery channel decides whether SMTP
+            # being off should skip it.
             subscribers_result = await session.execute(
                 select(HoneypotNotificationSubscription)
                 .options(selectinload(HoneypotNotificationSubscription.user))
@@ -1419,19 +1427,20 @@ async def _poll_honeypot_canary_log(honeypot_id: str) -> dict[str, Any]:
                     HoneypotNotificationSubscription.notify_on_alert.is_(True),
                 )
             )
-            recipients = [
-                sub.user for sub in subscribers_result.scalars().all() if sub.user.is_active
+            subscriptions = [
+                sub for sub in subscribers_result.scalars().all() if sub.user.is_active
             ]
-            if recipients:
+            if subscriptions:
                 for row in new_rows:
                     await notify_alert(
                         app_settings,
-                        recipients=recipients,
+                        subscriptions=subscriptions,
                         honeypot=honeypot,
                         event_type=row.event_type,
                         event_label=logtype_label(row.event_type),
                         src_ip=row.src_ip,
                         occurred_at=row.occurred_at,
+                        db=session,
                     )
 
         return {"ok": True, "new_events": len(alert_events)}
@@ -2201,3 +2210,50 @@ async def _purge_old_honeypot_update_runs() -> None:
 @celery_app.task(name="app.tasks.jobs.purge_old_honeypot_update_runs")
 def purge_old_honeypot_update_runs() -> None:
     asyncio.run(_purge_old_honeypot_update_runs())
+
+
+_NOTIFICATION_LOG_PURGE_ACTOR = "retention policy (automatic)"
+
+
+async def _purge_old_notification_logs() -> None:
+    """Delete `NotificationLog` rows older than `AppSettings.
+    notification_log_retention_days` — same shape as
+    `_purge_old_honeypot_update_runs` above, including being skipped
+    entirely when retention is unset (`None` = keep forever). Ported from
+    an identical debcontrol feature (`NotificationLog` retention)."""
+    async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
+        retention_days = app_settings.notification_log_retention_days
+        if not retention_days:
+            return
+
+        cutoff = datetime.now(UTC) - timedelta(days=retention_days)
+        count_result = await session.execute(
+            select(func.count())
+            .select_from(NotificationLog)
+            .where(NotificationLog.created_at < cutoff)
+        )
+        deleted_count = count_result.scalar_one()
+        if not deleted_count:
+            return
+
+        await session.execute(
+            delete(NotificationLog).where(NotificationLog.created_at < cutoff)
+        )
+        await session.commit()
+
+        await log_event(
+            session,
+            actor=_NOTIFICATION_LOG_PURGE_ACTOR,
+            action="notification_logs.purge",
+            summary=(
+                f"Purged {deleted_count} notification log entr"
+                f"{'ies' if deleted_count != 1 else 'y'} older than {retention_days} day(s)"
+            ),
+            details={"deleted_count": deleted_count, "retention_days": retention_days},
+        )
+
+
+@celery_app.task(name="app.tasks.jobs.purge_old_notification_logs")
+def purge_old_notification_logs() -> None:
+    asyncio.run(_purge_old_notification_logs())

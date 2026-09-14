@@ -45,7 +45,7 @@ fresh instance running.
 ```bash
 git clone https://github.com/sparkycz1/honeypot-shelf.git
 cd honeyhive
-python scripts/setup.py
+python3 scripts/setup.py
 ```
 
 It generates every secret, asks a handful of questions (timezone, whether
@@ -59,7 +59,7 @@ superadmin account for you. Full details:
 
 ```bash
 cp .env.example .env
-python scripts/generate_secrets.py
+python3 scripts/generate_secrets.py
 ```
 
 Paste the printed values into `.env`, then see

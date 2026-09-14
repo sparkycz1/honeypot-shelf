@@ -78,8 +78,10 @@ async def test_sends_unavailable_email_once_debounce_elapsed(db_session_factory,
 
     calls: list[str] = []
 
-    async def fake_notify_unavailable(app_settings, *, user, honeypot, threshold_minutes):
-        calls.append(user.username)
+    async def fake_notify_unavailable(
+        app_settings, *, subscription, honeypot, threshold_minutes, db=None
+    ):
+        calls.append(subscription.user.username)
 
     monkeypatch.setattr("app.tasks.jobs.notify_unavailable", fake_notify_unavailable)
 
@@ -172,8 +174,8 @@ async def test_sends_recovered_email_and_clears_state_on_recovery(db_session_fac
 
     calls: list[str] = []
 
-    async def fake_notify_recovered(app_settings, *, user, honeypot):
-        calls.append(user.username)
+    async def fake_notify_recovered(app_settings, *, subscription, honeypot, db=None):
+        calls.append(subscription.user.username)
 
     monkeypatch.setattr("app.tasks.jobs.notify_recovered", fake_notify_recovered)
 

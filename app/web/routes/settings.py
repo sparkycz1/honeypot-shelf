@@ -395,6 +395,37 @@ async def update_monitoring_retention(
     return RedirectResponse(url="/settings?tab=checks", status_code=status.HTTP_303_SEE_OTHER)
 
 
+@router.post("/notification-log-retention", dependencies=[Depends(verify_csrf)])
+async def update_notification_log_retention(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    retention_days: str = Form(""),
+) -> Response:
+    """Same shape as the other retention handlers, for `NotificationLog`
+    rows (every Notifications send attempt, real or test) — see
+    `app.tasks.jobs.purge_old_notification_logs`."""
+    app_settings = await get_or_create_app_settings(db)
+    new_value, error = _parse_retention_days(retention_days)
+    if error:
+        return await _render_settings(request, db, [error], tab="checks")
+
+    app_settings.notification_log_retention_days = new_value
+    await db.commit()
+
+    await log_event(
+        db,
+        request=request,
+        action="settings.notification_log_retention.update",
+        summary=(
+            f"Set notification history retention to {new_value} day(s)"
+            if new_value is not None
+            else "Set notification history retention to keep forever"
+        ),
+    )
+
+    return RedirectResponse(url="/settings?tab=checks", status_code=status.HTTP_303_SEE_OTHER)
+
+
 @router.post("/audit-verify", dependencies=[Depends(verify_csrf)])
 async def verify_audit_chain(request: Request, db: AsyncSession = Depends(get_db)) -> Response:
     """Recompute the audit log's hash chain on demand — see

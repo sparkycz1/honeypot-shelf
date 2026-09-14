@@ -918,6 +918,39 @@ img.brand-mark-lg { object-fit: contain; }
 .honeypot-card-tags { display: flex; flex-wrap: wrap; }
 .honeypot-card-details-link { align-self: flex-start; margin-top: auto; }
 
+/* Honeypots list's compact "list" view mode — was previously a bare <ul>
+   with no CSS at all, rendering as a plain bulleted list rather than a
+   clean row-based one; found during an app-wide CSS-class-vs-template-
+   usage audit (compact case of the same "unstyled class" gap chore
+   0faa8fb-adjacent debcontrol rounds catch — see git log around here). */
+.honeypot-compact-list { list-style: none; margin: 0; padding: 0; }
+.honeypot-compact-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.honeypot-compact-row:last-child { border-bottom: none; }
+.honeypot-compact-name { font-weight: 500; text-decoration: none; margin-right: auto; }
+.honeypot-compact-name:hover { text-decoration: underline; }
+
+/* A checkbox with its own inline label text (company-picker checklists on
+   honeypots/new.html and honeypots/edit.html) — without this, `.form
+   label`'s generic block/muted-color rule (meant for a field's *own*
+   label above it) applied here too, stacking the checkbox above its text
+   in the wrong color instead of a normal inline "[ ] Some Company" row.
+   Same audit as the compact-list rule above. */
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+  font-weight: normal;
+  color: inherit;
+  font-size: inherit;
+}
+
 /* --- Cards view's CPU/RAM indicator (honeypots/list.html's `usage_bar`
    macro) — the latest monitoring sample only, not a historical sparkline;
    see `_get_latest_monitoring_by_honeypot`'s own docstring for why. No

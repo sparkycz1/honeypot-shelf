@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t(request, "notifications.history.title") }} — Honeypot Shelf{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>{{ t(request, "notifications.history.title") }}</h1>
+    <a href="/account/notifications">{{ t(request, "notifications.history.back") }}</a>
+  </div>
+
+  <p class="hint">{{ t(request, "notifications.history.hint") }}</p>
+
+  {% if not entries %}
+    <p class="hint">{{ t(request, "notifications.history.none") }}</p>
+  {% else %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>{{ t(request, "notifications.history.column.when") }}</th>
+          <th>{{ t(request, "notifications.history.column.honeypot") }}</th>
+          <th>{{ t(request, "notifications.history.column.kind") }}</th>
+          <th>{{ t(request, "notifications.history.column.channel") }}</th>
+          <th>{{ t(request, "notifications.history.column.target") }}</th>
+          <th>{{ t(request, "notifications.history.column.status") }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in entries %}
+          <tr>
+            <td>{{ entry.created_at | local_time('%Y-%m-%d %H:%M %Z') }}</td>
+            <td>{{ entry.honeypot_name or '—' }}</td>
+            <td>
+              {{ t(request, "notifications.event." + entry.kind.value) }}
+              {% if entry.is_test %}<span class="badge">{{ t(request, "notifications.history.test_badge") }}</span>{% endif %}
+            </td>
+            <td>{{ t(request, "notifications.subscriptions.channel_" + entry.channel.value) }}</td>
+            <td>{{ entry.target }}</td>
+            <td>
+              {% if entry.success %}
+                <span class="badge badge-ok">{{ t(request, "notifications.history.status_ok") }}</span>
+              {% else %}
+                <span class="badge badge-error" title="{{ entry.error or '' }}">{{ t(request, "notifications.history.status_failed") }}</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+{% endblock %}

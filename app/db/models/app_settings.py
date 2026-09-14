@@ -313,6 +313,15 @@ class AppSettings(Base):
     notification_recovered_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
     notification_recovered_body: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # How many days of `NotificationLog` rows (every send attempt, real or
+    # "Send test") to keep before the daily purge job deletes them — same
+    # "bounded operational history, not a compliance record" reasoning and
+    # default as every other retention setting here (see
+    # `dashboard_trends_retention_days`). NULL means "keep forever."
+    notification_log_retention_days: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=90
+    )
+
     # --- Fleet-wide honeypot-alert syslog target — the "All honeypots"
     # page's own Integrations tab (app/web/routes/companies.py). Every
     # honeypot's alert forwards here *in addition to* its own company's

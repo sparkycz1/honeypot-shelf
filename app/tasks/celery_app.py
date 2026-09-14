@@ -272,6 +272,10 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.jobs.purge_old_honeypot_update_runs",
         "schedule": crontab(hour=2, minute=15),
     },
+    "purge-old-notification-logs": {
+        "task": "app.tasks.jobs.purge_old_notification_logs",
+        "schedule": crontab(hour=2, minute=17),
+    },
     "record-company-snapshots": {
         "task": "app.tasks.jobs.record_company_snapshots",
         "schedule": crontab(hour=0, minute=10),

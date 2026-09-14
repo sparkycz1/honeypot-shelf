@@ -1,6 +1,6 @@
 [project]
 name = "honeypot-shelf"
-version = "0.33.2"
+version = "0.34.0"
 description = "Management and monitoring overview for a fleet of OpenCanary honeypots, across multiple companies"
 readme = "README.md"
 requires-python = ">=3.14"

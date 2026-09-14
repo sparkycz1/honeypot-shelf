@@ -33,10 +33,12 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, ForeignKey, Integer, UniqueConstraint, func
+from sqlalchemy import Boolean, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.db.models.notification_log import NotificationChannel
+from app.db.pg_enum import pg_enum
 
 if TYPE_CHECKING:
     from app.db.models.honeypot import Honeypot
@@ -75,6 +77,20 @@ class HoneypotNotificationSubscription(Base):
     notify_on_unavailable: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     unavailable_after_minutes: Mapped[int] = mapped_column(Integer, default=10, nullable=False)
     unavailable_notified_at: Mapped[datetime | None] = mapped_column(nullable=True)
+
+    # Where this subscription's notifications go — the user's own resolved
+    # email address (default), or a webhook POST instead. Ported from an
+    # identical debcontrol feature (a rule-level `delivery_channel` there;
+    # here it's per-subscription, matching this app's per-(user, honeypot)
+    # model). A webhook subscription ignores `User.notification_target_email`
+    # entirely and fires even without SMTP configured/enabled — see
+    # `app.services.notifications`.
+    delivery_channel: Mapped[NotificationChannel] = mapped_column(
+        pg_enum(NotificationChannel, name="notification_channel"),
+        default=NotificationChannel.EMAIL,
+        nullable=False,
+    )
+    webhook_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

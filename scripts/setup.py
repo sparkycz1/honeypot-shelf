@@ -3,7 +3,7 @@
 recommended way to configure and start one for the first time.
 
 Usage (from a fresh git checkout, before anything else):
-    python scripts/setup.py
+    python3 scripts/setup.py
 
 What it does, in order: copies `.env.example` to `.env`, fills in every
 secret (`SECRET_KEY`, `ENCRYPTION_KEY`, `POSTGRES_PASSWORD`,
@@ -34,6 +34,7 @@ manual alternative if you'd rather configure everything by hand instead.
 from __future__ import annotations
 
 import base64
+import json
 import os
 import re
 import secrets
@@ -52,6 +53,27 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 ENV_PATH = REPO_ROOT / ".env"
 ENV_EXAMPLE_PATH = REPO_ROOT / ".env.example"
 ALEMBIC_VERSIONS_DIR = REPO_ROOT / "alembic" / "versions"
+LOCALES_DIR = REPO_ROOT / "app" / "i18n" / "locales"
+
+
+def _available_locale_codes() -> list[str]:
+    """Every shipped UI language's code (`app/i18n/locales/*.json`'s own
+    `meta.code`), for the `DEFAULT_LANGUAGE` prompt below — read straight
+    off disk with plain `json`, not by importing `app.i18n`, to keep this
+    script's own "pure stdlib, runs before anything is installed"
+    contract (see its module docstring)."""
+    codes = []
+    if LOCALES_DIR.is_dir():
+        for path in sorted(LOCALES_DIR.glob("*.json")):
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                code = data.get("meta", {}).get("code")
+            except (OSError, ValueError, AttributeError):
+                continue
+            if isinstance(code, str) and code:
+                codes.append(code)
+    return codes or ["en"]
+
 
 _HEALTH_TIMEOUT_SECONDS = 180
 _HEALTH_POLL_SECONDS = 3
@@ -368,6 +390,16 @@ def main() -> None:
     lines = _set_env_line(lines, "EVENT_RETENTION_DAYS", retention_days)
 
     print()
+    available_locales = _available_locale_codes()
+    default_language = _prompt(
+        f"Default UI language ({', '.join(available_locales)})", default="en"
+    ).strip().lower()
+    if default_language not in available_locales:
+        print("  (unrecognized — falling back to English)")
+        default_language = "en"
+    lines = _set_env_line(lines, "DEFAULT_LANGUAGE", default_language)
+
+    print()
     admin_password = input(
         "Superadmin account password (leave empty to auto-generate one): "
     ).strip()
@@ -389,23 +421,27 @@ def main() -> None:
     if use_vpn:
         compose_files += ["-f", "docker-compose.vpn.yml"]
 
-    if env_existed:
-        # We just generated a fresh POSTGRES_PASSWORD/REDIS_PASSWORD above, but
-        # Postgres only ever applies POSTGRES_PASSWORD while initializing an
-        # *empty* data directory — if a `pg_data` volume already exists from an
-        # earlier run of this script (e.g. one that failed partway through),
-        # it still has the old password baked in, and every container that
-        # connects with the new one fails with "password authentication
-        # failed" the moment `migrate` tries to connect. Since we're about to
-        # overwrite .env's secrets anyway, drop any previous containers and
-        # volumes first so the new ones start from a clean, matching state.
-        print("==> .env is being replaced — removing any previous containers/volumes "
-              "so the new secrets start from a clean database...")
-        subprocess.run(  # noqa: S603 - fixed args, no user input
-            [docker_path, "compose", *compose_files, "down", "-v"],
-            cwd=REPO_ROOT,
-            check=False,
-        )
+    # We just generated a fresh POSTGRES_PASSWORD/REDIS_PASSWORD above, but
+    # Postgres only ever applies POSTGRES_PASSWORD while initializing an
+    # *empty* data directory — if a `pg_data` Docker volume already exists,
+    # it still has whatever password was baked in when it was created, and
+    # every container that connects with the new one fails with "password
+    # authentication failed" the moment `migrate` tries to connect. That
+    # volume can exist independently of whether `.env` itself currently
+    # does (this script run before and gotten partway, a manual `docker
+    # compose up` before ever running this script, `.env` deleted by hand
+    # between attempts, ...) — so this cleanup runs unconditionally
+    # whenever we're about to write fresh secrets, not just when
+    # overwriting an existing `.env` (`env_existed`); a harmless no-op if
+    # there's nothing to remove. Found via a real "password authentication
+    # failed" migrate failure on a supposedly fresh install.
+    print("==> Removing any previous containers/volumes so the new secrets "
+          "start from a clean database...")
+    subprocess.run(  # noqa: S603 - fixed args, no user input
+        [docker_path, "compose", *compose_files, "down", "-v"],
+        cwd=REPO_ROOT,
+        check=False,
+    )
 
     build_env = {**os.environ, "GIT_COMMIT": _git_commit()}
 
