@@ -593,7 +593,7 @@ wheels = [
 
 [[package]]
 name = "honeypot-shelf"
-version = "0.37.3"
+version = "0.37.4"
 source = { virtual = "." }
 dependencies = [
     { name = "alembic" },
