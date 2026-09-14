@@ -35,7 +35,6 @@ from app.db.models.audit_log import AuditOutcome
 from app.db.models.honeypot import AuthMethod, Honeypot
 from app.db.session import get_db
 from app.services import netbird, wireguard
-from app.services.notifications import default_template
 from app.services.syslog_transport import DEFAULT_SYSLOG_PORT, SyslogProtocol
 from app.ssh.identity import (
     activate_pending_identity,
@@ -53,7 +52,7 @@ router = APIRouter(prefix="/settings", dependencies=[Depends(require_superadmin)
 # why: there's only ever one GET route here, not one per tab, since every
 # POST handler below redirects back to /settings regardless of which tab
 # it belongs to).
-_TAB_KEYS = ("general", "checks", "security", "integrations", "notifications", "vpn")
+_TAB_KEYS = ("general", "checks", "security", "integrations", "vpn")
 _VALID_TABS = set(_TAB_KEYS)
 _DEFAULT_TAB = "general"
 
@@ -90,9 +89,6 @@ async def _render_settings(
         "errors": errors,
         "syslog_protocols": list(SyslogProtocol),
         "smtp_encryptions": list(SmtpEncryption),
-        "notification_defaults": {
-            kind: default_template(kind) for kind in ("alert", "unavailable", "recovered")
-        },
         "tabs": _tabs(request),
         "active_tab": tab,
         **extra,
@@ -797,45 +793,6 @@ async def update_smtp_settings(
         summary=f"Updated SMTP settings ({'enabled' if app_settings.smtp_enabled else 'disabled'})",
     )
     return RedirectResponse(url="/settings?tab=integrations", status_code=status.HTTP_303_SEE_OTHER)
-
-
-@router.post("/notifications/templates", dependencies=[Depends(verify_csrf)])
-async def update_notification_templates(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    notification_alert_subject: str = Form(""),
-    notification_alert_body: str = Form(""),
-    notification_unavailable_subject: str = Form(""),
-    notification_unavailable_body: str = Form(""),
-    notification_recovered_subject: str = Form(""),
-    notification_recovered_body: str = Form(""),
-) -> Response:
-    """The shared, instance-wide (subject, body) wording for every
-    Notifications email — see `app.services.notifications`'s module
-    docstring for why this is one global template per event rather than
-    per-user/per-rule. A blank field means "use the built-in default"
-    (see `app.services.notifications.default_template`) — this never
-    stores an empty string as if it were a deliberate override."""
-    app_settings = await get_or_create_app_settings(db)
-    app_settings.notification_alert_subject = notification_alert_subject.strip() or None
-    app_settings.notification_alert_body = notification_alert_body.strip() or None
-    app_settings.notification_unavailable_subject = (
-        notification_unavailable_subject.strip() or None
-    )
-    app_settings.notification_unavailable_body = notification_unavailable_body.strip() or None
-    app_settings.notification_recovered_subject = notification_recovered_subject.strip() or None
-    app_settings.notification_recovered_body = notification_recovered_body.strip() or None
-    await db.commit()
-
-    await log_event(
-        db,
-        request=request,
-        action="settings.notification_templates.update",
-        summary="Updated the shared Notifications email templates",
-    )
-    return RedirectResponse(
-        url="/settings?tab=notifications", status_code=status.HTTP_303_SEE_OTHER
-    )
 
 
 async def _deactivate_other_provider(

@@ -169,6 +169,70 @@ async def test_create_honeypot_scoped_rule(client, login_as, db_session_factory)
         assert rule.honeypot_id == honeypot_id
 
 
+async def test_create_rule_with_custom_wording_persists_the_override(
+    client, login_as, db_session_factory
+):
+    company = await create_company(db_session_factory)
+    user = await login_as(client, company_id=company.id, access_level=AccessLevel.READ)
+
+    form = await client.get("/account/notifications")
+    response = await client.post(
+        "/account/notifications",
+        data={
+            "csrf_token": _csrf_from(form),
+            "name": "Custom wording",
+            "scope": "company",
+            "company_id": str(company.id),
+            "delivery_channel": "email",
+            "notify_on_alert": "on",
+            "alert_subject": "Heads up: {honeypot_name}",
+            "alert_body": "Something happened on {honeypot_name}.",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    async with db_session_factory() as db:
+        rule = (
+            await db.execute(select(NotificationRule).where(NotificationRule.user_id == user.id))
+        ).scalar_one()
+        assert rule.alert_subject == "Heads up: {honeypot_name}"
+        assert rule.alert_body == "Something happened on {honeypot_name}."
+        # Never customized — stays None, so it renders from the built-in
+        # default in the rule owner's own language at send time.
+        assert rule.unavailable_subject is None
+        assert rule.unavailable_body is None
+
+
+async def test_create_rule_without_custom_wording_leaves_it_unset(
+    client, login_as, db_session_factory
+):
+    company = await create_company(db_session_factory)
+    user = await login_as(client, company_id=company.id, access_level=AccessLevel.READ)
+
+    form = await client.get("/account/notifications")
+    response = await client.post(
+        "/account/notifications",
+        data={
+            "csrf_token": _csrf_from(form),
+            "name": "Defaults only",
+            "scope": "company",
+            "company_id": str(company.id),
+            "delivery_channel": "email",
+            "notify_on_alert": "on",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    async with db_session_factory() as db:
+        rule = (
+            await db.execute(select(NotificationRule).where(NotificationRule.user_id == user.id))
+        ).scalar_one()
+        assert rule.alert_subject is None
+        assert rule.alert_body is None
+
+
 async def test_cannot_create_rule_scoped_to_a_company_not_visible(
     client, login_as, db_session_factory
 ):
@@ -286,6 +350,25 @@ async def test_cannot_edit_or_delete_another_users_rule(client, login_as, db_ses
         data={"csrf_token": _csrf_from(form)},
     )
     assert response.status_code == 404
+
+
+async def test_settings_no_longer_offers_a_notifications_tab(client):
+    """The instance-wide template editor moved into each rule's own
+    wording section — Settings' "Notifications" tab (and its
+    /settings/notifications/templates route) is gone."""
+    response = await client.get("/settings?tab=notifications")
+    assert response.status_code == 200
+    # An unrecognized tab value falls back to "general" rather than
+    # 404ing or rendering nothing — see settings.py's `_normalize_tab`.
+    assert '?tab=notifications' not in response.text
+
+    form = await client.get("/settings")
+    csrf_token = _csrf_from(form)
+    stale_post = await client.post(
+        "/settings/notifications/templates",
+        data={"csrf_token": csrf_token, "notification_alert_subject": "x"},
+    )
+    assert stale_post.status_code == 404
 
 
 async def test_notification_target_email_property(db_session_factory):

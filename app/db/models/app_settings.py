@@ -25,7 +25,7 @@ from __future__ import annotations
 import enum
 from datetime import datetime
 
-from sqlalchemy import Boolean, Integer, LargeBinary, String, Text, func
+from sqlalchemy import Boolean, Integer, LargeBinary, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -271,9 +271,9 @@ class AppSettings(Base):
 
     # --- SMTP relay for outbound email notifications — see
     # `app.services.notifications` for what actually sends through this
-    # (Notifications: per-user, per-honeypot honeypot-alert/unavailability
-    # email — `app.db.models.honeypot_notification_subscription`). Same
-    # encrypted-secret convention as `ldap_bind_password_encrypted`/
+    # (Notifications: self-service, named rules — `app.db.models.
+    # notification_rule.NotificationRule`). Same encrypted-secret
+    # convention as `ldap_bind_password_encrypted`/
     # `oidc_client_secret_encrypted` above. ---
     smtp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     smtp_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -291,28 +291,6 @@ class AppSettings(Base):
     # reusing `smtp_username`.
     smtp_from_address: Mapped[str | None] = mapped_column(String(255), nullable=True)
     smtp_from_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-
-    # --- Notifications: the shared, instance-wide email templates behind
-    # `app.services.notifications` — one superadmin-editable (subject, body)
-    # pair per event, deliberately global rather than per-user (explicit
-    # product decision: simpler, consistent wording for every recipient).
-    # NULL means "use the built-in default" (see `app.services.
-    # notifications.default_template`), same convention as this app's
-    # retention-day settings. Placeholders are plain `{name}` tokens
-    # substituted via `str.format_map` (never a template engine — an
-    # admin-edited body can't execute code or reach outside its own
-    # string), documented in the Settings UI itself. Who actually receives
-    # one of these, for which company/honeypot, and on which channel is
-    # entirely self-service — see `app.db.models.notification_rule
-    # .NotificationRule`. ---
-    notification_alert_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    notification_alert_body: Mapped[str | None] = mapped_column(Text, nullable=True)
-    notification_unavailable_subject: Mapped[str | None] = mapped_column(
-        String(255), nullable=True
-    )
-    notification_unavailable_body: Mapped[str | None] = mapped_column(Text, nullable=True)
-    notification_recovered_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    notification_recovered_body: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # How many days of `NotificationLog` rows (every send attempt, real or
     # "Send test") to keep before the daily purge job deletes them — same

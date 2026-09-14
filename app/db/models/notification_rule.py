@@ -21,17 +21,23 @@ a webhook URL here is entered by any user, not just an admin). For email,
 (`User.notification_target_email`) when set; left `None` it just uses
 that. For webhook, `webhook_url` is required.
 
-**Events**: each of the three kinds (`notify_on_alert`,
+**Events and their wording**: each of the three kinds (`notify_on_alert`,
 `notify_on_unavailable`, `notify_on_recovered`) can be toggled
-independently; the shared instance-wide template per kind
-(`AppSettings.notification_*_subject/body`, Settings → Notifications,
-superadmin-only) is what actually gets sent — see
-`app.services.notifications`. `unavailable_after_minutes`/
-`recovered_after_minutes` are this rule's own debounce thresholds (not a
-global setting) — how long a honeypot must be continuously unreachable
-before "it's down" fires, and how long it must be continuously reachable
-again before "it's back" fires (so one flapping blip doesn't immediately
-claim recovery).
+independently. `unavailable_after_minutes`/`recovered_after_minutes` are
+this rule's own debounce thresholds (not a global setting) — how long a
+honeypot must be continuously unreachable before "it's down" fires, and
+how long it must be continuously reachable again before "it's back"
+fires (so one flapping blip doesn't immediately claim recovery).
+
+Wording is per-rule, not instance-wide (there used to be a single
+superadmin-edited template per event, Settings → Notifications — removed
+in favor of this): `{kind}_subject`/`{kind}_body` (`alert_*`,
+`unavailable_*`, `recovered_*`) hold this rule's own override, `None`
+meaning "use the built-in default" — rendered in the rule *owner's own
+current* `User.locale` at send time, not whatever locale was active when
+the rule was created, so translating the UI later also updates the
+default text a still-uncustomized rule sends. See
+`app.services.notifications.render_template`.
 """
 
 from __future__ import annotations
@@ -41,7 +47,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -101,6 +107,18 @@ class NotificationRule(Base):
     unavailable_after_minutes: Mapped[int] = mapped_column(Integer, default=10, nullable=False)
     notify_on_recovered: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     recovered_after_minutes: Mapped[int] = mapped_column(Integer, default=5, nullable=False)
+
+    # Per-rule wording override, one (subject, body) pair per event kind —
+    # `None` means "use the built-in default, in this rule's owner's
+    # current UI language" (see `app.services.notifications.
+    # render_template`). Replaces the old instance-wide, superadmin-only
+    # template (Settings → Notifications).
+    alert_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    alert_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    unavailable_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    unavailable_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    recovered_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    recovered_body: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

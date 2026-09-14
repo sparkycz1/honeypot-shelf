@@ -4,20 +4,21 @@ it's back)", by email or webhook.
 
 Deliberately much simpler than debcontrol's own Notifications (admin-
 authored rules, role-targeted recipients, CPU/RAM/disk condition
-thresholds, custom per-rule templates) — this app has no roles/groups at
-all (see `app.db.models.user`'s module docstring), and the explicit
-product decision behind this feature was self-service and flat: *any*
-user, regardless of access level, creates their own named
-`NotificationRule`s (`app.db.models.notification_rule`,
-`app/web/routes/notifications.py`), each scoped to either a `Company` or
-a single `Honeypot` they can already see, targeting their own account
-email (or a manually-entered override), or a webhook URL instead
-(`NotificationRule.delivery_channel`/`target_email`/`webhook_url` — see
-`app.services.webhook`, SSRF-guarded since any user can set one). The
-only admin-configurable part is the shared email wording
-(`AppSettings.notification_*_subject/body`, Settings → Notifications,
-superadmin-only) — one global template per event, not per rule; a webhook
-payload carries the same fields as plain JSON instead.
+thresholds) — this app has no roles/groups at all (see
+`app.db.models.user`'s module docstring), and the explicit product
+decision behind this feature was self-service and flat: *any* user,
+regardless of access level, creates their own named `NotificationRule`s
+(`app.db.models.notification_rule`, `app/web/routes/notifications.py`),
+each scoped to either a `Company` or a single `Honeypot` they can already
+see, targeting their own account email (or a manually-entered override),
+or a webhook URL instead (`NotificationRule.delivery_channel`/
+`target_email`/`webhook_url` — see `app.services.webhook`, SSRF-guarded
+since any user can set one). Wording is per-rule too
+(`NotificationRule.{kind}_subject`/`{kind}_body`) — there used to be a
+single superadmin-edited template per event (Settings → Notifications);
+removed in favor of a per-rule override, defaulting to built-in text
+rendered in the rule owner's own current UI language — see
+`render_template`.
 
 Two trigger points, both fired from existing sweeps rather than a new
 one:
@@ -51,7 +52,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.app_settings import AppSettings
 from app.db.models.honeypot import Honeypot
 from app.db.models.notification_log import NotificationChannel, NotificationKind, NotificationLog
-from app.db.models.user import User
 from app.i18n import DEFAULT_LOCALE_CODE
 from app.services.smtp import SmtpNotConfiguredError, send_email
 from app.services.webhook import UnsafeWebhookTargetError, send_webhook
@@ -61,16 +61,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Built-in (subject, body) used whenever an admin hasn't overridden one of
-# `AppSettings.notification_*_subject`/`_body` — also what the Settings →
-# Notifications page shows as a placeholder/starting point, and what
-# "Reset to default" puts back. Keyed by locale code (same codes as
-# `app.i18n`); a locale with no entry falls back to English. Unlike
-# debcontrol's per-recipient-locale rendering, these are rendered once in
-# a fixed *server* locale (see `render_template`) since there's exactly
-# one shared template per event here, not a per-rule one an admin already
-# writes in their own language — see this module's own docstring for why
-# recipient-locale rendering wasn't ported.
+# Built-in (subject, body) used whenever a rule hasn't overridden one of
+# its own `{kind}_subject`/`{kind}_body` fields — also what the rule
+# form shows as a placeholder/starting point. Keyed by locale code (same
+# codes as `app.i18n`); a locale with no entry falls back to English.
 _DEFAULT_TEMPLATES: dict[str, dict[str, tuple[str, str]]] = {
     "en": {
         "alert": (
@@ -111,7 +105,7 @@ _DEFAULT_TEMPLATES: dict[str, dict[str, tuple[str, str]]] = {
 
 
 class _SafeDict(dict[str, str]):
-    """Used with `str.format_map` so a placeholder an admin-edited template
+    """Used with `str.format_map` so a placeholder a user-edited template
     doesn't recognize (a typo, or a context key this event type doesn't
     provide) is left as literal text instead of raising `KeyError` and
     losing the whole notification."""
@@ -122,23 +116,27 @@ class _SafeDict(dict[str, str]):
 
 def default_template(kind: str, locale: str = DEFAULT_LOCALE_CODE) -> tuple[str, str]:
     """The built-in (subject, body) for `kind` ("alert"/"unavailable"/
-    "recovered") in `locale` — used whenever `AppSettings` doesn't
-    override it, and as the Settings page's own placeholder text."""
+    "recovered") in `locale` — used whenever a rule doesn't override it,
+    and as the rule form's own placeholder text."""
     return _DEFAULT_TEMPLATES.get(locale, _DEFAULT_TEMPLATES[DEFAULT_LOCALE_CODE])[kind]
 
 
-def render_template(
-    kind: str, app_settings: AppSettings, context: dict[str, Any]
-) -> tuple[str, str]:
+def render_template(kind: str, rule: NotificationRule, context: dict[str, Any]) -> tuple[str, str]:
     """Subject and body for one notification, substituting `{placeholder}`
     values from `context` — plain `str.format_map`, not a template engine,
-    so an admin-edited body can never execute code or reach outside its
-    own string. Missing placeholders are left as literal text rather than
-    raising."""
-    subject_tpl = getattr(app_settings, f"notification_{kind}_subject", None)
-    body_tpl = getattr(app_settings, f"notification_{kind}_body", None)
+    so a user-edited body can never execute code or reach outside its own
+    string. `rule`'s own `{kind}_subject`/`{kind}_body` win when set;
+    otherwise the built-in default, rendered in the rule *owner's*
+    current `User.locale` (`rule.user` must already be loaded) — so a
+    still-uncustomized rule's wording follows its owner's UI language,
+    not whatever was active when the rule was created. Missing
+    placeholders are left as literal text rather than raising."""
+    subject_tpl = getattr(rule, f"{kind}_subject", None)
+    body_tpl = getattr(rule, f"{kind}_body", None)
     if subject_tpl is None or body_tpl is None:
-        default_subject, default_body = default_template(kind)
+        default_subject, default_body = default_template(
+            kind, rule.user.locale or DEFAULT_LOCALE_CODE
+        )
         subject_tpl = subject_tpl or default_subject
         body_tpl = body_tpl or default_body
     safe_context = _SafeDict({k: "" if v is None else str(v) for k, v in context.items()})
@@ -249,8 +247,8 @@ async def _dispatch_rule(
     rule: NotificationRule,
     honeypot: Honeypot,
     kind: NotificationKind,
-    subject: str,
-    body: str,
+    template_kind: str,
+    context: dict[str, Any],
     webhook_payload: dict[str, Any],
 ) -> None:
     channel = rule.delivery_channel
@@ -259,6 +257,7 @@ async def _dispatch_rule(
         return
     if channel == NotificationChannel.EMAIL and not db_app_settings.smtp_enabled:
         return
+    subject, body = render_template(template_kind, rule, context)
     await _deliver(
         db_app_settings,
         db,
@@ -288,15 +287,15 @@ async def notify_alert(
     event. `rules` should already be filtered to `notify_on_alert=True`
     and scoped to this honeypot (directly, or via its company) — see
     `app.tasks.jobs._poll_honeypot_canary_log`. Each rule's own `user`
-    relationship must already be loaded (selectinload)."""
-    email_context = {
+    relationship must already be loaded (selectinload) — wording is
+    rendered per rule, since each can have its own override/locale."""
+    context = {
         "honeypot_name": honeypot.name,
         "event_type": event_label,
         "src_ip": src_ip or "?",
         "timestamp": occurred_at.isoformat(),
         "details": "",
     }
-    subject, body = render_template("alert", db_app_settings, email_context)
     webhook_payload = {
         "kind": "alert",
         "honeypot_id": str(honeypot.id),
@@ -312,8 +311,8 @@ async def notify_alert(
             rule=rule,
             honeypot=honeypot,
             kind=NotificationKind.ALERT,
-            subject=subject,
-            body=body,
+            template_kind="alert",
+            context=context,
             webhook_payload=webhook_payload,
         )
 
@@ -330,18 +329,17 @@ async def notify_unavailable(
     at least `threshold_minutes` — see
     `app.tasks.jobs._evaluate_unavailability_notifications` for the
     debounce/transition logic that decides when to call this."""
-    email_context = {
+    context = {
         "honeypot_name": honeypot.name,
         "threshold_minutes": threshold_minutes,
         "timestamp": datetime.now(UTC).isoformat(),
     }
-    subject, body = render_template("unavailable", db_app_settings, email_context)
     webhook_payload = {
         "kind": "unavailable",
         "honeypot_id": str(honeypot.id),
         "honeypot_name": honeypot.name,
         "threshold_minutes": threshold_minutes,
-        "timestamp": email_context["timestamp"],
+        "timestamp": context["timestamp"],
     }
     await _dispatch_rule(
         db_app_settings,
@@ -349,8 +347,8 @@ async def notify_unavailable(
         rule=rule,
         honeypot=honeypot,
         kind=NotificationKind.UNAVAILABLE,
-        subject=subject,
-        body=body,
+        template_kind="unavailable",
+        context=context,
         webhook_payload=webhook_payload,
     )
 
@@ -368,18 +366,17 @@ async def notify_recovered(
     only called for a (rule, honeypot) pair that actually had a matching
     `notify_unavailable` notification sent first (see
     `app.tasks.jobs._evaluate_unavailability_notifications`)."""
-    email_context = {
+    context = {
         "honeypot_name": honeypot.name,
         "threshold_minutes": threshold_minutes,
         "timestamp": datetime.now(UTC).isoformat(),
     }
-    subject, body = render_template("recovered", db_app_settings, email_context)
     webhook_payload = {
         "kind": "recovered",
         "honeypot_id": str(honeypot.id),
         "honeypot_name": honeypot.name,
         "threshold_minutes": threshold_minutes,
-        "timestamp": email_context["timestamp"],
+        "timestamp": context["timestamp"],
     }
     await _dispatch_rule(
         db_app_settings,
@@ -387,8 +384,8 @@ async def notify_recovered(
         rule=rule,
         honeypot=honeypot,
         kind=NotificationKind.RECOVERED,
-        subject=subject,
-        body=body,
+        template_kind="recovered",
+        context=context,
         webhook_payload=webhook_payload,
     )
 
@@ -397,20 +394,21 @@ async def send_test_notification(
     db: AsyncSession,
     db_app_settings: AppSettings,
     *,
-    user: User,
+    rule: NotificationRule,
     honeypot: Honeypot,
     channel: NotificationChannel,
     target: str,
 ) -> str | None:
     """Fire one synthetic "alert" notification through `channel` straight
     to `target`, bypassing rule matching entirely — the "Send test"
-    button on a rule's own row. Returns `None` on success, or a short
-    error string on failure (also always logged to `NotificationLog` with
-    `is_test=True`, same as a real send). Unlike a real alert, this
-    ignores `AppSettings.smtp_enabled` for an email target too — if SMTP
-    isn't configured at all, `send_email` itself raises
-    `SmtpNotConfiguredError`, which is exactly the useful "no, it isn't
-    set up" result this button exists to surface."""
+    button on a rule's own row. Uses `rule`'s own alert wording (or its
+    owner's language default) same as a real alert would. Returns `None`
+    on success, or a short error string on failure (also always logged to
+    `NotificationLog` with `is_test=True`, same as a real send). Unlike a
+    real alert, this ignores `AppSettings.smtp_enabled` for an email
+    target too — if SMTP isn't configured at all, `send_email` itself
+    raises `SmtpNotConfiguredError`, which is exactly the useful "no, it
+    isn't set up" result this button exists to surface."""
     context = {
         "honeypot_name": honeypot.name,
         "event_type": "test",
@@ -418,7 +416,7 @@ async def send_test_notification(
         "timestamp": datetime.now(UTC).isoformat(),
         "details": "This is a test notification sent from Honeypot Shelf.",
     }
-    subject, body = render_template("alert", db_app_settings, context)
+    subject, body = render_template("alert", rule, context)
     webhook_payload = {
         "kind": "test",
         "honeypot_id": str(honeypot.id),
@@ -442,7 +440,7 @@ async def send_test_notification(
         error = str(exc) or exc.__class__.__name__
     await _log(
         db,
-        user_id=user.id,
+        user_id=rule.user_id,
         honeypot=honeypot,
         kind=NotificationKind.TEST,
         channel=channel,

@@ -2,8 +2,28 @@
 
 from __future__ import annotations
 
-from app.db.models.app_settings import AppSettings
+from app.db.models.notification_rule import NotificationRule, NotificationScope
+from app.db.models.user import AuthProvider, User
 from app.services.notifications import default_template, render_template
+
+
+def _rule(
+    *,
+    user: User | None = None,
+    alert_subject: str | None = None,
+    alert_body: str | None = None,
+) -> NotificationRule:
+    """An in-memory `NotificationRule` with its own in-memory `user` —
+    never persisted, just enough for `render_template` to read `rule.user`
+    (its own locale) without a real DB session."""
+    rule = NotificationRule(
+        name="test rule",
+        scope=NotificationScope.HONEYPOT,
+        alert_subject=alert_subject,
+        alert_body=alert_body,
+    )
+    rule.user = user or User(username="rule-owner", auth_provider=AuthProvider.LOCAL)
+    return rule
 
 
 def test_default_template_falls_back_to_english_for_unknown_locale():
@@ -19,11 +39,11 @@ def test_default_template_has_czech_translations_too():
     assert cs_subject != en_subject
 
 
-def test_render_template_uses_default_when_app_settings_has_no_override():
-    app_settings = AppSettings()
+def test_render_template_uses_default_when_rule_has_no_override():
+    rule = _rule()
     subject, body = render_template(
         "alert",
-        app_settings,
+        rule,
         {
             "honeypot_name": "acme-honey1",
             "event_type": "ssh.login_attempt",
@@ -37,20 +57,22 @@ def test_render_template_uses_default_when_app_settings_has_no_override():
     assert "203.0.113.7" in body
 
 
-def test_render_template_uses_admin_override_when_set():
-    app_settings = AppSettings()
-    app_settings.notification_alert_subject = "Custom: {honeypot_name}"
-    app_settings.notification_alert_body = "Body for {honeypot_name}"
-    subject, body = render_template(
-        "alert", app_settings, {"honeypot_name": "acme-honey1"}
-    )
+def test_render_template_uses_the_rules_own_locale_for_the_default():
+    cs_user = User(username="cs-owner", auth_provider=AuthProvider.LOCAL, locale="cs")
+    rule = _rule(user=cs_user)
+    subject, _body = render_template("alert", rule, {"honeypot_name": "x"})
+    cs_default_subject, _ = default_template("alert", "cs")
+    assert subject == cs_default_subject.format(honeypot_name="x")
+
+
+def test_render_template_uses_rule_override_when_set():
+    rule = _rule(alert_subject="Custom: {honeypot_name}", alert_body="Body for {honeypot_name}")
+    subject, body = render_template("alert", rule, {"honeypot_name": "acme-honey1"})
     assert subject == "Custom: acme-honey1"
     assert body == "Body for acme-honey1"
 
 
 def test_render_template_leaves_unknown_placeholders_as_literal_text():
-    app_settings = AppSettings()
-    app_settings.notification_alert_subject = "{honeypot_name} — {not_a_real_key}"
-    app_settings.notification_alert_body = "body"
-    subject, _body = render_template("alert", app_settings, {"honeypot_name": "x"})
+    rule = _rule(alert_subject="{honeypot_name} — {not_a_real_key}", alert_body="body")
+    subject, _body = render_template("alert", rule, {"honeypot_name": "x"})
     assert subject == "x — {not_a_real_key}"

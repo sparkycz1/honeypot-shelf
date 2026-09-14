@@ -36,8 +36,7 @@ Once it finishes, log in and create at least one `Company` and one
 `Honeypot` from the Companies/Honeypots pages (both superadmin-only) —
 nothing shows up on the Dashboard before that. Pin that honeypot's SSH
 host key and events start arriving automatically, no setup needed on the
-Pi itself — see [Architecture](Architecture.md#-honeypot-data-model)'s
-"How events arrive" section.
+Pi itself — see [Honeypot Management](Honeypot-Management.md#-how-events-arrive-an-ssh-poll-nothing-pushed).
 
 ## Manual setup
 
@@ -134,7 +133,7 @@ that.
 > ("Unexpected client data origin") and OIDC login the same way. Fixed by
 > `TRUSTED_PROXY_IPS` (`.env.example`, default `*`) — already on for every
 > setup above. See `app/core/proxy_headers.py` and
-> [Architecture](Architecture.md#authentication--rbac) for the full story.
+> [Authentication & RBAC](Authentication-RBAC.md) for the full story.
 >
 > **Audit log / rate limiter showing the proxy's IP instead of the real
 > client's?** A separate, off-by-default fix — `TRUST_FORWARDED_FOR`

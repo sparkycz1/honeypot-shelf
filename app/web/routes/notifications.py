@@ -109,7 +109,7 @@ async def _render_list(
     companies = await _visible_companies(db, user)
     honeypots = await _visible_honeypots(db, user)
     csrf_token, new_cookie = get_or_create_csrf_token(request)
-    templates_preview = {
+    template_defaults = {
         kind: default_template(kind, request.state.locale.code)
         for kind in ("alert", "unavailable", "recovered")
     }
@@ -121,7 +121,7 @@ async def _render_list(
             "rules": rules,
             "companies": companies,
             "honeypots": honeypots,
-            "templates_preview": templates_preview,
+            "template_defaults": template_defaults,
             "min_minutes": MIN_DEBOUNCE_MINUTES,
             "max_minutes": MAX_DEBOUNCE_MINUTES,
             "csrf_token": csrf_token,
@@ -264,6 +264,9 @@ def _parse_rule_form(form: FormData) -> tuple[dict[str, object], list[str]]:
     unavailable_after_minutes = _minutes("unavailable_after_minutes", 10)
     recovered_after_minutes = _minutes("recovered_after_minutes", 5)
 
+    def _text_override(field: str) -> str | None:
+        return str(get(field) or "").strip() or None
+
     values: dict[str, object] = {
         "name": name,
         "scope": scope,
@@ -277,6 +280,12 @@ def _parse_rule_form(form: FormData) -> tuple[dict[str, object], list[str]]:
         "unavailable_after_minutes": unavailable_after_minutes,
         "notify_on_recovered": notify_on_recovered,
         "recovered_after_minutes": recovered_after_minutes,
+        "alert_subject": _text_override("alert_subject"),
+        "alert_body": _text_override("alert_body"),
+        "unavailable_subject": _text_override("unavailable_subject"),
+        "unavailable_body": _text_override("unavailable_body"),
+        "recovered_subject": _text_override("recovered_subject"),
+        "recovered_body": _text_override("recovered_body"),
     }
     return values, errors
 
@@ -428,7 +437,7 @@ async def send_test(
             error = await send_test_notification(
                 db,
                 app_settings,
-                user=user,
+                rule=rule,
                 honeypot=honeypot,
                 channel=rule.delivery_channel,
                 target=target,

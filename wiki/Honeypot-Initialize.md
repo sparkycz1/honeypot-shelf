@@ -74,7 +74,7 @@ this one.
 Second-to-last (right before the port change below), Initialize installs
 Honeypot Shelf's own shared identity public key, plus every current
 superadmin's personal SSH public key(s) (My account → SSH public keys —
-see [Architecture](Architecture.md#superadmin-personal-ssh-keys)), onto
+see [Honeypot Management](Honeypot-Management.md#superadmin-personal-ssh-keys)), onto
 the account it connected as — so both Honeypot Shelf and every superadmin
 can reach the freshly provisioned device directly afterward, without the
 one-time password/key this run used (useful especially when
@@ -181,7 +181,6 @@ restarts `opencanary`, and (for Samba) starts `smbd`/`nmbd`.
 
 - **Doesn't create a `Honeypot` row.** Add the device separately
   afterward — once its host key is pinned, events start arriving with no
-  further setup (see [Architecture](Architecture.md#-honeypot-data-model)'s
-  "How events arrive" section).
+  further setup (see [Honeypot Management](Honeypot-Management.md#-how-events-arrive-an-ssh-poll-nothing-pushed)).
 - **Doesn't enable any OpenCanary module** — see "Modules prepared, not
   enabled" above and the Config tab's module editor.

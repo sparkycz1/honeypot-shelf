@@ -129,7 +129,7 @@ something here works a certain way.
   there by hand. Use `getent passwd` for a home directory, never `~` —
   scripts often run wrapped under one `sudo`, where `~` resolves to the
   escalated account's home, not the target's.
-  See [wiki/Architecture.md#superadmin-personal-ssh-keys](wiki/Architecture.md#superadmin-personal-ssh-keys).
+  See [wiki/Honeypot-Management.md#superadmin-personal-ssh-keys](wiki/Honeypot-Management.md#superadmin-personal-ssh-keys).
 - **A `POST` used as a testing/debugging tool without a pty (e.g. `gpg
   --dearmor`) can silently prompt on `/dev/tty` and fail with a cryptic
   error instead of just doing the thing** — prefer `--batch --yes`-style

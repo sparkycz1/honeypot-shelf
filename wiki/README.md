@@ -39,7 +39,14 @@ enabled, and it lives in its own separate git repository
 - [Home](Home.md) — overview, feature table, current state, and the open
   product questions this project is waiting on
 - [Installation](Installation.md) — Docker quick start, with or without Caddy
-- [Architecture](Architecture.md) — stack choices, RBAC, and the security model
+- [Architecture](Architecture.md) — stack, project layout, the REST API, and
+  cross-cutting security essentials — the hub for the four pages below
+- [Authentication & RBAC](Authentication-RBAC.md) — logins, sessions, the
+  company-membership model, 2FA, Impersonate
+- [Honeypot Management](Honeypot-Management.md) — provisioning, VPN, the
+  Config tab, the data model, how events arrive, syslog targets
+- [Audit Log](Audit-Log.md) — hash-chain integrity, retention, export, SIEM forwarding
+- [Notifications](Notifications.md) — rules, scope, wording, the webhook SSRF guard
 - [Initialize](Honeypot-Initialize.md) — provisioning a brand new
   Raspberry Pi into a working OpenCanary honeypot over SSH
 - [Reverse Proxy: Caddy](Reverse-Proxy-Caddy.md) — using the bundled Caddy service
