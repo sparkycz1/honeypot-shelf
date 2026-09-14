@@ -55,6 +55,9 @@ from app.web.routes import (
     users,
 )
 from app.web.routes import (
+    map as map_routes,
+)
+from app.web.routes import (
     settings as settings_routes,
 )
 
@@ -249,6 +252,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(branding.router)
     app.include_router(dashboard.router)
+    app.include_router(map_routes.router)
     app.include_router(honeypots.router)
     app.include_router(companies.router)
     app.include_router(initialize.router)

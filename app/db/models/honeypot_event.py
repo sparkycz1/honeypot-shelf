@@ -20,7 +20,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import JSON, ForeignKey, Integer, String, func
+from sqlalchemy import JSON, Float, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -56,6 +56,20 @@ class HoneypotEvent(Base):
     src_ip: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     src_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
     dst_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Resolved once, at ingestion time, from `src_ip` via
+    # `app.services.geoip` — not re-derived later, so a row's location
+    # stays historically accurate even after the GeoIP database itself is
+    # updated. All `None` when GeoIP isn't configured, `src_ip` is missing,
+    # or (deliberately) `src_ip` isn't a public address at all — see
+    # `app.services.geoip`'s own module docstring. `src_country_code` is
+    # ISO 3166-1 alpha-2 (e.g. "US"), the source of the flag emoji shown
+    # next to it — see `app.services.geoip_display.country_flag`.
+    src_country_code: Mapped[str | None] = mapped_column(String(2), nullable=True, index=True)
+    src_country_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    src_city_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    src_latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    src_longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # The full OpenCanary payload (logdata + common fields), untouched —
     # source of truth for anything not promoted to its own column above.

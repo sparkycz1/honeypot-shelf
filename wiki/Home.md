@@ -26,6 +26,7 @@ flowchart LR
     App(("🐝 Honeypot Shelf"))
     App --> Dash["📊 Dashboard"]
     App --> H["🍯 Honeypots"]
+    App --> Map["🗺️ Map"]
     App --> Notif["🔔 Notifications"]
     App --> Init["🌱 Initialize"]
     App --> Sched["⏱️ Scheduling"]
@@ -37,7 +38,7 @@ flowchart LR
     classDef leaf fill:#f2a83a,stroke:#1b2430,stroke-width:1px,color:#1b2430
     classDef sub fill:#f4f4f4,stroke:#1b2430,color:#1b2430
     class App hub
-    class Dash,H,Notif,Init,Sched,Comp,Set leaf
+    class Dash,H,Map,Notif,Init,Sched,Comp,Set leaf
     class H1 sub
 ```
 
@@ -76,11 +77,12 @@ TLS terminator in front of it, always. Pick your fighter:
 |---|---|
 | 📊 **Dashboard** | Fleet counts (online/offline, needs-updates), a trend sparkline, and a fleet-wide "activity by alert type" breakdown |
 | 🍯 **Honeypots** | Facts, packages, live monitoring (with an **OpenCanary service** up/down graph), a browser SSH terminal, log browsing, an **Activity** tab reading OpenCanary's own log over SSH, a **Config** tab (read-only-root toggle + a full editor for every OpenCanary module), tags & saved views, bulk actions, JSON/CSV export, and **update rollback** if a `dist-upgrade` goes sideways |
+| 🗺️ **Map** | Where honeypot alerts actually come from — a world graticule with dots sized by event count, plus a top-countries table, company-scoped like the Dashboard. Needs Settings → GeoIP configured first |
 | 🌱 **Initialize** | Turns a blank Raspberry Pi OS install into a working honeypot over SSH — packages, the OpenCanary service, NetBird, live streamed progress, a persisted run history |
 | ⏱️ **Scheduling** | Cron any action against a honeypot/company/fleet — updates, power, custom commands, on-demand "force a sweep now" debug buttons |
 | 🏢 **Companies** | Each company's own page (users + honeypots), a per-company syslog target for that company's own alerts, plus the "All honeypots" virtual company and its own fleet-wide alert target |
 | 📚 **API docs** (`/api`) | Live Swagger UI over the full read/write REST API — everything the web UI can do, an API can too |
-| ⚙️ **Settings** | SSH key rotation, **Checks & retention** (background-check timeouts/intervals plus every retention policy, database-backed — no restart to change most of it), LDAP/OIDC/syslog/SMTP integrations, VPN (NetBird or WireGuard) |
+| ⚙️ **Settings** | SSH key rotation, **Checks & retention** (background-check timeouts/intervals plus every retention policy, database-backed — no restart to change most of it), LDAP/OIDC/syslog/SMTP integrations, VPN (NetBird or WireGuard), **GeoIP** (a MaxMind-DB-format download source + a manual "Download now") |
 | 🔔 **Notifications** | Self-service, named rules — pick a company or honeypot, which events, email or webhook, and the wording — see [Notifications](Notifications.md) |
 
 Want the granular, paragraph-by-paragraph feature list this page used to
@@ -117,8 +119,12 @@ one sitting.
   account for support/debugging, from the Users list — see
   [Authentication & RBAC](Authentication-RBAC.md#impersonate-a-superadmin-signing-in-as-another-account)
   for the safeguards and audit trail.
-
-### Still open
-
-- **A map/geo view** — doesn't exist yet. CSV export and per-event-type
-  breakdowns are done (Activity tab, Dashboard, `GET /api/v1/events`).
+- **GeoIP / Map**: an alert's (or a login's) source IP is resolved to a
+  country/city/lat-long once, at write time, from a MaxMind-DB-format
+  database the app downloads itself (never bundled — see Settings →
+  GeoIP) — only ever for a public IP, never a private/internal one. The
+  **Map** page plots it on a hand-rolled SVG world graticule (no real
+  coastlines yet — vendoring one was out of scope for a first cut) plus a
+  top-countries table, company-scoped like the Dashboard; the audit log
+  shows the same resolved country next to each entry's IP. See
+  [Honeypot Management](Honeypot-Management.md#-geoip-and-the-map-page).

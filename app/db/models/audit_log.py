@@ -75,6 +75,15 @@ class AuditLogEntry(Base):
 
     actor: Mapped[str | None] = mapped_column(String(255), nullable=True)
     ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Resolved once, from `ip_address`, via `app.services.geoip` — same
+    # "at write time, not re-derived later" and "None means not
+    # configured/not a public address" reasoning as `HoneypotEvent.
+    # src_country_code`. Deliberately excluded from `entry_hash` (see
+    # `app.audit._canonical_payload`): this is a display enrichment, not
+    # part of the tamper-evident record of what actually happened.
+    source_country_code: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    source_country_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source_city_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Short machine-readable code, e.g. "honeypot.create",
     # "user.access_level.update" — see app.audit for the values in use.

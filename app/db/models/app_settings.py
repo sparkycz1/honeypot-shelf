@@ -323,6 +323,32 @@ class AppSettings(Base):
         nullable=False,
     )
 
+    # --- GeoIP lookups (Settings -> GeoIP; app.services.geoip) — resolves a
+    # public source IP to a country/city/lat-long for the Map page and the
+    # audit log, from a MaxMind-DB-format (.mmdb) database this app
+    # downloads itself, never bundles. Deliberately just a URL, not
+    # MaxMind-specific config (account id, edition, ...): paste any URL that
+    # serves a .mmdb, gzipped or not — a MaxMind GeoLite2 "permalink" (which
+    # already embeds your license key) or another provider's own City-level
+    # download, e.g. DB-IP Lite. Same encrypted-at-rest convention as every
+    # other URL/credential above, since a MaxMind permalink embeds a license
+    # key. `backup_url` is only ever tried if `primary_url` fails outright
+    # (network error, bad response, unparseable file) — never load-balanced
+    # between the two. The downloaded bytes themselves live in
+    # `GeoipDatabase`, not here — this table is read on essentially every
+    # request (`get_or_create_app_settings`), so a multi-megabyte blob here
+    # would be a real cost paid by every caller, not just GeoIP lookups. ---
+    geoip_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    geoip_primary_url_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    geoip_backup_url_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    # How often (hours) the download job re-fetches the database — MaxMind
+    # itself only refreshes GeoLite2 a couple of times a week, so the
+    # default is weekly, not one of the minutes/seconds-scale intervals on
+    # the Checks & retention tab.
+    geoip_refresh_interval_hours: Mapped[int] = mapped_column(
+        Integer, default=168, nullable=False
+    )
+
     updated_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), onupdate=func.now(), nullable=False
     )

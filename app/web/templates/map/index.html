@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t(request, "map.title") }} — Honeypot Shelf{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>{{ t(request, "map.title") }}</h1>
+  </div>
+  <p class="hint">{{ t(request, "map.intro") }}</p>
+
+  {% if not geoip_ready %}
+    <div class="alert alert-warn">
+      <p>
+        {{ t(request, "map.not_ready") }}
+        {% if is_superadmin %}
+          <a href="/settings?tab=geoip">{{ t(request, "map.not_ready_link") }}</a>
+        {% endif %}
+      </p>
+    </div>
+  {% elif dots %}
+    <p class="hint">
+      {{ t(request, "map.coverage_hint", located=located_events, total=total_events) }}
+    </p>
+  {% endif %}
+
+  {% if geoip_ready %}
+    <section class="panel">
+      <svg viewBox="0 0 {{ map_width }} {{ map_height }}" width="100%" height="auto"
+           role="img" aria-label="{{ t(request, 'map.svg_aria') }}" class="world-map">
+        <rect x="0" y="0" width="{{ map_width }}" height="{{ map_height }}" class="world-map-ocean"></rect>
+        {% for lon in range(-150, 151, 30) %}
+          <line x1="{{ (lon + 180) / 360 * map_width }}" y1="0"
+                x2="{{ (lon + 180) / 360 * map_width }}" y2="{{ map_height }}"
+                class="world-map-graticule"></line>
+        {% endfor %}
+        {% for lat in [-60, -30, 0, 30, 60] %}
+          <line x1="0" y1="{{ (90 - lat) / 180 * map_height }}"
+                x2="{{ map_width }}" y2="{{ (90 - lat) / 180 * map_height }}"
+                class="{{ 'world-map-equator' if lat == 0 else 'world-map-graticule' }}"></line>
+        {% endfor %}
+        <rect x="0.5" y="0.5" width="{{ map_width - 1 }}" height="{{ map_height - 1 }}"
+              class="world-map-border"></rect>
+        {% for dot in dots %}
+          <circle cx="{{ dot.x | round(1) }}" cy="{{ dot.y | round(1) }}" r="{{ dot.radius | round(1) }}"
+                  class="world-map-dot">
+            <title>{{ dot.label }}</title>
+          </circle>
+        {% endfor %}
+      </svg>
+      {% if not dots %}
+        <p class="hint">{{ t(request, "map.no_events_yet") }}</p>
+      {% endif %}
+    </section>
+  {% endif %}
+
+  <section class="panel">
+    <h2>{{ t(request, "map.top_countries_heading") }}</h2>
+    {% if not top_countries %}
+      <p class="hint">{{ t(request, "map.no_events_yet") }}</p>
+    {% else %}
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>{{ t(request, "map.column.country") }}</th>
+            <th>{{ t(request, "map.column.events") }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for country in top_countries %}
+            <tr>
+              <td>{{ country.flag }} {{ country.name }}</td>
+              <td>{{ country.count }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+  </section>
+{% endblock %}

@@ -22,6 +22,8 @@
     {% include "settings/_integrations.html" %}
   {% elif active_tab == 'vpn' %}
     {% include "settings/_vpn.html" %}
+  {% elif active_tab == 'geoip' %}
+    {% include "settings/_geoip.html" %}
   {% else %}
     {% include "settings/_general.html" %}
   {% endif %}

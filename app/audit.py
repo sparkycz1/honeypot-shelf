@@ -44,6 +44,7 @@ from app.db.models.audit_log import (
     AuditLogEntry,
     AuditOutcome,
 )
+from app.services.geoip import resolve as resolve_geoip
 
 logger = logging.getLogger(__name__)
 
@@ -163,6 +164,10 @@ async def log_event(
     job's fixed label.
     """
     resolved_ip = client_ip(request) if request is not None else ip_address
+    # Best-effort, never blocks/fails the write itself — see
+    # app.services.geoip's module docstring for why "not configured"/"not
+    # a public address" both just mean every field below stays None.
+    geo = await resolve_geoip(db, resolved_ip)
     if actor is None and request is not None:
         request_user = getattr(request.state, "user", None)
         if request_user is not None:
@@ -195,6 +200,9 @@ async def log_event(
             created_at=created_at,
             actor=actor,
             ip_address=resolved_ip,
+            source_country_code=geo.country_code if geo else None,
+            source_country_name=geo.country_name if geo else None,
+            source_city_name=geo.city_name if geo else None,
             action=action,
             outcome=outcome,
             target_type=target_type,

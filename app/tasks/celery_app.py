@@ -54,6 +54,7 @@ _INTERVAL_SETTING_DEFAULTS: dict[str, int] = {
     "facts_refresh_interval_seconds": 600,
     "monitoring_interval_seconds": 120,
     "opencanary_log_poll_interval_seconds": 120,
+    "geoip_refresh_interval_hours": 168,
 }
 
 
@@ -239,6 +240,14 @@ celery_app.conf.beat_schedule = {
         "schedule": timedelta(
             seconds=_interval_settings["opencanary_log_poll_interval_seconds"]
         ),
+    },
+    # A no-op (not an error) when Settings -> GeoIP isn't enabled — see
+    # `app.tasks.jobs._refresh_geoip_database`. Hours, not seconds, like
+    # the other four sweeps above: MaxMind itself only refreshes GeoLite2
+    # a couple of times a week, so the default cadence is weekly.
+    "refresh-geoip-database": {
+        "task": "app.tasks.jobs.refresh_geoip_database",
+        "schedule": timedelta(hours=_interval_settings["geoip_refresh_interval_hours"]),
     },
     # Cron expressions are minute-grained anyway, so a fixed per-minute
     # tick needs no new setting of its own — see

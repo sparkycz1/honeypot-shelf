@@ -170,6 +170,53 @@ only take effect on the next `worker`/`beat` restart, since a Celery
 `beat_schedule` entry's `schedule` is a plain value computed once at
 import time. Ported from an identical debcontrol change.
 
+## 🗺️ GeoIP and the Map page
+
+Resolves a `HoneypotEvent`'s (or an `AuditLogEntry`'s) source IP to a
+country/city/lat-long, **once, at write time** — not re-derived later, so
+a row's location stays historically accurate even after the database
+itself is updated. Deliberately only ever for a **public** IP:
+`ipaddress.ip_address(...).is_global` gates every lookup (`app.services.
+geoip`), since a company's own LAN-facing traffic or a login through an
+internal proxy has no real-world location to show, and would otherwise
+just waste a lookup MaxMind's database has no record for anyway.
+
+**Needs a database this app never bundles** (redistributing MaxMind's
+GeoLite2 data isn't allowed under their license) — Settings → **GeoIP**
+takes a primary and backup download URL instead (both stored encrypted,
+same convention as every other secret in Settings, since a MaxMind
+"permalink" embeds your license key), tried in that order, never
+load-balanced. Not MaxMind-specific: any URL serving a compatible
+`.mmdb` — gzipped or not, raw or inside a `.tar.gz` — works, detected
+from the bytes themselves (`app.services.geoip._extract_mmdb`). A
+"Download now" button runs the same Celery task the periodic refresh
+(`AppSettings.geoip_refresh_interval_hours`, default weekly — MaxMind
+itself only updates GeoLite2 a couple of times a week) uses, so the two
+paths can never disagree on what "downloading" means. The downloaded
+bytes live in their own singleton table (`GeoipDatabase`), not on
+`AppSettings` itself — that row is read on essentially every request, so
+a multi-megabyte blob there would be a cost paid by every caller, not
+just GeoIP lookups.
+
+**The reader is cached in-process**, revalidated against `GeoipDatabase.
+updated_at` at most once an hour — the overwhelming majority of calls
+(every audit log write, every ingested honeypot event) cost one
+in-memory check, not a database round trip, at the price of a freshly
+downloaded database taking up to an hour to be picked up by an
+already-running `web`/`worker` process.
+
+**The Map page** (company-scoped exactly like the Dashboard) plots
+every located event on a hand-rolled SVG — a plain latitude/longitude
+graticule, **not** a political map: vendoring a real coastline outline
+was out of scope for a first cut, so dots land at the geographically
+correct position with no landmass silhouette drawn under them yet (see
+`app.services.geoip_display`). A top-countries table (flag emoji + name
++ count) sits below it either way. The audit log shows the same
+resolved country next to each entry's IP, deliberately **excluded**
+from the hash chain (`AuditLogEntry.entry_hash`) — it's a display
+enrichment, not part of the tamper-evident record of what actually
+happened.
+
 ## Small but worth knowing
 
 - **Alert type labels are localized** for the two template-rendering

@@ -1,0 +1,55 @@
+  <section class="panel">
+    <h2>{{ t(request, "settings.geoip.heading") }}</h2>
+    <p class="hint">{{ t(request, "settings.geoip.hint") }}</p>
+
+    <p>
+      {{ t(request, "settings.geoip.status_label") }}
+      {% if geoip_status and geoip_status.updated_at %}
+        <span class="badge badge-ok">{{ geoip_status.updated_at.strftime('%Y-%m-%d %H:%M UTC') }}</span>
+        ({{ t(request, "settings.geoip.status_source." + (geoip_status.source or "primary")) }})
+      {% else %}
+        <span class="badge badge-warn">{{ t(request, "settings.geoip.status_never") }}</span>
+      {% endif %}
+    </p>
+    {% if geoip_status and geoip_status.last_error %}
+      <p class="hint">
+        {{ t(request, "settings.geoip.last_error_label") }}
+        {{ geoip_status.last_attempted_at.strftime('%Y-%m-%d %H:%M UTC') if geoip_status.last_attempted_at else '' }}:
+        {{ geoip_status.last_error }}
+      </p>
+    {% endif %}
+
+    <form method="post" action="/settings/geoip" id="geoip-form" class="form" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+      <label>
+        <input type="checkbox" name="geoip_enabled" {{ 'checked' if app_settings.geoip_enabled else '' }}>
+        {{ t(request, "settings.integrations.enabled") }}
+      </label>
+
+      <label for="geoip_primary_url">{{ t(request, "settings.geoip.primary_url") }}</label>
+      <input type="text" id="geoip_primary_url" name="geoip_primary_url" autocomplete="off"
+             placeholder="{{ t(request, 'settings.integrations.unchanged') if app_settings.geoip_primary_url_encrypted else t(request, 'settings.geoip.url_placeholder') }}">
+      <p class="hint">{{ t(request, "settings.geoip.primary_url_hint") }}</p>
+
+      <label for="geoip_backup_url">{{ t(request, "settings.geoip.backup_url") }}</label>
+      <input type="text" id="geoip_backup_url" name="geoip_backup_url" autocomplete="off"
+             placeholder="{{ t(request, 'settings.integrations.unchanged') if app_settings.geoip_backup_url_encrypted else t(request, 'settings.geoip.url_placeholder') }}">
+      <p class="hint">{{ t(request, "settings.geoip.backup_url_hint") }}</p>
+
+      <label for="geoip_refresh_interval_hours">{{ t(request, "settings.geoip.refresh_interval") }}</label>
+      <input type="number" id="geoip_refresh_interval_hours" name="geoip_refresh_interval_hours"
+             min="1" step="1" value="{{ app_settings.geoip_refresh_interval_hours }}" style="width: 6rem;">
+      <p class="hint">{{ t(request, "settings.geoip.refresh_interval_hint") }}</p>
+
+      <p class="hint">{{ t(request, "settings.geoip.public_ip_hint") }}</p>
+    </form>
+
+    <div class="page-header-actions">
+      <button type="submit" form="geoip-form" class="button">{{ t(request, "common.save") }}</button>
+      <form method="post" action="/settings/geoip/refresh" class="inline-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="button button-secondary">{{ t(request, "settings.geoip.refresh_now") }}</button>
+      </form>
+    </div>
+  </section>

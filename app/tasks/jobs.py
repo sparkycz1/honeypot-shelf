@@ -57,6 +57,10 @@ from app.db.models.notification_log import NotificationLog
 from app.db.models.notification_rule import NotificationRule, NotificationScope
 from app.db.models.notification_rule_state import NotificationRuleState
 from app.services.company_stats import compute_company_stats
+from app.services.geoip import GeoipDownloadError
+from app.services.geoip import get_reader as get_geoip_reader
+from app.services.geoip import lookup as geoip_lookup
+from app.services.geoip import refresh_geoip_database as run_geoip_download
 from app.services.honeypot_event_syslog import forward_honeypot_event_to_syslog
 from app.services.honeypot_events import build_event
 from app.services.honeypot_status import as_aware_utc, offline_cutoff
@@ -1478,6 +1482,21 @@ async def _poll_honeypot_canary_log(honeypot_id: str) -> dict[str, Any]:
             if not is_internal_logtype(payload.get("logtype"))
         ]
         new_rows = [build_event(honeypot, payload) for payload in alert_events]
+        # Best-effort, resolved once at ingestion time — see
+        # app.services.geoip's module docstring. A reader shared across
+        # this whole batch rather than one `resolve()` call per row: no
+        # point re-checking GeoipDatabase.updated_at for every event in
+        # the same poll.
+        geoip_reader = await get_geoip_reader(session)
+        if geoip_reader is not None:
+            for row in new_rows:
+                geo = geoip_lookup(geoip_reader, row.src_ip)
+                if geo is not None:
+                    row.src_country_code = geo.country_code
+                    row.src_country_name = geo.country_name
+                    row.src_city_name = geo.city_name
+                    row.src_latitude = geo.latitude
+                    row.src_longitude = geo.longitude
         session.add_all(new_rows)
         if result.new_offset >= 0:
             honeypot.opencanary_log_offset = result.new_offset
@@ -2336,3 +2355,28 @@ async def _purge_old_notification_logs() -> None:
 @celery_app.task(name="app.tasks.jobs.purge_old_notification_logs")
 def purge_old_notification_logs() -> None:
     asyncio.run(_purge_old_notification_logs())
+
+
+async def _refresh_geoip_database() -> dict[str, Any]:
+    """Downloads a fresh GeoIP database per `AppSettings.geoip_primary_url`/
+    `geoip_backup_url` — see `app.services.geoip.refresh_geoip_database`
+    for the actual download/fallback/validation logic. A no-op (not an
+    error) when GeoIP isn't enabled at all, so this can run on its
+    unconditional Beat schedule regardless of whether anyone's configured
+    it yet. Not audit-logged — same "routine, unattended sweep" reasoning
+    as `_record_company_snapshots`/the retention purges above."""
+    async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
+        if not app_settings.geoip_enabled:
+            return {"ok": True, "skipped": "GeoIP is not enabled."}
+        try:
+            await run_geoip_download(session, app_settings)
+        except GeoipDownloadError as exc:
+            logger.warning("GeoIP database refresh failed: %s", exc)
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True}
+
+
+@celery_app.task(name="app.tasks.jobs.refresh_geoip_database")
+def refresh_geoip_database() -> dict[str, Any]:
+    return asyncio.run(_refresh_geoip_database())

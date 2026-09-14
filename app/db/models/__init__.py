@@ -9,6 +9,7 @@ from app.db.models.audit_log import AuditChainState, AuditLogEntry
 from app.db.models.company import Company
 from app.db.models.company_membership import CompanyMembership
 from app.db.models.company_snapshot import CompanySnapshot
+from app.db.models.geoip_database import GeoipDatabase
 from app.db.models.honeypot import Honeypot
 from app.db.models.honeypot_company import honeypot_companies
 from app.db.models.honeypot_event import HoneypotEvent
@@ -40,6 +41,7 @@ __all__ = [
     "Company",
     "CompanyMembership",
     "CompanySnapshot",
+    "GeoipDatabase",
     "Honeypot",
     "HoneypotEvent",
     "honeypot_companies",

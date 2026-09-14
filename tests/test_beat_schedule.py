@@ -26,6 +26,7 @@ _EXPECTED_SCHEDULE_TASKS = {
     "check-all-honeypot-updates": "app.tasks.jobs.check_all_honeypot_updates",
     "monitor-all-honeypots": "app.tasks.jobs.monitor_all_honeypots",
     "poll-all-honeypot-canary-logs": "app.tasks.jobs.poll_all_honeypot_canary_logs",
+    "refresh-geoip-database": "app.tasks.jobs.refresh_geoip_database",
     "run-due-scheduled-tasks": "app.scheduling.jobs.run_due_scheduled_tasks",
     "purge-old-events": "app.tasks.jobs.purge_old_events",
     "purge-old-audit-log-entries": "app.tasks.jobs.purge_old_audit_log_entries",

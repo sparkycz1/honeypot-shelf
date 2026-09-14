@@ -20,6 +20,7 @@ from app.core.config import get_settings
 from app.core.version import APP_VERSION, get_git_commit
 from app.i18n import get_locale
 from app.i18n import translate as _translate
+from app.services.geoip_display import country_flag
 from app.services.opencanary_logtypes import localized_logtype_label, logtype_label
 from app.web import branding
 from app.web.os_logos import badge_for
@@ -185,3 +186,7 @@ templates.env.globals["branding_favicon_url"] = branding.favicon_url
 # used to show before that panel was removed in favor of the footer.
 templates.env.globals["app_version"] = APP_VERSION
 templates.env.globals["git_commit"] = get_git_commit
+
+# A flag emoji from a 2-letter country code — see app.services.geoip_display
+# for why this and the GeoIP lookups themselves are kept separate modules.
+templates.env.globals["geoip_flag"] = country_flag

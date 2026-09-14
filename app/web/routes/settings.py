@@ -32,6 +32,8 @@ from app.db.models.app_settings import (
     VpnProvider,
 )
 from app.db.models.audit_log import AuditOutcome
+from app.db.models.geoip_database import SINGLETON_ID as GEOIP_SINGLETON_ID
+from app.db.models.geoip_database import GeoipDatabase
 from app.db.models.honeypot import AuthMethod, Honeypot
 from app.db.session import get_db
 from app.services import netbird, wireguard
@@ -42,7 +44,7 @@ from app.ssh.identity import (
     generate_pending_identity,
     get_or_create_identity,
 )
-from app.tasks.jobs import push_pending_ssh_key
+from app.tasks.jobs import push_pending_ssh_key, refresh_geoip_database
 from app.web.templating import t, templates
 
 router = APIRouter(prefix="/settings", dependencies=[Depends(require_superadmin)])
@@ -52,7 +54,7 @@ router = APIRouter(prefix="/settings", dependencies=[Depends(require_superadmin)
 # why: there's only ever one GET route here, not one per tab, since every
 # POST handler below redirects back to /settings regardless of which tab
 # it belongs to).
-_TAB_KEYS = ("general", "checks", "security", "integrations", "vpn")
+_TAB_KEYS = ("general", "checks", "security", "integrations", "vpn", "geoip")
 _VALID_TABS = set(_TAB_KEYS)
 _DEFAULT_TAB = "general"
 
@@ -106,6 +108,8 @@ async def _render_settings(
         )
         context["netbird_log"] = netbird.tail_log()
         context["wireguard_log"] = wireguard.tail_log()
+    if tab == "geoip" and "geoip_status" not in context:
+        context["geoip_status"] = await db.get(GeoipDatabase, GEOIP_SINGLETON_ID)
     response = templates.TemplateResponse(request, "settings/index.html", context)
     if new_cookie:
         set_csrf_cookie(response, new_cookie)
@@ -793,6 +797,111 @@ async def update_smtp_settings(
         summary=f"Updated SMTP settings ({'enabled' if app_settings.smtp_enabled else 'disabled'})",
     )
     return RedirectResponse(url="/settings?tab=integrations", status_code=status.HTTP_303_SEE_OTHER)
+
+
+_GEOIP_REFRESH_WAIT_SECONDS = 90
+
+
+@router.post("/geoip", dependencies=[Depends(verify_csrf)])
+async def update_geoip_settings(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    geoip_enabled: str = Form(""),
+    # Blank = keep the existing URL unchanged — same "leave blank" secret
+    # convention as smtp_password/ldap_bind_password/oidc_client_secret
+    # above (a MaxMind permalink embeds a license key, so this is stored
+    # encrypted the same way).
+    geoip_primary_url: str = Form(""),
+    geoip_backup_url: str = Form(""),
+    geoip_refresh_interval_hours: str = Form("168"),
+) -> Response:
+    """Saves the GeoIP database source(s) — see `app.services.geoip` for
+    what actually downloads/parses them, and the Map page
+    (`app.web.routes.map`) plus the audit log for what uses the result.
+    Doesn't itself trigger a download — see `refresh_geoip_now` below for
+    the separate "Download now" button, and `app.tasks.celery_app` for the
+    periodic one."""
+    app_settings = await get_or_create_app_settings(db)
+    errors: list[str] = []
+
+    try:
+        interval_hours = int(geoip_refresh_interval_hours.strip() or "168")
+        if interval_hours < 1:
+            raise ValueError
+    except ValueError:
+        errors.append("Refresh interval must be a whole number of hours, at least 1.")
+        interval_hours = app_settings.geoip_refresh_interval_hours
+
+    enabled = bool(geoip_enabled)
+    has_primary = bool(geoip_primary_url.strip() or app_settings.geoip_primary_url_encrypted)
+    if enabled and not has_primary:
+        errors.append("Enabling GeoIP needs at least a primary database URL.")
+
+    if errors:
+        return await _render_settings(request, db, errors, tab="geoip")
+
+    app_settings.geoip_enabled = enabled
+    if geoip_primary_url.strip():
+        app_settings.geoip_primary_url_encrypted = encrypt_secret(geoip_primary_url.strip())
+    if geoip_backup_url.strip():
+        app_settings.geoip_backup_url_encrypted = encrypt_secret(geoip_backup_url.strip())
+    app_settings.geoip_refresh_interval_hours = interval_hours
+    await db.commit()
+
+    await log_event(
+        db,
+        request=request,
+        action="settings.geoip.update",
+        summary=f"Updated GeoIP settings ({'enabled' if enabled else 'disabled'})",
+    )
+    return RedirectResponse(url="/settings?tab=geoip", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/geoip/refresh", dependencies=[Depends(verify_csrf)])
+async def refresh_geoip_now(request: Request, db: AsyncSession = Depends(get_db)) -> Response:
+    """"Download now" — runs regardless of `geoip_enabled` (an admin
+    testing a URL before flipping it on shouldn't have to enable it
+    first), on the same Celery task the periodic Beat schedule uses, so
+    the two paths can never disagree on what "downloading" means. Waits
+    for the result (same `.delay()` + `asyncio.to_thread(...get, timeout=
+    ...)` pattern as "Push to every honeypot" above) since a download can
+    take up to a minute or so and the admin needs to know whether it
+    actually worked, not just that a background job was queued."""
+    app_settings = await get_or_create_app_settings(db)
+    if not (app_settings.geoip_primary_url_encrypted or app_settings.geoip_backup_url_encrypted):
+        return await _render_settings(
+            request, db, ["Set a primary (or backup) database URL first."], tab="geoip"
+        )
+
+    async_result = refresh_geoip_database.delay()
+    try:
+        outcome = await asyncio.to_thread(async_result.get, timeout=_GEOIP_REFRESH_WAIT_SECONDS)
+    except CeleryTimeoutError:
+        return await _render_settings(
+            request, db, ["Download timed out — it may still complete in the background."],
+            tab="geoip",
+        )
+    except Exception as exc:  # noqa: BLE001 - reported, not swallowed
+        return await _render_settings(request, db, [str(exc)], tab="geoip")
+
+    if isinstance(outcome, dict) and outcome.get("ok"):
+        await log_event(
+            db,
+            request=request,
+            action="settings.geoip.refresh",
+            summary="Downloaded GeoIP database",
+        )
+        return RedirectResponse(url="/settings?tab=geoip", status_code=status.HTTP_303_SEE_OTHER)
+
+    reason = str(outcome.get("error")) if isinstance(outcome, dict) else "Unknown error."
+    await log_event(
+        db,
+        request=request,
+        action="settings.geoip.refresh",
+        summary=f"Failed to download GeoIP database: {reason}",
+        outcome=AuditOutcome.FAILURE,
+    )
+    return await _render_settings(request, db, [reason], tab="geoip")
 
 
 async def _deactivate_other_provider(

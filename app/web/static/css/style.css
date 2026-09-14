@@ -1473,3 +1473,21 @@ a.htmx-request, .link-button.htmx-request { opacity: 0.6; cursor: progress; }
 @media (prefers-reduced-motion: reduce) {
   .htmx-settling { animation: none; }
 }
+
+/* Map page's hand-rolled SVG world outline — see
+   app/web/templates/map/index.html and app.services.geoip_display for why
+   this is a plain lat/long graticule, not a political map with real
+   coastlines. Colors read through the same --color-* tokens as
+   everything else (see this file's own header comment), so the map stays
+   readable in both themes without a separate dark/light SVG. */
+.world-map { display: block; }
+.world-map-ocean { fill: var(--color-surface-raised); }
+.world-map-graticule { stroke: var(--color-border); stroke-width: 1; }
+.world-map-equator { stroke: var(--color-border-strong); stroke-width: 1; }
+.world-map-border { fill: none; stroke: var(--color-border-strong); stroke-width: 1; }
+.world-map-dot {
+  fill: var(--color-accent);
+  fill-opacity: 0.65;
+  stroke: var(--color-accent);
+  stroke-width: 1;
+}

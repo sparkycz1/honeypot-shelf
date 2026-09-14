@@ -1,6 +1,6 @@
 [project]
 name = "honeypot-shelf"
-version = "0.39.0"
+version = "0.40.0"
 description = "Management and monitoring overview for a fleet of OpenCanary honeypots, across multiple companies"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -64,6 +64,12 @@ dependencies = [
     # (RP-side): attestation/assertion signature checking, challenge
     # handling. See app/auth/webauthn.py.
     "webauthn>=2.0.0",
+    # Reads a MaxMind-DB-format (.mmdb) database this app downloads itself
+    # (Settings -> GeoIP, app.services.geoip) - never bundled, since
+    # redistributing MaxMind's own GeoLite2 data isn't allowed under their
+    # license. Works with any provider shipping the same .mmdb format, not
+    # just MaxMind's own downloads.
+    "geoip2>=5.3.0",
 ]
 
 [dependency-groups]
