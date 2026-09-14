@@ -157,42 +157,6 @@ async def list_notification_rules(
     )
 
 
-@router.post("/email", dependencies=[Depends(verify_csrf)])
-async def update_notification_email(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> Response:
-    form = await request.form()
-    notification_email = str(form.get("notification_email") or "").strip()
-    if notification_email and not looks_like_email(notification_email):
-        user = await db.get(User, current_user.id)
-        assert user is not None
-        return await _render_list(
-            request,
-            db,
-            user,
-            errors=["That doesn't look like a valid email address."],
-        )
-
-    user = await db.get(User, current_user.id)
-    assert user is not None
-    user.notification_email = notification_email or None
-    await db.commit()
-    await log_event(
-        db,
-        request=request,
-        action="user.notifications.email.update",
-        summary=f'"{user.username}" updated their notification email',
-        target_type="user",
-        target_id=user.id,
-        target_label=user.username,
-    )
-    return RedirectResponse(
-        url="/account/notifications?saved=1", status_code=status.HTTP_303_SEE_OTHER
-    )
-
-
 def _parse_rule_form(form: FormData) -> tuple[dict[str, object], list[str]]:
     """Shared parse/validate for both create and edit — returns a dict of
     column values ready to assign onto a `NotificationRule`, plus a list

@@ -15,9 +15,9 @@ MIN_PASSWORD_LENGTH = 12
 # Deliberately loose — a plausible-shape check, not full RFC 5322
 # validation (no deliverability check either, since no confirmation email
 # is ever sent). Shared by every place an address is entered by hand:
-# `User.email`/`notification_email` (app/web/routes/auth.py,
-# app/web/routes/notifications.py) and the admin-side Users edit form
-# (app/web/routes/users.py).
+# `User.email` (app/web/routes/auth.py), a notification rule's own
+# `target_email` (app/web/routes/notifications.py), and the admin-side
+# Users edit form (app/web/routes/users.py).
 _EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 

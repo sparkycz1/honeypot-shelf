@@ -854,8 +854,8 @@ async def update_email(
     email: str = Form(""),
 ) -> Response:
     """This account's own email — the default destination for Notifications
-    (see `app.services.notifications`, `User.notification_target_email`)
-    unless overridden with a manual address on the Notifications page
+    (see `app.services.notifications.resolve_target`) unless overridden
+    with a per-rule `target_email` on the Notifications page
     (`/account/notifications`). Not used for login, and not validated as
     deliverable — no confirmation email is ever sent, only a plausible
     shape (`app.schemas.user.looks_like_email`)."""

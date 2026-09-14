@@ -98,16 +98,11 @@ class User(Base):
     # This account's own email — self-service (My account → Notifications),
     # or set by an admin from the Users edit form. Not used for login (see
     # `username` above); its only consumer today is Notifications, as the
-    # default destination address — see `notification_target_email` below.
-    # Not validated as deliverable (no confirmation email sent), only as a
-    # plausible address shape (`app.schemas.user`).
+    # default destination address for a rule with no per-rule `target_email`
+    # override (`app.services.notifications.resolve_target`). Not validated
+    # as deliverable (no confirmation email sent), only as a plausible
+    # address shape (`app.schemas.user`).
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
-
-    # A manually-entered notification destination, self-service only (an
-    # admin does not set this for someone else) — e.g. a shared team alias
-    # instead of this person's own inbox. Takes priority over `email` when
-    # set; see `notification_target_email`.
-    notification_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # This account's own UI language, self-service (My account → Language) —
     # a locale *code* (e.g. "en", "cs"). `None` means "use the default"
@@ -224,14 +219,6 @@ class User(Base):
             m.company_id == company_id and m.access_level == AccessLevel.READ_WRITE
             for m in self.memberships
         )
-
-    @property
-    def notification_target_email(self) -> str | None:
-        """Where a Notifications email for this user actually goes —
-        `notification_email` (the manual override) if set, else `email`
-        (this account's own), else `None` (nothing to send to yet). See
-        `app.services.notifications`."""
-        return self.notification_email or self.email
 
     @property
     def is_locked_out(self) -> bool:

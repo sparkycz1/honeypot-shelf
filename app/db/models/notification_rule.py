@@ -17,9 +17,9 @@ independently — see `NotificationRuleState`.
 **Delivery**: `delivery_channel` picks email (default) or a webhook POST
 (`app.services.webhook`, SSRF-guarded — see that module's docstring, since
 a webhook URL here is entered by any user, not just an admin). For email,
-`target_email` overrides the rule owner's own resolved address
-(`User.notification_target_email`) when set; left `None` it just uses
-that. For webhook, `webhook_url` is required.
+`target_email` overrides the rule owner's own account email (`User.email`)
+when set; left `None` it just uses that. For webhook, `webhook_url` is
+required.
 
 **Events and their wording**: each of the three kinds (`notify_on_alert`,
 `notify_on_unavailable`, `notify_on_recovered`) can be toggled

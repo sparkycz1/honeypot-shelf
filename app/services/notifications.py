@@ -146,12 +146,11 @@ def render_template(kind: str, rule: NotificationRule, context: dict[str, Any]) 
 def resolve_target(rule: NotificationRule) -> str | None:
     """Where `rule` actually sends to: its own `webhook_url` for a webhook
     rule; for an email rule, `target_email` (the rule's own override) if
-    set, else the owning user's own resolved address
-    (`User.notification_target_email`) — `None` if there's nowhere to
-    send yet. `rule.user` must already be loaded (selectinload)."""
+    set, else the owning user's own account email — `None` if there's
+    nowhere to send yet. `rule.user` must already be loaded (selectinload)."""
     if rule.delivery_channel == NotificationChannel.WEBHOOK:
         return rule.webhook_url
-    return rule.target_email or rule.user.notification_target_email
+    return rule.target_email or rule.user.email
 
 
 async def _log(

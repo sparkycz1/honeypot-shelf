@@ -1,7 +1,7 @@
 """Web routes for Notifications: `/account/email`, `/account/notifications`
-(list/create), `/account/notifications/email`, `/{id}/edit`, `/{id}/delete`
-— self-service, available to any logged-in user regardless of access
-level, each rule scoped to a company or honeypot the owner can see."""
+(list/create), `/{id}/edit`, `/{id}/delete` — self-service, available to
+any logged-in user regardless of access level, each rule scoped to a
+company or honeypot the owner can see."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from app.db.models.company import Company
 from app.db.models.honeypot import Honeypot
 from app.db.models.notification_rule import NotificationRule, NotificationScope
 from app.db.models.user import AccessLevel, AuthProvider, User
+from app.services.notifications import resolve_target
 from tests.conftest import create_company
 
 pytestmark = pytest.mark.asyncio
@@ -56,19 +57,6 @@ async def test_update_own_account_email_rejects_malformed_address(client):
     )
     assert response.status_code == 200
     assert "valid email" in response.text.lower()
-
-
-async def test_update_notification_email_override(client):
-    form = await client.get("/account/notifications")
-    response = await client.post(
-        "/account/notifications/email",
-        data={"csrf_token": _csrf_from(form), "notification_email": "alias@example.com"},
-        follow_redirects=False,
-    )
-    assert response.status_code == 303
-
-    page = await client.get("/account/notifications")
-    assert "alias@example.com" in page.text
 
 
 async def test_rule_form_only_lists_visible_companies_and_honeypots(
@@ -371,13 +359,28 @@ async def test_settings_no_longer_offers_a_notifications_tab(client):
     assert stale_post.status_code == 404
 
 
-async def test_notification_target_email_property(db_session_factory):
+async def test_resolve_target_falls_back_to_account_email(db_session_factory):
+    """A rule with no `target_email` of its own resolves to the owner's
+    plain account email — there's no separate notification-email override
+    any more, the per-rule field is the only place to pick a different
+    address (see the Notifications page's own hint)."""
+    company = await create_company(db_session_factory)
     async with db_session_factory() as db:
         user = User(
-            username="prop-test", auth_provider=AuthProvider.LOCAL, email="acct@example.com"
+            username="resolve-test", auth_provider=AuthProvider.LOCAL, email="acct@example.com"
         )
         db.add(user)
         await db.flush()
-        assert user.notification_target_email == "acct@example.com"
-        user.notification_email = "override@example.com"
-        assert user.notification_target_email == "override@example.com"
+        rule = NotificationRule(
+            user_id=user.id,
+            name="r",
+            scope=NotificationScope.COMPANY,
+            company_id=company.id,
+            notify_on_alert=True,
+        )
+        db.add(rule)
+        await db.flush()
+        rule.user = user
+        assert resolve_target(rule) == "acct@example.com"
+        rule.target_email = "override@example.com"
+        assert resolve_target(rule) == "override@example.com"
