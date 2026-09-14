@@ -151,6 +151,13 @@ shouldn't see company B's traffic. All three share one transport
 always a compact JSON object, never `key="value"` text. All
 best-effort — a delivery failure is logged and swallowed.
 
+**Wazuh users**: `wazuh/honeypotshelf_rules/decoders.xml` (repo root)
+decodes this JSON and ships one rule per OpenCanary module (rule ids
+`107000`-`107099`), plus a brute-force correlation rule for repeated
+SSH login attempts against the same honeypot from the same source IP —
+see [Audit Log](Audit-Log.md#forwarding-to-your-own-siem) for the same
+ruleset's audit-side coverage.
+
 ## Settings → Checks & retention: database-backed, not `.env`
 
 Every background-check timeout/interval and every retention policy

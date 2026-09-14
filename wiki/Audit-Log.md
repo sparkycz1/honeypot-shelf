@@ -48,3 +48,10 @@ logged and swallowed, never blocking the write it's mirroring. This is
 the **global, audit-only** target — never a honeypot alert; those have
 their own three targets entirely, see
 [Honeypot Management](Honeypot-Management.md#three-syslog-targets-deliberately-never-mixed).
+
+**Wazuh users**: `wazuh/honeypotshelf_rules/decoders.xml` (repo root)
+ships a ready-made decoder + rule set (id range `107000`-`107099`) for
+both this feed and the honeypot-alert one — covers every audit action
+this app emits and every OpenCanary module, plus brute-force
+correlation rules for repeated failed logins. See the file's own header
+comment for how to wire it into a Wazuh manager.
