@@ -89,14 +89,15 @@ actually read in one sitting.
   a `READ_WRITE` user *does* manage the honeypots already in their own
   company (create/edit/delete, terminal, updates, power). Companies,
   Users, Settings, and the Audit log stay superadmin-only end to end.
-- **Notifications**: self-service, per-user email or webhook alerts — any
-  user, regardless of access level, can subscribe their own account (or a
-  manually-entered address, or a webhook URL) to honeypot-alert and/or
-  unavailability notifications for any honeypot they can see, from My
-  account → Notifications — plus a "Send test" button and their own
-  notification history. Deliberately much simpler than a role/condition-
-  based rules engine — see
-  [Architecture](Architecture.md#notifications-self-service-per-honeypot-email-alerts).
+- **Notifications**: self-service, named rules in the nav bar — any user,
+  regardless of access level, creates their own named alert rules, each
+  scoped to a whole company (every honeypot in it, superadmin sees every
+  company) or a single honeypot, by email or webhook, with independent
+  alert/unavailable/recovered toggles and their own debounce thresholds —
+  plus a "Send test" button and their own notification history.
+  Deliberately much simpler than a role/condition-based rules engine —
+  see
+  [Architecture](Architecture.md#notifications-self-service-named-rules-scoped-to-a-company-or-a-honeypot).
   The three syslog targets (global audit-only, per-company alerts,
   fleet-wide alerts — see
   [Architecture](Architecture.md#three-syslog-targets-deliberately-never-mixed))

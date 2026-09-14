@@ -133,10 +133,17 @@ class Honeypot(Base):
     # from `last_ping_at`, which is overwritten on every sweep tick
     # regardless of outcome and so can't answer "how long has it actually
     # been down." Exists for Notifications' own debounce (`app.tasks.jobs.
-    # _ping_all_honeypots`, `HoneypotNotificationSubscription.
-    # unavailable_after_minutes`) — cleared back to `None` the moment a
-    # sweep finds it reachable again.
+    # _ping_all_honeypots`, `NotificationRule.unavailable_after_minutes`) —
+    # cleared back to `None` the moment a sweep finds it reachable again.
     unreachable_since: Mapped[datetime | None] = mapped_column(nullable=True)
+    # The mirror image of `unreachable_since`: when this honeypot most
+    # recently transitioned from unreachable (or never-yet-checked) to
+    # reachable — `None` while unreachable. Exists for the same
+    # Notifications debounce, the "recovered" side of it
+    # (`NotificationRule.recovered_after_minutes` — a honeypot must stay
+    # reachable this long before a "recovered" notification fires, so a
+    # single flapping blip doesn't immediately claim it's back).
+    reachable_since: Mapped[datetime | None] = mapped_column(nullable=True)
 
     # --- Per-honeypot overrides of the global `.env` sweep cadences —
     # NULL means "use the global default". See app.tasks.jobs._due_honeypots.

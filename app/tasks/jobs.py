@@ -34,7 +34,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import asyncssh
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -49,12 +49,13 @@ from app.db.models.company_snapshot import CompanySnapshot
 from app.db.models.honeypot import AuthMethod, Honeypot
 from app.db.models.honeypot_event import HoneypotEvent
 from app.db.models.honeypot_monitoring_sample import HoneypotMonitoringSample
-from app.db.models.honeypot_notification_subscription import HoneypotNotificationSubscription
 from app.db.models.honeypot_package import HoneypotPackage
 from app.db.models.honeypot_reachability_sample import HoneypotReachabilitySample
 from app.db.models.honeypot_service import HoneypotService
 from app.db.models.honeypot_update_run import HoneypotUpdateRun, UpdateRunStatus, UpgradeStrategy
 from app.db.models.notification_log import NotificationLog
+from app.db.models.notification_rule import NotificationRule, NotificationScope
+from app.db.models.notification_rule_state import NotificationRuleState
 from app.services.company_stats import compute_company_stats
 from app.services.honeypot_event_syslog import forward_honeypot_event_to_syslog
 from app.services.honeypot_events import build_event
@@ -883,7 +884,9 @@ async def _ping_all_honeypots() -> None:
     async with db_session.AsyncSessionLocal() as session:
         app_settings = await get_or_create_app_settings(session)
         result = await session.execute(
-            select(Honeypot).where(Honeypot.is_active, Honeypot.ip_address.is_not(None))
+            select(Honeypot)
+            .options(selectinload(Honeypot.companies))
+            .where(Honeypot.is_active, Honeypot.ip_address.is_not(None))
         )
         honeypots = _due_honeypots(
             list(result.scalars().all()),
@@ -916,13 +919,21 @@ async def _ping_all_honeypots() -> None:
                 honeypot.last_ping_at = now
                 if outcome.reachable:
                     honeypot.unreachable_since = None
-                elif was_reachable is not False or honeypot.unreachable_since is None:
-                    # Either the first failing check ever, or a fresh
-                    # transition from reachable — start (or restart) the
-                    # clock. `was_reachable is not False` also covers
-                    # `None` (never checked before), same as a brand-new
-                    # outage.
-                    honeypot.unreachable_since = now
+                    if was_reachable is not True or honeypot.reachable_since is None:
+                        # Either the first successful check ever, or a
+                        # fresh transition from unreachable — start (or
+                        # restart) the clock, mirroring the
+                        # `unreachable_since` logic below.
+                        honeypot.reachable_since = now
+                else:
+                    honeypot.reachable_since = None
+                    if was_reachable is not False or honeypot.unreachable_since is None:
+                        # Either the first failing check ever, or a fresh
+                        # transition from reachable — start (or restart) the
+                        # clock. `was_reachable is not False` also covers
+                        # `None` (never checked before), same as a brand-new
+                        # outage.
+                        honeypot.unreachable_since = now
                 session.add(
                     HoneypotReachabilitySample(
                         honeypot_id=honeypot.id,
@@ -935,8 +946,50 @@ async def _ping_all_honeypots() -> None:
             for honeypot, _outcome in results:
                 await publish_honeypot_event(str(honeypot.id), KIND_STATUS)
 
-            if app_settings.smtp_enabled:
-                await _evaluate_unavailability_notifications(session, app_settings, results, now)
+            # Not gated on `app_settings.smtp_enabled` here — a webhook
+            # rule fires regardless (see `_evaluate_unavailability_notifications`
+            # / `notify_unavailable`/`notify_recovered`); each rule's own
+            # delivery channel decides whether SMTP being off should skip it.
+            await _evaluate_unavailability_notifications(session, app_settings, results, now)
+
+
+async def _matching_notification_rules(
+    session: AsyncSession, honeypots: list[Honeypot], event_column: Any
+) -> dict[uuid.UUID, list[NotificationRule]]:
+    """Every active-user `NotificationRule` that applies to each of
+    `honeypots` — directly (`scope=honeypot`), or via any company it
+    belongs to (`scope=company`) — with `event_column` (e.g.
+    `NotificationRule.notify_on_alert`) true. `honeypots` must already
+    have `.companies` loaded (selectinload) — a company-scoped rule is
+    resolved against that, not a fresh query, so adding a honeypot to a
+    company picks up its rules on the very next sweep with no rule edit
+    needed. Returns a dict keyed by honeypot id, `{}` if none match."""
+    by_honeypot: dict[uuid.UUID, list[NotificationRule]] = {h.id: [] for h in honeypots}
+    honeypot_ids = list(by_honeypot)
+    if not honeypot_ids:
+        return {}
+    company_ids_by_honeypot = {h.id: {c.id for c in h.companies} for h in honeypots}
+    all_company_ids = {cid for cids in company_ids_by_honeypot.values() for cid in cids}
+
+    conditions = [NotificationRule.honeypot_id.in_(honeypot_ids)]
+    if all_company_ids:
+        conditions.append(NotificationRule.company_id.in_(all_company_ids))
+    result = await session.execute(
+        select(NotificationRule)
+        .options(selectinload(NotificationRule.user))
+        .where(event_column.is_(True), or_(*conditions))
+    )
+    for rule in result.scalars().all():
+        if not rule.user.is_active:
+            continue
+        if rule.scope == NotificationScope.HONEYPOT:
+            if rule.honeypot_id in by_honeypot:
+                by_honeypot[rule.honeypot_id].append(rule)
+        else:
+            for honeypot_id, company_ids in company_ids_by_honeypot.items():
+                if rule.company_id in company_ids:
+                    by_honeypot[honeypot_id].append(rule)
+    return by_honeypot
 
 
 async def _evaluate_unavailability_notifications(
@@ -945,56 +998,89 @@ async def _evaluate_unavailability_notifications(
     results: list[tuple[Honeypot, ReachabilityResult]],
     now: datetime,
 ) -> None:
-    """For every honeypot this sweep just checked, evaluate each of its
-    `notify_on_unavailable` subscriptions against that subscription's own
-    debounce (`unavailable_after_minutes`) and send at most one "it's
-    down" email per continuous outage, plus one "it's back" email once it
-    recovers — see `HoneypotNotificationSubscription`'s own docstring for
-    the state machine this implements."""
-    honeypot_ids = [honeypot.id for honeypot, _outcome in results]
-    if not honeypot_ids:
+    """For every honeypot this sweep just checked, evaluate each matching
+    rule's own debounce (`unavailable_after_minutes`/
+    `recovered_after_minutes`) and send at most one "it's down"
+    notification per continuous outage, plus one "it's back" notification
+    once it's been reachable again for long enough — see
+    `app.db.models.notification_rule_state`'s own docstring for the exact
+    state machine this implements. Requires each `honeypot` in `results`
+    to already have `.companies` loaded."""
+    honeypots = [honeypot for honeypot, _outcome in results]
+    rules_by_honeypot = await _matching_notification_rules(
+        session,
+        honeypots,
+        or_(NotificationRule.notify_on_unavailable, NotificationRule.notify_on_recovered),
+    )
+    rule_ids = {rule.id for rules in rules_by_honeypot.values() for rule in rules}
+    if not rule_ids:
         return
-    subs_result = await session.execute(
-        select(HoneypotNotificationSubscription)
-        .options(selectinload(HoneypotNotificationSubscription.user))
-        .where(
-            HoneypotNotificationSubscription.honeypot_id.in_(honeypot_ids),
-            HoneypotNotificationSubscription.notify_on_unavailable.is_(True),
+
+    states_result = await session.execute(
+        select(NotificationRuleState).where(
+            NotificationRuleState.rule_id.in_(rule_ids),
+            NotificationRuleState.honeypot_id.in_(rules_by_honeypot.keys()),
         )
     )
-    subs_by_honeypot: dict[uuid.UUID, list[HoneypotNotificationSubscription]] = {}
-    for sub in subs_result.scalars().all():
-        subs_by_honeypot.setdefault(sub.honeypot_id, []).append(sub)
-    if not subs_by_honeypot:
-        return
+    states = {(s.rule_id, s.honeypot_id): s for s in states_result.scalars().all()}
 
     changed = False
     for honeypot, outcome in results:
-        subs = subs_by_honeypot.get(honeypot.id)
-        if not subs:
+        rules = rules_by_honeypot.get(honeypot.id)
+        if not rules:
             continue
-        for sub in subs:
-            if not sub.user.is_active:
-                continue
+        for rule in rules:
+            state = states.get((rule.id, honeypot.id))
+            if state is None:
+                state = NotificationRuleState(rule_id=rule.id, honeypot_id=honeypot.id)
+                session.add(state)
+                states[(rule.id, honeypot.id)] = state
+
             if outcome.reachable:
-                if sub.unavailable_notified_at is not None:
-                    sub.unavailable_notified_at = None
+                if state.unavailable_notified_at is None:
+                    continue
+                if not rule.notify_on_recovered:
+                    # Nothing more to track for this outage if this rule
+                    # never wants a "recovered" notification at all.
+                    state.unavailable_notified_at = None
+                    changed = True
+                    continue
+                if state.recovered_notified_at is not None or honeypot.reachable_since is None:
+                    continue
+                elapsed_minutes = (
+                    now - as_aware_utc(honeypot.reachable_since)
+                ).total_seconds() / 60
+                if elapsed_minutes >= rule.recovered_after_minutes:
+                    state.recovered_notified_at = now
+                    state.unavailable_notified_at = None
                     changed = True
                     await notify_recovered(
-                        app_settings, subscription=sub, honeypot=honeypot, db=session
+                        app_settings,
+                        rule=rule,
+                        honeypot=honeypot,
+                        threshold_minutes=rule.recovered_after_minutes,
+                        db=session,
                     )
                 continue
-            if sub.unavailable_notified_at is not None or honeypot.unreachable_since is None:
+
+            if state.recovered_notified_at is not None:
+                state.recovered_notified_at = None
+                changed = True
+            if (
+                not rule.notify_on_unavailable
+                or state.unavailable_notified_at is not None
+                or honeypot.unreachable_since is None
+            ):
                 continue
             elapsed_minutes = (now - as_aware_utc(honeypot.unreachable_since)).total_seconds() / 60
-            if elapsed_minutes >= sub.unavailable_after_minutes:
-                sub.unavailable_notified_at = now
+            if elapsed_minutes >= rule.unavailable_after_minutes:
+                state.unavailable_notified_at = now
                 changed = True
                 await notify_unavailable(
                     app_settings,
-                    subscription=sub,
+                    rule=rule,
                     honeypot=honeypot,
-                    threshold_minutes=sub.unavailable_after_minutes,
+                    threshold_minutes=rule.unavailable_after_minutes,
                     db=session,
                 )
     if changed:
@@ -1416,25 +1502,18 @@ async def _poll_honeypot_canary_log(honeypot_id: str) -> dict[str, Any]:
 
         if new_rows:
             # Not gated on `app_settings.smtp_enabled` here — a webhook
-            # subscription fires regardless (see `notify_alert`); each
-            # subscription's own delivery channel decides whether SMTP
-            # being off should skip it.
-            subscribers_result = await session.execute(
-                select(HoneypotNotificationSubscription)
-                .options(selectinload(HoneypotNotificationSubscription.user))
-                .where(
-                    HoneypotNotificationSubscription.honeypot_id == honeypot.id,
-                    HoneypotNotificationSubscription.notify_on_alert.is_(True),
-                )
+            # rule fires regardless (see `notify_alert`); each rule's own
+            # delivery channel decides whether SMTP being off should skip it.
+            await session.refresh(honeypot, attribute_names=["companies"])
+            rules_by_honeypot = await _matching_notification_rules(
+                session, [honeypot], NotificationRule.notify_on_alert
             )
-            subscriptions = [
-                sub for sub in subscribers_result.scalars().all() if sub.user.is_active
-            ]
-            if subscriptions:
+            rules = rules_by_honeypot.get(honeypot.id, [])
+            if rules:
                 for row in new_rows:
                     await notify_alert(
                         app_settings,
-                        subscriptions=subscriptions,
+                        rules=rules,
                         honeypot=honeypot,
                         event_type=row.event_type,
                         event_label=logtype_label(row.event_type),

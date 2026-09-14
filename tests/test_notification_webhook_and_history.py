@@ -1,7 +1,7 @@
 """Webhook delivery, "Send test", and notification history — extensions
 to Notifications ported from an identical debcontrol feature (a1c962b:
 webhook delivery, notification history/retention, send-test button),
-adapted to this app's per-(user, honeypot) subscription model (see
+adapted to this app's self-service `NotificationRule` model (see
 `app.services.notifications`'s module docstring)."""
 
 from __future__ import annotations
@@ -10,15 +10,16 @@ import re
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from sqlalchemy import select
 
 from app.core.app_settings import get_or_create_app_settings
 from app.db.models.company import Company
 from app.db.models.honeypot import Honeypot
-from app.db.models.honeypot_notification_subscription import HoneypotNotificationSubscription
 from app.db.models.notification_log import NotificationChannel, NotificationKind, NotificationLog
-from app.db.models.user import AuthProvider, User
+from app.db.models.notification_rule import NotificationRule, NotificationScope
+from app.db.models.user import AccessLevel, AuthProvider, User
 from app.services.webhook import UnsafeWebhookTargetError, validate_webhook_url
-from tests.conftest import create_company
+from tests.conftest import _create_user, create_company
 
 pytestmark = pytest.mark.asyncio
 
@@ -59,7 +60,7 @@ def test_validate_webhook_url_accepts_a_public_address():
     validate_webhook_url("https://93.184.216.34/hook")
 
 
-# --- Saving a subscription with delivery_channel=webhook -------------------
+# --- Creating a rule with delivery_channel=webhook --------------------------
 
 
 async def _make_honeypot(db_session_factory, *, name: str = "acme-honey1"):
@@ -71,9 +72,7 @@ async def _make_honeypot(db_session_factory, *, name: str = "acme-honey1"):
         return honeypot.id
 
 
-async def test_saving_a_webhook_subscription_persists_channel_and_url(
-    client, db_session_factory
-):
+async def test_creating_a_webhook_rule_persists_channel_and_url(client, db_session_factory):
     honeypot_id = await _make_honeypot(db_session_factory)
     form = await client.get("/account/notifications")
     csrf_token = _csrf_from(form)
@@ -82,26 +81,24 @@ async def test_saving_a_webhook_subscription_persists_channel_and_url(
         "/account/notifications",
         data={
             "csrf_token": csrf_token,
-            f"alert_{honeypot_id}": "on",
-            f"channel_{honeypot_id}": "webhook",
-            f"webhook_{honeypot_id}": "https://93.184.216.34/hook",
+            "name": "Webhook rule",
+            "scope": "honeypot",
+            "honeypot_id": str(honeypot_id),
+            "delivery_channel": "webhook",
+            "webhook_url": "https://93.184.216.34/hook",
+            "notify_on_alert": "on",
         },
         follow_redirects=False,
     )
     assert response.status_code == 303
 
     async with db_session_factory() as db:
-        from sqlalchemy import select
-
-        result = await db.execute(select(HoneypotNotificationSubscription))
-        sub = result.scalar_one()
-        assert sub.delivery_channel == NotificationChannel.WEBHOOK
-        assert sub.webhook_url == "https://93.184.216.34/hook"
+        rule = (await db.execute(select(NotificationRule))).scalar_one()
+        assert rule.delivery_channel == NotificationChannel.WEBHOOK
+        assert rule.webhook_url == "https://93.184.216.34/hook"
 
 
-async def test_saving_a_webhook_subscription_with_an_unsafe_url_is_rejected(
-    client, db_session_factory
-):
+async def test_creating_a_webhook_rule_with_an_unsafe_url_is_rejected(client, db_session_factory):
     honeypot_id = await _make_honeypot(db_session_factory)
     form = await client.get("/account/notifications")
     csrf_token = _csrf_from(form)
@@ -110,9 +107,12 @@ async def test_saving_a_webhook_subscription_with_an_unsafe_url_is_rejected(
         "/account/notifications",
         data={
             "csrf_token": csrf_token,
-            f"alert_{honeypot_id}": "on",
-            f"channel_{honeypot_id}": "webhook",
-            f"webhook_{honeypot_id}": "http://127.0.0.1/hook",
+            "name": "Bad webhook rule",
+            "scope": "honeypot",
+            "honeypot_id": str(honeypot_id),
+            "delivery_channel": "webhook",
+            "webhook_url": "http://127.0.0.1/hook",
+            "notify_on_alert": "on",
         },
         follow_redirects=False,
     )
@@ -120,10 +120,7 @@ async def test_saving_a_webhook_subscription_with_an_unsafe_url_is_rejected(
     assert "non-public address" in response.text
 
     async with db_session_factory() as db:
-        from sqlalchemy import select
-
-        result = await db.execute(select(HoneypotNotificationSubscription))
-        assert result.scalar_one_or_none() is None
+        assert (await db.execute(select(NotificationRule))).scalar_one_or_none() is None
 
 
 # --- "Send test" -------------------------------------------------------------
@@ -139,20 +136,27 @@ async def test_send_test_notification_logs_a_test_entry(client, db_session_facto
 
     monkeypatch.setattr("app.services.notifications.send_email", fake_send_email)
 
-    await client.get("/account")
     async with db_session_factory() as db:
-        from sqlalchemy import select
-
         user = (await db.execute(select(User))).scalars().first()
         assert user is not None
         user.email = "me@example.com"
+        rule = NotificationRule(
+            user_id=user.id,
+            name="Test me",
+            scope=NotificationScope.HONEYPOT,
+            honeypot_id=honeypot_id,
+            delivery_channel=NotificationChannel.EMAIL,
+            notify_on_alert=True,
+        )
+        db.add(rule)
         await db.commit()
+        rule_id = rule.id
 
     form = await client.get("/account/notifications")
     csrf_token = _csrf_from(form)
     response = await client.post(
-        f"/account/notifications/test/{honeypot_id}",
-        data={"csrf_token": csrf_token, f"channel_{honeypot_id}": "email"},
+        f"/account/notifications/{rule_id}/test",
+        data={"csrf_token": csrf_token},
         follow_redirects=False,
     )
     assert response.status_code == 303
@@ -160,38 +164,76 @@ async def test_send_test_notification_logs_a_test_entry(client, db_session_facto
     assert sent, "expected send_email to have been called"
 
     async with db_session_factory() as db:
-        from sqlalchemy import select
-
         entry = (await db.execute(select(NotificationLog))).scalar_one()
         assert entry.is_test is True
         assert entry.success is True
         assert entry.channel == NotificationChannel.EMAIL
 
 
-async def test_send_test_notification_for_unseen_honeypot_404s(
-    client, db_session_factory, login_as
+async def test_send_test_for_company_scoped_rule_uses_a_real_honeypot_in_scope(
+    client, db_session_factory, monkeypatch
 ):
-    from app.db.models.user import AccessLevel
-
-    other_company = await create_company(db_session_factory, name="other-co")
-    my_company = await create_company(db_session_factory, name="my-co")
+    company = await create_company(db_session_factory, name="Zeta Co")
+    honeypot_id = await _make_honeypot(db_session_factory, name="zeta-honey")
     async with db_session_factory() as db:
-        honeypot = Honeypot(companies=[await db.get(Company, other_company.id)], name="not-mine")
-        db.add(honeypot)
+        h = await db.get(Honeypot, honeypot_id)
+        assert h is not None
+        c = await db.get(Company, company.id)
+        assert c is not None
+        h.companies = [c]
+        user = (await db.execute(select(User))).scalars().first()
+        assert user is not None
+        user.email = "me@example.com"
+        rule = NotificationRule(
+            user_id=user.id,
+            name="Company test",
+            scope=NotificationScope.COMPANY,
+            company_id=company.id,
+            delivery_channel=NotificationChannel.EMAIL,
+            notify_on_alert=True,
+        )
+        db.add(rule)
         await db.commit()
-        honeypot_id = honeypot.id
+        rule_id = rule.id
 
-    # A plain (non-superadmin) member of a *different* company can't see
-    # `honeypot_id` at all — superadmin, this test's default `client`
-    # login, can see every honeypot regardless of company, so this needs
-    # a scoped-down account to actually exercise the 404 path.
-    await login_as(client, company_id=my_company.id, access_level=AccessLevel.READ)
+    sent: list[str] = []
+    monkeypatch.setattr(
+        "app.services.notifications.send_email",
+        lambda app_settings, *, to_address, subject, body: sent.append(to_address),
+    )
 
     form = await client.get("/account/notifications")
     csrf_token = _csrf_from(form)
     response = await client.post(
-        f"/account/notifications/test/{honeypot_id}",
+        f"/account/notifications/{rule_id}/test",
         data={"csrf_token": csrf_token},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert "test_sent=1" in response.headers["location"]
+    assert sent == ["me@example.com"]
+
+
+async def test_send_test_for_another_users_rule_404s(client, login_as, db_session_factory):
+    company = await create_company(db_session_factory)
+    owner, _ = await _create_user(db_session_factory, username="rule-owner-2")
+    async with db_session_factory() as db:
+        rule = NotificationRule(
+            user_id=owner.id,
+            name="Not yours",
+            scope=NotificationScope.COMPANY,
+            company_id=company.id,
+            notify_on_alert=True,
+        )
+        db.add(rule)
+        await db.commit()
+        rule_id = rule.id
+
+    await login_as(client, company_id=company.id, access_level=AccessLevel.READ)
+    form = await client.get("/account/notifications")
+    csrf_token = _csrf_from(form)
+    response = await client.post(
+        f"/account/notifications/{rule_id}/test", data={"csrf_token": csrf_token}
     )
     assert response.status_code == 404
 
@@ -270,8 +312,6 @@ async def test_purge_old_notification_logs_respects_retention_days(
     await _purge_old_notification_logs()
 
     async with db_session_factory() as db:
-        from sqlalchemy import select
-
         remaining = (await db.execute(select(NotificationLog.target))).scalars().all()
         assert remaining == ["recent@example.com"]
 
@@ -304,7 +344,5 @@ async def test_purge_old_notification_logs_is_a_noop_when_retention_unset(
     await _purge_old_notification_logs()
 
     async with db_session_factory() as db:
-        from sqlalchemy import select
-
         remaining = (await db.execute(select(NotificationLog.target))).scalars().all()
         assert remaining == ["forever@example.com"]

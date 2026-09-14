@@ -1,7 +1,9 @@
 """Plain JSON webhook delivery for Notifications — the other delivery
 channel alongside `app.services.smtp`, for a
-`HoneypotNotificationSubscription` with `delivery_channel=webhook`. Ported
-from an identical debcontrol feature (a rule-level webhook channel there).
+`app.db.models.notification_rule.NotificationRule` with
+`delivery_channel=webhook`. Ported from an identical debcontrol feature
+(a webhook channel on debcontrol's own, differently-scoped
+`NotificationRule`).
 
 Deliberately as small as `app.services.smtp`: one POST, one fixed JSON
 shape, no retry/signing/templating of its own — `app.services.
@@ -10,18 +12,18 @@ this module doesn't know what a "notification" is at all, just how to
 hand a JSON body to a URL, the same split `send_email`/`app.services.
 notifications` already has.
 
-**SSRF guard**: unlike debcontrol (where a webhook URL is part of an
-admin-authored `NotificationRule`, superadmin-only), this app's
-Notifications are self-service — *any* logged-in user, regardless of
-access level, can set a webhook URL on their own subscription (see
+**SSRF guard**: unlike debcontrol (where a `NotificationRule`, webhook
+channel included, is admin-authored, superadmin-only), this app's own
+`NotificationRule` is self-service — *any* logged-in user, regardless of
+access level, can set a webhook URL on their own rule (see
 `app.web.routes.notifications`). Without a check, a low-privileged user
 could point a webhook at an internal-only address (a cloud metadata
 endpoint, another container on the compose network, localhost) and use
-the `worker` container as an open network probe/relay. `_reject_unsafe_target`
-resolves the hostname and rejects anything that isn't a public,
-routable address — checked both when a subscription is saved (fail fast,
-readable error) and again here at send time (defends against a DNS
-answer changing between the two, a classic SSRF rebind).
+the `worker` container as an open network probe/relay.
+`validate_webhook_url` resolves the hostname and rejects anything that
+isn't a public, routable address — checked both when a rule is saved
+(fail fast, readable error) and again here at send time (defends against
+a DNS answer changing between the two, a classic SSRF rebind).
 """
 
 from __future__ import annotations

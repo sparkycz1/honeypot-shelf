@@ -437,76 +437,98 @@ connection details; `app.services.smtp.send_email` is the actual
 seam every Celery task crosses for its own synchronous protocols). The
 only caller is `app.services.notifications` — see the next section.
 
-### Notifications: self-service, per-honeypot email alerts
+### Notifications: self-service, named rules scoped to a company or a honeypot
 
-Any user, regardless of access level, can subscribe to email alerts for
-any honeypot they can already see (My account → Notifications,
-`app.web.routes.notifications`, `HoneypotNotificationSubscription`) —
-deliberately much simpler than debcontrol's own Notifications (admin-
-authored rules, role-targeted recipients, CPU/RAM/disk condition
-thresholds, per-rule custom templates), matching this app's own flatter
-RBAC (no roles/groups — see `app.db.models.user`'s module docstring) and
-an explicit product decision to keep this self-service rather than
-admin-configured.
+*Nav bar → Notifications*, open to **every** logged-in user regardless of
+access level — anyone creates their own named `NotificationRule`s
+(`app.db.models.notification_rule`, `app.web.routes.notifications`),
+each scoped to either an entire `Company` they can already see (covering
+every honeypot in it, including ones added later — re-resolved on every
+sweep, no rule edit needed) or a single `Honeypot`. A superadmin can
+scope a rule to any company/honeypot; anyone else only to one they
+already have access to (`app.auth.scope`) — enforced server-side
+(`app.web.routes.notifications._authorize_scope`), not just by what the
+picker shows. Deliberately much simpler than debcontrol's own
+Notifications (admin-authored rules, role-targeted recipients, CPU/RAM/
+disk condition thresholds, per-rule custom templates) — matching this
+app's own flatter RBAC (no roles/groups — see `app.db.models.user`'s
+module docstring) and an explicit product decision to keep rule creation
+self-service, open to every access level, rather than admin-configured.
 
-Two trigger types, both per-(user, honeypot) subscription rows:
+Three event kinds, independently toggled per rule:
 
-- **Honeypot alert** — every newly ingested, non-internal `HoneypotEvent`
-  emails every subscriber with `notify_on_alert=True` for that honeypot.
-  One email per event, no batching/digest.
-- **Unavailable** — emails a subscriber once a honeypot has been
-  continuously unreachable for at least *that subscription's own*
-  `unavailable_after_minutes` (each subscriber sets their own threshold,
-  not a shared instance-wide one), and again once it's reachable again.
-  `Honeypot.unreachable_since` tracks when the current outage started —
-  distinct from `last_ping_at`, which is overwritten every sweep tick
-  regardless of outcome and so can't answer "how long has it actually
-  been down." `HoneypotNotificationSubscription.unavailable_notified_at`
-  ensures at most one "it's down" email per continuous outage, cleared
-  the moment it recovers. Both hook directly into the existing
-  `app.tasks.jobs._poll_honeypot_canary_log`/`_ping_all_honeypots` sweeps
-  — no new Celery Beat schedule entry needed.
+- **Alert** (`notify_on_alert`) — every newly ingested, non-internal
+  `HoneypotEvent` on a matching honeypot fires the rule. One notification
+  per event, no batching/digest.
+- **Unavailable** (`notify_on_unavailable`, `unavailable_after_minutes`)
+  — fires once a honeypot has been continuously unreachable for at least
+  the rule's own threshold (each rule sets its own, not a shared
+  instance-wide one).
+- **Recovered** (`notify_on_recovered`, `recovered_after_minutes`) —
+  fires once a honeypot has been continuously reachable again for at
+  least the rule's own threshold, *after* an "unavailable" had actually
+  fired for it — a single flapping blip that recovers before the
+  threshold never claims "it's back" for something that was never
+  reported down.
 
-Recipient: `User.notification_target_email` — a manually-entered
-`User.notification_email` if set, else the account's own `User.email`
-(self-service in My account, or admin-set from the Users edit form),
-else nothing to send to. Wording is the one place this *is* centrally
-configured: `AppSettings.notification_*_subject`/`_body` (Settings →
-Notifications, superadmin-only) — one shared template per event type,
-not per-user/per-rule, substituted via plain `str.format_map` (never a
-template engine, so an admin-edited body can't execute code or reach
-outside its own string) — see `app.services.notifications` for the full
-design and every failure-is-a-silent-no-op reasoning (SMTP not
+Both debounces read `Honeypot.unreachable_since`/`reachable_since` —
+each tracks when the *current* streak (down, or up) started, distinct
+from `last_ping_at` (overwritten every sweep tick regardless of outcome,
+so it can't answer "how long has it actually been down/up"). Because a
+company-scoped rule can cover many honeypots that each go up/down
+independently, the "have we already notified for this outage/recovery"
+flag can't live on the rule itself the way a honeypot-scoped one could —
+it's a separate `NotificationRuleState` row per (rule, honeypot) pair,
+lazily created the first time a sweep evaluates that pairing. See that
+model's own docstring for the exact state machine, and
+`app.tasks.jobs._matching_notification_rules`/
+`_evaluate_unavailability_notifications` for how it's driven. Both event
+kinds hook directly into the existing
+`app.tasks.jobs._poll_honeypot_canary_log`/`_ping_all_honeypots` sweeps —
+no new Celery Beat schedule entry needed.
+
+**Delivery**: `delivery_channel` picks email (default) or a plain JSON
+webhook POST (`app.services.webhook.send_webhook`), which fires even
+when SMTP is off. For email, `target_email` overrides the rule owner's
+own resolved address (`User.notification_target_email` — a manually-
+entered `User.notification_email` if set, else `User.email`, else
+nothing to send to) when set; left blank it just uses that. Wording is
+the one place this *is* centrally configured:
+`AppSettings.notification_*_subject`/`_body` (Settings → Notifications,
+superadmin-only) — one shared template per event type, not per-rule,
+substituted via plain `str.format_map` (never a template engine, so an
+admin-edited body can't execute code or reach outside its own string).
+The rule-creation form shows each event kind's current subject as a
+preview, so creating a rule doesn't require guessing what it'll send —
+see `app.services.notifications.default_template`/`render_template` for
+the full design and every failure-is-a-silent-no-op reasoning (SMTP not
 configured, no recipient email set, the relay refusing the connection —
 none of this may ever break the background sweep that triggered it).
 
-**Delivery channel, history, and "Send test"** (ported from an identical
-debcontrol feature — webhook delivery, notification history/retention,
-send-test button — adapted to this app's per-subscription model rather
-than debcontrol's per-rule one): each `HoneypotNotificationSubscription`
-picks its own `delivery_channel` — email (default) or a plain JSON
-webhook POST (`app.services.webhook.send_webhook`) instead, which fires
-even when SMTP is off. Every send attempt (real or test) is logged to
-`NotificationLog` — `app.tasks.jobs.purge_old_notification_logs` prunes
-it on `AppSettings.notification_log_retention_days` (Settings → Checks &
-retention, default 90 days), and each user's own last 200 attempts are at
-My account → Notifications → Notification history (never another user's
-— this feature has no admin/superadmin gate at all). "Send test"
+**History and "Send test"**: every send attempt (real or test) is logged
+to `NotificationLog` — `app.tasks.jobs.purge_old_notification_logs`
+prunes it on `AppSettings.notification_log_retention_days` (Settings →
+Checks & retention, default 90 days), and each user's own last 200
+attempts are at Notifications → Notification history (never another
+user's — this feature has no admin/superadmin gate at all). "Send test"
 (`app.services.notifications.send_test_notification`) fires one synthetic
-alert straight to the channel/target a subscription row currently shows,
-bypassing subscription state entirely.
+alert straight to a rule's current channel/target, against a real
+honeypot in its scope (`app.web.routes.notifications.
+_representative_honeypot` — the honeypot itself for a honeypot-scoped
+rule, the alphabetically-first one in the company for a company-scoped
+one), bypassing rule-matching/debounce state entirely.
 
 Because a webhook URL here is entered by *any* logged-in user, not just a
 superadmin authoring a rule (debcontrol's own trust boundary), a webhook
-subscription is a real SSRF vector without a guard — a low-privileged
-account could otherwise point it at a cloud metadata endpoint or another
+rule is a real SSRF vector without a guard — a low-privileged account
+could otherwise point it at a cloud metadata endpoint or another
 container on the compose network and use `worker` as a network probe.
 `app.services.webhook.validate_webhook_url` resolves the hostname and
 rejects anything that isn't a public, routable address (loopback, link-
 local, private, reserved, multicast, unspecified all refused) — checked
-both when a subscription is saved (fail fast) and again immediately
-before every send (defends against the resolved address changing between
-the two, a classic SSRF DNS-rebind).
+both when a rule is saved (fail fast) and again immediately before every
+send (defends against the resolved address changing between the two, a
+classic SSRF DNS-rebind).
 
 ### Settings → Checks & retention: database-backed, not `.env`
 

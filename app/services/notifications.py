@@ -1,41 +1,42 @@
-"""Notifications: per-user, per-honeypot email/webhook alerts — "email me
-on honeypot alerts", "email me when it goes unreachable (and when it's
-back)", or send either to a webhook instead.
+"""Notifications: named, self-service alert rules — "tell me about alerts
+on this company/honeypot", "tell me when it goes unreachable (and when
+it's back)", by email or webhook.
 
 Deliberately much simpler than debcontrol's own Notifications (admin-
 authored rules, role-targeted recipients, CPU/RAM/disk condition
 thresholds, custom per-rule templates) — this app has no roles/groups at
 all (see `app.db.models.user`'s module docstring), and the explicit
 product decision behind this feature was self-service and flat: *any*
-user, regardless of access level, manages their own subscriptions for any
-honeypot they can see (`app.db.models.honeypot_notification_subscription
-.HoneypotNotificationSubscription`, `app/web/routes/notifications.py`),
-targeting their own account email or a manually-entered address
-(`User.notification_target_email`) — or, per-subscription, a webhook URL
-instead (`HoneypotNotificationSubscription.delivery_channel`/
-`webhook_url` — see `app.services.webhook`, ported from an identical
-debcontrol feature). The only admin-configurable part is the shared email
-wording (`AppSettings.notification_*_subject/body`, Settings →
-Notifications, superadmin-only) — one global template per event, not per
-rule; a webhook payload carries the same fields as plain JSON instead.
+user, regardless of access level, creates their own named
+`NotificationRule`s (`app.db.models.notification_rule`,
+`app/web/routes/notifications.py`), each scoped to either a `Company` or
+a single `Honeypot` they can already see, targeting their own account
+email (or a manually-entered override), or a webhook URL instead
+(`NotificationRule.delivery_channel`/`target_email`/`webhook_url` — see
+`app.services.webhook`, SSRF-guarded since any user can set one). The
+only admin-configurable part is the shared email wording
+(`AppSettings.notification_*_subject/body`, Settings → Notifications,
+superadmin-only) — one global template per event, not per rule; a webhook
+payload carries the same fields as plain JSON instead.
 
 Two trigger points, both fired from existing sweeps rather than a new
 one:
 - `app.tasks.jobs._poll_honeypot_canary_log` calls `notify_alert` once
-  per newly ingested, non-internal `HoneypotEvent`.
+  per newly ingested, non-internal `HoneypotEvent`, for every rule that
+  matches that honeypot (directly, or via its company).
 - `app.tasks.jobs._ping_all_honeypots` calls `notify_unavailable`/
-  `notify_recovered` for every subscription on a honeypot whose
-  reachability just changed (or is still down past that subscription's
-  own debounce).
+  `notify_recovered` for every (rule, honeypot) pair whose debounce
+  threshold (`NotificationRule.unavailable_after_minutes`/
+  `recovered_after_minutes`) has just been crossed — see
+  `app.db.models.notification_rule_state` for the state machine.
 
 Every failure here — SMTP/webhook not configured or reachable, a
 recipient with no email set, the relay itself refusing the connection —
-is caught and logged (both to the app log and, since the debcontrol-
-ported webhook/history round, to `NotificationLog`), never raised: a
-notification that fails to send must never break the background job that
-triggered it, the same "best-effort, never load-bearing" spirit
-`app.audit_syslog.forward_to_syslog` already has for the audit log's own
-external mirror.
+is caught and logged (both to the app log and to `NotificationLog`),
+never raised: a notification that fails to send must never break the
+background job that triggered it, the same "best-effort, never
+load-bearing" spirit `app.audit_syslog.forward_to_syslog` already has for
+the audit log's own external mirror.
 """
 
 from __future__ import annotations
@@ -56,9 +57,7 @@ from app.services.smtp import SmtpNotConfiguredError, send_email
 from app.services.webhook import UnsafeWebhookTargetError, send_webhook
 
 if TYPE_CHECKING:
-    from app.db.models.honeypot_notification_subscription import (
-        HoneypotNotificationSubscription,
-    )
+    from app.db.models.notification_rule import NotificationRule
 
 logger = logging.getLogger(__name__)
 
@@ -86,8 +85,9 @@ _DEFAULT_TEMPLATES: dict[str, dict[str, tuple[str, str]]] = {
         ),
         "recovered": (
             "Honeypot Shelf: {honeypot_name} is reachable again",
-            "{honeypot_name} responded to a reachability check again at {timestamp}, "
-            "after previously being unreachable.",
+            "{honeypot_name} has been reachable again for at least "
+            "{threshold_minutes} minute(s) as of {timestamp}, after previously "
+            "being unreachable.",
         ),
     },
     "cs": {
@@ -103,8 +103,8 @@ _DEFAULT_TEMPLATES: dict[str, dict[str, tuple[str, str]]] = {
         ),
         "recovered": (
             "Honeypot Shelf: {honeypot_name} je opět dostupný",
-            "{honeypot_name} znovu reagoval na kontrolu dostupnosti v {timestamp}, "
-            "poté co byl nedostupný.",
+            "{honeypot_name} je opět dostupný nejméně {threshold_minutes} minut, "
+            "stav k {timestamp}, poté co byl nedostupný.",
         ),
     },
 }
@@ -145,6 +145,17 @@ def render_template(
     return subject_tpl.format_map(safe_context), body_tpl.format_map(safe_context)
 
 
+def resolve_target(rule: NotificationRule) -> str | None:
+    """Where `rule` actually sends to: its own `webhook_url` for a webhook
+    rule; for an email rule, `target_email` (the rule's own override) if
+    set, else the owning user's own resolved address
+    (`User.notification_target_email`) — `None` if there's nowhere to
+    send yet. `rule.user` must already be loaded (selectinload)."""
+    if rule.delivery_channel == NotificationChannel.WEBHOOK:
+        return rule.webhook_url
+    return rule.target_email or rule.user.notification_target_email
+
+
 async def _log(
     db: AsyncSession | None,
     *,
@@ -158,9 +169,9 @@ async def _log(
     is_test: bool = False,
 ) -> None:
     """Best-effort `NotificationLog` write — `db` is optional (some call
-    sites, like `notify_alert`'s per-event loop, share one caller-managed
-    session across several sends) and a logging failure must never mask
-    the send outcome it's trying to record, so this never raises."""
+    sites share one caller-managed session across several sends) and a
+    logging failure must never mask the send outcome it's trying to
+    record, so this never raises."""
     if db is None:
         return
     try:
@@ -231,10 +242,41 @@ async def _deliver(
     )
 
 
+async def _dispatch_rule(
+    db_app_settings: AppSettings,
+    db: AsyncSession | None,
+    *,
+    rule: NotificationRule,
+    honeypot: Honeypot,
+    kind: NotificationKind,
+    subject: str,
+    body: str,
+    webhook_payload: dict[str, Any],
+) -> None:
+    channel = rule.delivery_channel
+    target = resolve_target(rule)
+    if not target:
+        return
+    if channel == NotificationChannel.EMAIL and not db_app_settings.smtp_enabled:
+        return
+    await _deliver(
+        db_app_settings,
+        db,
+        user_id=rule.user_id,
+        honeypot=honeypot,
+        kind=kind,
+        channel=channel,
+        target=target,
+        subject=subject,
+        body=body,
+        webhook_payload=webhook_payload,
+    )
+
+
 async def notify_alert(
     db_app_settings: AppSettings,
     *,
-    subscriptions: list[HoneypotNotificationSubscription],
+    rules: list[NotificationRule],
     honeypot: Honeypot,
     event_type: str,
     event_label: str,
@@ -242,10 +284,11 @@ async def notify_alert(
     occurred_at: datetime,
     db: AsyncSession | None = None,
 ) -> None:
-    """Notify every subscribed, addressable recipient about one newly
-    ingested OpenCanary event. `subscriptions` should already be filtered
-    to `notify_on_alert=True` for this honeypot — see
-    `app.tasks.jobs._poll_honeypot_canary_log`."""
+    """Notify every matching rule about one newly ingested OpenCanary
+    event. `rules` should already be filtered to `notify_on_alert=True`
+    and scoped to this honeypot (directly, or via its company) — see
+    `app.tasks.jobs._poll_honeypot_canary_log`. Each rule's own `user`
+    relationship must already be loaded (selectinload)."""
     email_context = {
         "honeypot_name": honeypot.name,
         "event_type": event_label,
@@ -262,36 +305,13 @@ async def notify_alert(
         "src_ip": src_ip,
         "occurred_at": occurred_at.isoformat(),
     }
-    for sub in subscriptions:
-        if sub.delivery_channel == NotificationChannel.WEBHOOK:
-            if not sub.webhook_url:
-                continue
-            await _deliver(
-                db_app_settings,
-                db,
-                user_id=sub.user_id,
-                honeypot=honeypot,
-                kind=NotificationKind.ALERT,
-                channel=NotificationChannel.WEBHOOK,
-                target=sub.webhook_url,
-                subject=subject,
-                body=body,
-                webhook_payload=webhook_payload,
-            )
-            continue
-        if not db_app_settings.smtp_enabled:
-            continue
-        target = sub.user.notification_target_email
-        if not target:
-            continue
-        await _deliver(
+    for rule in rules:
+        await _dispatch_rule(
             db_app_settings,
             db,
-            user_id=sub.user_id,
+            rule=rule,
             honeypot=honeypot,
             kind=NotificationKind.ALERT,
-            channel=NotificationChannel.EMAIL,
-            target=target,
             subject=subject,
             body=body,
             webhook_payload=webhook_payload,
@@ -301,14 +321,15 @@ async def notify_alert(
 async def notify_unavailable(
     db_app_settings: AppSettings,
     *,
-    subscription: HoneypotNotificationSubscription,
+    rule: NotificationRule,
     honeypot: Honeypot,
     threshold_minutes: int,
     db: AsyncSession | None = None,
 ) -> None:
-    """Notify one subscriber that `honeypot` has been unreachable for at
-    least `threshold_minutes` — see `app.tasks.jobs._ping_all_honeypots`
-    for the debounce/transition logic that decides when to call this."""
+    """Notify one rule's target that `honeypot` has been unreachable for
+    at least `threshold_minutes` — see
+    `app.tasks.jobs._evaluate_unavailability_notifications` for the
+    debounce/transition logic that decides when to call this."""
     email_context = {
         "honeypot_name": honeypot.name,
         "threshold_minutes": threshold_minutes,
@@ -322,10 +343,10 @@ async def notify_unavailable(
         "threshold_minutes": threshold_minutes,
         "timestamp": email_context["timestamp"],
     }
-    await _dispatch_subscription(
+    await _dispatch_rule(
         db_app_settings,
         db,
-        subscription=subscription,
+        rule=rule,
         honeypot=honeypot,
         kind=NotificationKind.UNAVAILABLE,
         subject=subject,
@@ -337,74 +358,35 @@ async def notify_unavailable(
 async def notify_recovered(
     db_app_settings: AppSettings,
     *,
-    subscription: HoneypotNotificationSubscription,
+    rule: NotificationRule,
     honeypot: Honeypot,
+    threshold_minutes: int,
     db: AsyncSession | None = None,
 ) -> None:
-    """Notify one subscriber that `honeypot` is reachable again, after
-    previously being unreachable — only called for a subscription that
-    actually received the matching `notify_unavailable` notification first
-    (see `app.tasks.jobs._ping_all_honeypots`)."""
-    email_context = {"honeypot_name": honeypot.name, "timestamp": datetime.now(UTC).isoformat()}
+    """Notify one rule's target that `honeypot` has been reachable again
+    for at least `threshold_minutes`, after previously being unreachable —
+    only called for a (rule, honeypot) pair that actually had a matching
+    `notify_unavailable` notification sent first (see
+    `app.tasks.jobs._evaluate_unavailability_notifications`)."""
+    email_context = {
+        "honeypot_name": honeypot.name,
+        "threshold_minutes": threshold_minutes,
+        "timestamp": datetime.now(UTC).isoformat(),
+    }
     subject, body = render_template("recovered", db_app_settings, email_context)
     webhook_payload = {
         "kind": "recovered",
         "honeypot_id": str(honeypot.id),
         "honeypot_name": honeypot.name,
+        "threshold_minutes": threshold_minutes,
         "timestamp": email_context["timestamp"],
     }
-    await _dispatch_subscription(
+    await _dispatch_rule(
         db_app_settings,
         db,
-        subscription=subscription,
+        rule=rule,
         honeypot=honeypot,
         kind=NotificationKind.RECOVERED,
-        subject=subject,
-        body=body,
-        webhook_payload=webhook_payload,
-    )
-
-
-async def _dispatch_subscription(
-    db_app_settings: AppSettings,
-    db: AsyncSession | None,
-    *,
-    subscription: HoneypotNotificationSubscription,
-    honeypot: Honeypot,
-    kind: NotificationKind,
-    subject: str,
-    body: str,
-    webhook_payload: dict[str, Any],
-) -> None:
-    if subscription.delivery_channel == NotificationChannel.WEBHOOK:
-        if not subscription.webhook_url:
-            return
-        await _deliver(
-            db_app_settings,
-            db,
-            user_id=subscription.user_id,
-            honeypot=honeypot,
-            kind=kind,
-            channel=NotificationChannel.WEBHOOK,
-            target=subscription.webhook_url,
-            subject=subject,
-            body=body,
-            webhook_payload=webhook_payload,
-        )
-        return
-    if not db_app_settings.smtp_enabled:
-        return
-    target = subscription.user.notification_target_email
-    if not target:
-        return
-    await _deliver(
-        db_app_settings,
-        db,
-        user_id=subscription.user_id,
-        honeypot=honeypot,
-        kind=kind,
-        channel=NotificationChannel.EMAIL,
-        target=target,
         subject=subject,
         body=body,
         webhook_payload=webhook_payload,
@@ -421,14 +403,14 @@ async def send_test_notification(
     target: str,
 ) -> str | None:
     """Fire one synthetic "alert" notification through `channel` straight
-    to `target`, bypassing any subscription/recipient list — the "Send
-    test" button on the Notifications page. Returns `None` on success, or
-    a short error string on failure (also always logged to
-    `NotificationLog` with `is_test=True`, same as a real send). Unlike a
-    real alert, this ignores `AppSettings.smtp_enabled` for an email
-    target too — if SMTP isn't configured at all, `send_email` itself
-    raises `SmtpNotConfiguredError`, which is exactly the useful "no, it
-    isn't set up" result this button exists to surface."""
+    to `target`, bypassing rule matching entirely — the "Send test"
+    button on a rule's own row. Returns `None` on success, or a short
+    error string on failure (also always logged to `NotificationLog` with
+    `is_test=True`, same as a real send). Unlike a real alert, this
+    ignores `AppSettings.smtp_enabled` for an email target too — if SMTP
+    isn't configured at all, `send_email` itself raises
+    `SmtpNotConfiguredError`, which is exactly the useful "no, it isn't
+    set up" result this button exists to surface."""
     context = {
         "honeypot_name": honeypot.name,
         "event_type": "test",
@@ -478,5 +460,6 @@ __all__ = [
     "notify_recovered",
     "notify_unavailable",
     "render_template",
+    "resolve_target",
     "send_test_notification",
 ]

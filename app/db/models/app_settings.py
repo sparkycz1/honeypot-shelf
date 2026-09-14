@@ -302,8 +302,9 @@ class AppSettings(Base):
     # substituted via `str.format_map` (never a template engine — an
     # admin-edited body can't execute code or reach outside its own
     # string), documented in the Settings UI itself. Who actually receives
-    # one of these emails, and for which honeypot, is entirely per-user
-    # self-service — see `HoneypotNotificationSubscription`. ---
+    # one of these, for which company/honeypot, and on which channel is
+    # entirely self-service — see `app.db.models.notification_rule
+    # .NotificationRule`. ---
     notification_alert_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
     notification_alert_body: Mapped[str | None] = mapped_column(Text, nullable=True)
     notification_unavailable_subject: Mapped[str | None] = mapped_column(

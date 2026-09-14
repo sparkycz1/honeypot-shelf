@@ -1,7 +1,7 @@
-"""`app.tasks.jobs._poll_honeypot_canary_log` — the alert-notification hook
-added alongside `HoneypotNotificationSubscription`: every newly ingested,
-non-internal `HoneypotEvent` emails every subscriber with
-`notify_on_alert=True` for that honeypot."""
+"""`app.tasks.jobs._poll_honeypot_canary_log` — the alert-notification hook:
+every newly ingested, non-internal `HoneypotEvent` notifies every
+`NotificationRule` with `notify_on_alert=True` that matches that honeypot
+(directly, or via its company)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import pytest
 from app.core.app_settings import get_or_create_app_settings
 from app.db.models.company import Company
 from app.db.models.honeypot import Honeypot
-from app.db.models.honeypot_notification_subscription import HoneypotNotificationSubscription
+from app.db.models.notification_rule import NotificationRule, NotificationScope
 from app.db.models.user import AuthProvider, User
 from app.ssh.canary_activity import LogPollResult
 from app.tasks.jobs import _poll_honeypot_canary_log
@@ -45,15 +45,19 @@ async def _setup(db_session_factory, *, smtp_enabled: bool = True):
         await db.flush()
 
         db.add(
-            HoneypotNotificationSubscription(
+            NotificationRule(
                 user_id=subscribed_user.id,
+                name="Alerts",
+                scope=NotificationScope.HONEYPOT,
                 honeypot_id=honeypot.id,
                 notify_on_alert=True,
             )
         )
         db.add(
-            HoneypotNotificationSubscription(
+            NotificationRule(
                 user_id=unsubscribed_user.id,
+                name="No alerts",
+                scope=NotificationScope.HONEYPOT,
                 honeypot_id=honeypot.id,
                 notify_on_alert=False,
             )
@@ -88,8 +92,8 @@ async def test_new_alert_emails_only_subscribed_active_recipients(
 
     sent_to: list[str] = []
 
-    async def fake_notify_alert(app_settings, *, subscriptions, honeypot, **kwargs):
-        sent_to.extend(sub.user.username for sub in subscriptions)
+    async def fake_notify_alert(app_settings, *, rules, honeypot, **kwargs):
+        sent_to.extend(rule.user.username for rule in rules)
 
     monkeypatch.setattr("app.tasks.jobs.notify_alert", fake_notify_alert)
 
@@ -100,12 +104,12 @@ async def test_new_alert_emails_only_subscribed_active_recipients(
 
 
 async def test_no_email_sent_when_smtp_disabled(db_session_factory, monkeypatch):
-    """Unlike a webhook subscription (which fires regardless — see
-    `app.services.notifications.notify_alert`), an email-channel
-    subscription must not actually send when SMTP is off. `notify_alert`
-    itself is still called (and still queries subscriptions) — it's the
-    per-subscription dispatch inside it that skips the send — so this
-    patches the real send function rather than `notify_alert` itself."""
+    """Unlike a webhook rule (which fires regardless — see
+    `app.services.notifications.notify_alert`), an email-channel rule
+    must not actually send when SMTP is off. `notify_alert` itself is
+    still called (and still queries matching rules) — it's the
+    per-rule dispatch inside it that skips the send — so this patches the
+    real send function rather than `notify_alert` itself."""
     monkeypatch.setattr("app.db.session.AsyncSessionLocal", db_session_factory)
     honeypot_id = await _setup(db_session_factory, smtp_enabled=False)
 
@@ -132,9 +136,9 @@ async def test_no_email_sent_when_smtp_disabled(db_session_factory, monkeypatch)
     assert called is False
 
 
-async def test_no_new_events_means_no_subscription_query_needed(db_session_factory, monkeypatch):
+async def test_no_new_events_means_no_rule_query_needed(db_session_factory, monkeypatch):
     """A poll finding zero new alert-worthy events shouldn't even attempt to
-    notify anyone — a cheap early-out, not just "zero recipients found"."""
+    notify anyone — a cheap early-out, not just "zero matching rules"."""
     monkeypatch.setattr("app.db.session.AsyncSessionLocal", db_session_factory)
     honeypot_id = await _setup(db_session_factory)
 
@@ -156,3 +160,59 @@ async def test_no_new_events_means_no_subscription_query_needed(db_session_facto
     await _poll_honeypot_canary_log(str(honeypot_id))
 
     assert called is False
+
+
+async def test_company_scoped_rule_matches_a_honeypot_in_that_company(
+    db_session_factory, monkeypatch
+):
+    """A rule scoped to the whole company fires for any honeypot in it —
+    the point of company scope over a per-honeypot subscription."""
+    monkeypatch.setattr("app.db.session.AsyncSessionLocal", db_session_factory)
+    company = await create_company(db_session_factory)
+    async with db_session_factory() as db:
+        honeypot = Honeypot(
+            companies=[await db.get(Company, company.id)],
+            name="acme-honey2",
+            host_key_fingerprint="SHA256:fakefingerprint",
+        )
+        db.add(honeypot)
+        user = User(
+            username="company-watcher", auth_provider=AuthProvider.LOCAL, is_active=True,
+            email="watcher@example.com",
+        )
+        db.add(user)
+        await db.flush()
+        db.add(
+            NotificationRule(
+                user_id=user.id,
+                name="Company watch",
+                scope=NotificationScope.COMPANY,
+                company_id=company.id,
+                notify_on_alert=True,
+            )
+        )
+        app_settings = await get_or_create_app_settings(db)
+        app_settings.smtp_enabled = True
+        app_settings.smtp_host = "smtp.example.com"
+        await db.commit()
+        honeypot_id = honeypot.id
+
+    fake_result = LogPollResult(
+        events=[{"logtype": 4002, "local_time": "2026-01-01 12:00:00.000000"}], new_offset=1
+    )
+
+    async def fake_poll_log(honeypot, secret, timeout_seconds):
+        return fake_result
+
+    monkeypatch.setattr("app.tasks.jobs.poll_log", fake_poll_log)
+
+    sent_to: list[str] = []
+
+    async def fake_notify_alert(app_settings, *, rules, honeypot, **kwargs):
+        sent_to.extend(rule.user.username for rule in rules)
+
+    monkeypatch.setattr("app.tasks.jobs.notify_alert", fake_notify_alert)
+
+    await _poll_honeypot_canary_log(str(honeypot_id))
+
+    assert sent_to == ["company-watcher"]

@@ -77,12 +77,6 @@
     </form>
   </section>
 
-  <section class="panel">
-    <h2>{{ t(request, "account.notifications.heading") }}</h2>
-    <p class="hint">{{ t(request, "account.notifications.hint") }}</p>
-    <a class="button button-secondary" href="/account/notifications">{{ t(request, "account.notifications.manage_button") }}</a>
-  </section>
-
   {% if user.auth_provider.value == 'local' %}
     <section class="panel">
       <h2>{{ t(request, "account.password.heading") }}</h2>

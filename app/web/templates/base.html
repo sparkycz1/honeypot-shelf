@@ -28,6 +28,7 @@
     <nav>
       <a href="/dashboard" {% if current_path == '/dashboard' %}class="active" aria-current="page"{% endif %}>{{ t(request, "nav.dashboard") }}</a>
       <a href="/honeypots" {% if current_path.startswith('/honeypots') %}class="active" aria-current="page"{% endif %}>{{ t(request, "nav.honeypots") }}</a>
+      <a href="/account/notifications" {% if current_path.startswith('/account/notifications') %}class="active" aria-current="page"{% endif %}>{{ t(request, "nav.notifications") }}</a>
       {% if current_user.can_write() %}
         <a href="/initialize" {% if current_path.startswith('/initialize') %}class="active" aria-current="page"{% endif %}>{{ t(request, "nav.initialize") }}</a>
       {% endif %}

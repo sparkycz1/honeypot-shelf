@@ -63,9 +63,7 @@ from app.db.pg_enum import pg_enum
 if TYPE_CHECKING:
     from app.db.models.api_token import ApiToken
     from app.db.models.company_membership import CompanyMembership
-    from app.db.models.honeypot_notification_subscription import (
-        HoneypotNotificationSubscription,
-    )
+    from app.db.models.notification_rule import NotificationRule
     from app.db.models.totp_recovery_code import TotpRecoveryCode
     from app.db.models.user_session import UserSession
     from app.db.models.webauthn_credential import WebAuthnCredential
@@ -191,7 +189,7 @@ class User(Base):
     api_tokens: Mapped[list[ApiToken]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
-    notification_subscriptions: Mapped[list[HoneypotNotificationSubscription]] = relationship(
+    notification_rules: Mapped[list[NotificationRule]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
 

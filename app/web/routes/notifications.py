@@ -1,9 +1,9 @@
-"""Notifications: self-service, per-user, per-honeypot email preferences —
-"email me on alerts", "email me when it goes unreachable." Deliberately
-open to **any** logged-in user regardless of access level (not gated
-behind `require_write`) — this only ever reads/writes that user's own
-subscriptions, scoped to honeypots they can already see
-(`app.auth.scope.honeypots_visible_to`), never anyone else's. See
+"""Notifications: named, self-service alert rules — "tell me about alerts
+on this company/honeypot", "tell me when it goes unreachable (and when
+it's back)". Deliberately open to **any** logged-in user regardless of
+access level (not gated behind `require_write`) — this only ever reads/
+writes that user's own rules, scoped to a company or honeypot they can
+already see (`app.auth.scope`), never anyone else's. See
 `app.services.notifications`'s module docstring for the full design and
 how this differs from debcontrol's own, much larger Notifications system.
 """
@@ -17,30 +17,36 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+from starlette.datastructures import FormData
 
 from app.audit import log_event
 from app.auth.dependencies import get_current_user
-from app.auth.scope import can_see_honeypot, honeypots_visible_to
+from app.auth.scope import can_see_honeypot, companies_visible_to, honeypots_visible_to
 from app.core.app_settings import get_or_create_app_settings
 from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie, verify_csrf
+from app.db.models.company import Company
 from app.db.models.honeypot import Honeypot
-from app.db.models.honeypot_notification_subscription import HoneypotNotificationSubscription
 from app.db.models.notification_log import NotificationChannel, NotificationLog
+from app.db.models.notification_rule import (
+    MAX_DEBOUNCE_MINUTES,
+    MIN_DEBOUNCE_MINUTES,
+    NotificationRule,
+    NotificationScope,
+)
 from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.user import looks_like_email
-from app.services.notifications import send_test_notification
+from app.services.notifications import default_template, resolve_target, send_test_notification
 from app.services.webhook import UnsafeWebhookTargetError, validate_webhook_url
 from app.web.templating import templates
 
 router = APIRouter(prefix="/account/notifications")
 
-# Sane bounds for the per-subscription debounce field — generous on both
-# ends (a minute is a legitimate "tell me the second it drops" choice for
-# a critical honeypot; a week is a legitimate "only bug me if it's truly
-# abandoned" choice for a flaky one).
-_MIN_UNAVAILABLE_AFTER_MINUTES = 1
-_MAX_UNAVAILABLE_AFTER_MINUTES = 10_080  # 7 days
+
+async def _visible_companies(db: AsyncSession, user: User) -> list[Company]:
+    result = await db.execute(companies_visible_to(user).order_by(Company.name))
+    return list(result.scalars().all())
 
 
 async def _visible_honeypots(db: AsyncSession, user: User) -> list[Honeypot]:
@@ -48,19 +54,90 @@ async def _visible_honeypots(db: AsyncSession, user: User) -> list[Honeypot]:
     return list(result.scalars().all())
 
 
-async def _own_subscriptions(
-    db: AsyncSession, user_id: uuid.UUID
-) -> dict[uuid.UUID, HoneypotNotificationSubscription]:
+async def _own_rules(db: AsyncSession, user_id: uuid.UUID) -> list[NotificationRule]:
     result = await db.execute(
-        select(HoneypotNotificationSubscription).where(
-            HoneypotNotificationSubscription.user_id == user_id
-        )
+        select(NotificationRule)
+        .options(selectinload(NotificationRule.company), selectinload(NotificationRule.honeypot))
+        .where(NotificationRule.user_id == user_id)
+        .order_by(NotificationRule.name)
     )
-    return {sub.honeypot_id: sub for sub in result.scalars().all()}
+    return list(result.scalars().all())
+
+
+async def _get_own_rule(
+    db: AsyncSession, user: User, rule_id: uuid.UUID, *, with_user: bool = False
+) -> NotificationRule:
+    """A rule owned by `user`, or a 404 — never leaks whether a rule with
+    this id exists under a different owner (this feature has no admin
+    override at all — see the module docstring). `with_user=True` eager-
+    loads `rule.user` (needed by `resolve_target`) — skipped by default
+    since most callers already know it's `user`."""
+    options = [selectinload(NotificationRule.user)] if with_user else []
+    rule = await db.get(NotificationRule, rule_id, options=options)
+    if rule is None or rule.user_id != user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    return rule
+
+
+async def _representative_honeypot(db: AsyncSession, rule: NotificationRule) -> Honeypot | None:
+    """A real `Honeypot` to render a "Send test" preview against —
+    `rule.honeypot` itself for a honeypot-scoped rule, or the
+    alphabetically-first honeypot currently in `rule.company_id` for a
+    company-scoped one (`None` if that company has no honeypot yet)."""
+    if rule.scope == NotificationScope.HONEYPOT:
+        return await db.get(Honeypot, rule.honeypot_id)
+    result = await db.execute(
+        select(Honeypot)
+        .where(Honeypot.companies.any(Company.id == rule.company_id))
+        .order_by(Honeypot.name)
+        .limit(1)
+    )
+    return result.scalars().first()
+
+
+async def _render_list(
+    request: Request,
+    db: AsyncSession,
+    user: User,
+    *,
+    saved: bool = False,
+    test_sent: bool = False,
+    test_error: str | None = None,
+    errors: list[str] | None = None,
+) -> Response:
+    rules = await _own_rules(db, user.id)
+    companies = await _visible_companies(db, user)
+    honeypots = await _visible_honeypots(db, user)
+    csrf_token, new_cookie = get_or_create_csrf_token(request)
+    templates_preview = {
+        kind: default_template(kind, request.state.locale.code)
+        for kind in ("alert", "unavailable", "recovered")
+    }
+    response = templates.TemplateResponse(
+        request,
+        "notifications/list.html",
+        {
+            "user": user,
+            "rules": rules,
+            "companies": companies,
+            "honeypots": honeypots,
+            "templates_preview": templates_preview,
+            "min_minutes": MIN_DEBOUNCE_MINUTES,
+            "max_minutes": MAX_DEBOUNCE_MINUTES,
+            "csrf_token": csrf_token,
+            "saved": saved,
+            "test_sent": test_sent,
+            "test_error": test_error,
+            "errors": errors or [],
+        },
+    )
+    if new_cookie:
+        set_csrf_cookie(response, new_cookie)
+    return response
 
 
 @router.get("")
-async def list_notification_subscriptions(
+async def list_notification_rules(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -70,28 +147,14 @@ async def list_notification_subscriptions(
 ) -> Response:
     user = await db.get(User, current_user.id)
     assert user is not None
-    honeypots = await _visible_honeypots(db, user)
-    subscriptions = await _own_subscriptions(db, user.id)
-
-    csrf_token, new_cookie = get_or_create_csrf_token(request)
-    response = templates.TemplateResponse(
+    return await _render_list(
         request,
-        "notifications/list.html",
-        {
-            "user": user,
-            "honeypots": honeypots,
-            "subscriptions": subscriptions,
-            "min_minutes": _MIN_UNAVAILABLE_AFTER_MINUTES,
-            "max_minutes": _MAX_UNAVAILABLE_AFTER_MINUTES,
-            "csrf_token": csrf_token,
-            "saved": bool(saved),
-            "test_sent": bool(test_sent),
-            "test_error": test_error or None,
-        },
+        db,
+        user,
+        saved=bool(saved),
+        test_sent=bool(test_sent),
+        test_error=test_error or None,
     )
-    if new_cookie:
-        set_csrf_cookie(response, new_cookie)
-    return response
 
 
 @router.post("/email", dependencies=[Depends(verify_csrf)])
@@ -103,26 +166,14 @@ async def update_notification_email(
     form = await request.form()
     notification_email = str(form.get("notification_email") or "").strip()
     if notification_email and not looks_like_email(notification_email):
-        honeypots = await _visible_honeypots(db, current_user)
-        subscriptions = await _own_subscriptions(db, current_user.id)
-        csrf_token, new_cookie = get_or_create_csrf_token(request)
-        response = templates.TemplateResponse(
+        user = await db.get(User, current_user.id)
+        assert user is not None
+        return await _render_list(
             request,
-            "notifications/list.html",
-            {
-                "user": current_user,
-                "honeypots": honeypots,
-                "subscriptions": subscriptions,
-                "min_minutes": _MIN_UNAVAILABLE_AFTER_MINUTES,
-                "max_minutes": _MAX_UNAVAILABLE_AFTER_MINUTES,
-                "csrf_token": csrf_token,
-                "saved": False,
-                "errors": ["That doesn't look like a valid email address."],
-            },
+            db,
+            user,
+            errors=["That doesn't look like a valid email address."],
         )
-        if new_cookie:
-            set_csrf_cookie(response, new_cookie)
-        return response
 
     user = await db.get(User, current_user.id)
     assert user is not None
@@ -142,169 +193,246 @@ async def update_notification_email(
     )
 
 
+def _parse_rule_form(form: FormData) -> tuple[dict[str, object], list[str]]:
+    """Shared parse/validate for both create and edit — returns a dict of
+    column values ready to assign onto a `NotificationRule`, plus a list
+    of human-readable errors (empty means valid)."""
+    errors: list[str] = []
+    get = form.get
+
+    name = str(get("name") or "").strip()
+    if not name:
+        errors.append("Name is required.")
+
+    raw_scope = str(get("scope") or "").strip().lower()
+    scope = NotificationScope.COMPANY if raw_scope == "company" else NotificationScope.HONEYPOT
+    company_id_raw = str(get("company_id") or "").strip()
+    honeypot_id_raw = str(get("honeypot_id") or "").strip()
+    company_id: uuid.UUID | None = None
+    honeypot_id: uuid.UUID | None = None
+    if scope == NotificationScope.COMPANY:
+        if not company_id_raw:
+            errors.append("Choose a company.")
+        else:
+            try:
+                company_id = uuid.UUID(company_id_raw)
+            except ValueError:
+                errors.append("Invalid company.")
+    else:
+        if not honeypot_id_raw:
+            errors.append("Choose a honeypot.")
+        else:
+            try:
+                honeypot_id = uuid.UUID(honeypot_id_raw)
+            except ValueError:
+                errors.append("Invalid honeypot.")
+
+    raw_channel = str(get("delivery_channel") or "").strip().lower()
+    channel = (
+        NotificationChannel.WEBHOOK if raw_channel == "webhook" else NotificationChannel.EMAIL
+    )
+    target_email = str(get("target_email") or "").strip() or None
+    webhook_url = str(get("webhook_url") or "").strip() or None
+    if channel == NotificationChannel.EMAIL:
+        if target_email and not looks_like_email(target_email):
+            errors.append("That doesn't look like a valid email address.")
+        webhook_url = None
+    else:
+        if not webhook_url:
+            errors.append("A webhook URL is required when the channel is webhook.")
+        else:
+            try:
+                validate_webhook_url(webhook_url)
+            except UnsafeWebhookTargetError as exc:
+                errors.append(str(exc))
+        target_email = None
+
+    notify_on_alert = get("notify_on_alert") == "on"
+    notify_on_unavailable = get("notify_on_unavailable") == "on"
+    notify_on_recovered = get("notify_on_recovered") == "on"
+    if not (notify_on_alert or notify_on_unavailable or notify_on_recovered):
+        errors.append("Pick at least one event to notify on.")
+
+    def _minutes(field: str, default: int) -> int:
+        raw = str(get(field) or "").strip()
+        try:
+            value = int(raw) if raw else default
+        except ValueError:
+            value = default
+        return max(MIN_DEBOUNCE_MINUTES, min(value, MAX_DEBOUNCE_MINUTES))
+
+    unavailable_after_minutes = _minutes("unavailable_after_minutes", 10)
+    recovered_after_minutes = _minutes("recovered_after_minutes", 5)
+
+    values: dict[str, object] = {
+        "name": name,
+        "scope": scope,
+        "company_id": company_id,
+        "honeypot_id": honeypot_id,
+        "delivery_channel": channel,
+        "target_email": target_email,
+        "webhook_url": webhook_url,
+        "notify_on_alert": notify_on_alert,
+        "notify_on_unavailable": notify_on_unavailable,
+        "unavailable_after_minutes": unavailable_after_minutes,
+        "notify_on_recovered": notify_on_recovered,
+        "recovered_after_minutes": recovered_after_minutes,
+    }
+    return values, errors
+
+
+async def _authorize_scope(db: AsyncSession, user: User, values: dict[str, object]) -> list[str]:
+    """Re-checks the submitted company/honeypot against `user`'s own
+    scope server-side — the picker options in the form are already
+    filtered to what they can see, but a client can submit any id, so this
+    is the actual enforcement, not just UX."""
+    errors: list[str] = []
+    scope_company_id = values.get("company_id")
+    if scope_company_id is not None:
+        assert isinstance(scope_company_id, uuid.UUID)
+        if not (user.is_superadmin or scope_company_id in user.company_ids()):
+            errors.append("You don't have access to that company.")
+    scope_honeypot_id = values.get("honeypot_id")
+    if scope_honeypot_id is not None:
+        assert isinstance(scope_honeypot_id, uuid.UUID)
+        result = await db.execute(
+            select(Honeypot)
+            .options(selectinload(Honeypot.companies))
+            .where(Honeypot.id == scope_honeypot_id)
+        )
+        honeypot = result.scalar_one_or_none()
+        if honeypot is None or not can_see_honeypot(user, honeypot):
+            errors.append("You don't have access to that honeypot.")
+    return errors
+
+
 @router.post("", dependencies=[Depends(verify_csrf)])
-async def update_notification_subscriptions(
+async def create_notification_rule(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Response:
-    """Saves every subscription row at once from the single page's form —
-    one `alert_{id}`/`unavailable_{id}`/`minutes_{id}` triplet of fields
-    per honeypot the user can see. A honeypot with neither box checked
-    gets its row deleted rather than kept around as an all-`False` no-op,
-    so this table only ever holds subscriptions someone actually wants."""
     user = await db.get(User, current_user.id)
     assert user is not None
-    honeypots = await _visible_honeypots(db, user)
-    existing = await _own_subscriptions(db, user.id)
-
     form = await request.form()
-    changed_count = 0
-    errors: list[str] = []
-    for honeypot in honeypots:
-        key = str(honeypot.id)
-        wants_alert = form.get(f"alert_{key}") == "on"
-        wants_unavailable = form.get(f"unavailable_{key}") == "on"
-        raw_minutes = str(form.get(f"minutes_{key}") or "").strip()
-        try:
-            minutes = int(raw_minutes) if raw_minutes else 10
-        except ValueError:
-            minutes = 10
-        minutes = max(_MIN_UNAVAILABLE_AFTER_MINUTES, min(minutes, _MAX_UNAVAILABLE_AFTER_MINUTES))
-
-        sub = existing.get(honeypot.id)
-        if not wants_alert and not wants_unavailable:
-            if sub is not None:
-                await db.delete(sub)
-                changed_count += 1
-            continue
-
-        raw_channel = str(form.get(f"channel_{key}") or "email").strip().lower()
-        channel = (
-            NotificationChannel.WEBHOOK
-            if raw_channel == "webhook"
-            else NotificationChannel.EMAIL
-        )
-        webhook_url = str(form.get(f"webhook_{key}") or "").strip() or None
-        if channel == NotificationChannel.WEBHOOK:
-            if not webhook_url:
-                errors.append(
-                    f'"{honeypot.name}": a webhook URL is required when the channel is webhook.'
-                )
-                continue
-            try:
-                validate_webhook_url(webhook_url)
-            except UnsafeWebhookTargetError as exc:
-                errors.append(f'"{honeypot.name}": {exc}')
-                continue
-
-        if sub is None:
-            sub = HoneypotNotificationSubscription(user_id=user.id, honeypot_id=honeypot.id)
-            db.add(sub)
-        sub.notify_on_alert = wants_alert
-        sub.notify_on_unavailable = wants_unavailable
-        sub.unavailable_after_minutes = minutes
-        sub.delivery_channel = channel
-        sub.webhook_url = webhook_url
-        if not wants_unavailable:
-            sub.unavailable_notified_at = None
-        changed_count += 1
+    values, errors = _parse_rule_form(form)
+    if not errors:
+        errors = await _authorize_scope(db, user, values)
 
     if errors:
-        # Deliberately no explicit `db.rollback()` here: nothing has been
-        # committed yet, and rolling back would expire every attribute on
-        # `user` (SQLAlchemy's default post-rollback behavior) — the
-        # template's own `user.email`/`user.notification_target_email`
-        # access would then try to lazy-load outside an async-safe
-        # context and raise `MissingGreenlet`. The request's own `db`
-        # session is discarded uncommitted at teardown regardless (see
-        # `app.db.session.get_db`).
-        csrf_token, new_cookie = get_or_create_csrf_token(request)
-        response = templates.TemplateResponse(
-            request,
-            "notifications/list.html",
-            {
-                "user": user,
-                "honeypots": honeypots,
-                "subscriptions": existing,
-                "min_minutes": _MIN_UNAVAILABLE_AFTER_MINUTES,
-                "max_minutes": _MAX_UNAVAILABLE_AFTER_MINUTES,
-                "csrf_token": csrf_token,
-                "saved": False,
-                "errors": errors,
-            },
-        )
-        if new_cookie:
-            set_csrf_cookie(response, new_cookie)
-        return response
+        return await _render_list(request, db, user, errors=errors)
 
+    rule = NotificationRule(user_id=user.id, **values)
+    db.add(rule)
     await db.commit()
-    if changed_count:
-        await log_event(
-            db,
-            request=request,
-            action="user.notifications.subscriptions.update",
-            summary=f'"{user.username}" updated their honeypot notification subscriptions',
-            target_type="user",
-            target_id=user.id,
-            target_label=user.username,
-        )
+    await log_event(
+        db,
+        request=request,
+        action="user.notifications.rule.create",
+        summary=f'"{user.username}" created notification rule "{rule.name}"',
+        target_type="notification_rule",
+        target_id=rule.id,
+        target_label=rule.name,
+    )
     return RedirectResponse(
         url="/account/notifications?saved=1", status_code=status.HTTP_303_SEE_OTHER
     )
 
 
-@router.post("/test/{honeypot_id}", dependencies=[Depends(verify_csrf)])
+@router.post("/{rule_id}/edit", dependencies=[Depends(verify_csrf)])
+async def update_notification_rule(
+    request: Request,
+    rule_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    user = await db.get(User, current_user.id)
+    assert user is not None
+    rule = await _get_own_rule(db, user, rule_id)
+    form = await request.form()
+    values, errors = _parse_rule_form(form)
+    if not errors:
+        errors = await _authorize_scope(db, user, values)
+
+    if errors:
+        return await _render_list(request, db, user, errors=errors)
+
+    for key, value in values.items():
+        setattr(rule, key, value)
+    await db.commit()
+    await log_event(
+        db,
+        request=request,
+        action="user.notifications.rule.update",
+        summary=f'"{user.username}" updated notification rule "{rule.name}"',
+        target_type="notification_rule",
+        target_id=rule.id,
+        target_label=rule.name,
+    )
+    return RedirectResponse(
+        url="/account/notifications?saved=1", status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
+@router.post("/{rule_id}/delete", dependencies=[Depends(verify_csrf)])
+async def delete_notification_rule(
+    request: Request,
+    rule_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    user = await db.get(User, current_user.id)
+    assert user is not None
+    rule = await _get_own_rule(db, user, rule_id)
+    name = rule.name
+    await db.delete(rule)
+    await db.commit()
+    await log_event(
+        db,
+        request=request,
+        action="user.notifications.rule.delete",
+        summary=f'"{user.username}" deleted notification rule "{name}"',
+        target_type="notification_rule",
+        target_id=rule_id,
+        target_label=name,
+    )
+    return RedirectResponse(
+        url="/account/notifications?saved=1", status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
+@router.post("/{rule_id}/test", dependencies=[Depends(verify_csrf)])
 async def send_test(
     request: Request,
-    honeypot_id: uuid.UUID,
+    rule_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Response:
     """"Send test" button — fires one synthetic alert notification through
-    the channel/target the submitted form's own row for this honeypot
-    currently shows (so it tests what's about to be saved, unsaved changes
-    included), falling back to the user's existing saved subscription for
-    this honeypot, and finally to their plain resolved email if neither
-    applies. Out-of-scope (a honeypot this user can't see, or that no
-    longer exists) 404s rather than leaking existence, same as every other
-    honeypot-scoped route — see `app.auth.scope`'s module docstring."""
+    this rule's own current channel/target, against a real honeypot in its
+    scope (see `_representative_honeypot`)."""
     user = await db.get(User, current_user.id)
     assert user is not None
-    honeypot = await db.get(Honeypot, honeypot_id)
-    if honeypot is None or not can_see_honeypot(user, honeypot):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    rule = await _get_own_rule(db, user, rule_id, with_user=True)
 
-    form = await request.form()
-    key = str(honeypot_id)
-    raw_channel = str(form.get(f"channel_{key}") or "").strip().lower()
-    webhook_url = str(form.get(f"webhook_{key}") or "").strip() or None
-    existing = (await _own_subscriptions(db, user.id)).get(honeypot_id)
-
-    channel: NotificationChannel
-    target: str | None
-    if raw_channel == "webhook" and webhook_url:
-        channel, target = NotificationChannel.WEBHOOK, webhook_url
-    elif raw_channel == "email":
-        channel, target = NotificationChannel.EMAIL, user.notification_target_email
-    elif existing is not None:
-        channel = existing.delivery_channel
-        target = (
-            existing.webhook_url
-            if channel == NotificationChannel.WEBHOOK
-            else user.notification_target_email
-        )
-    else:
-        channel, target = NotificationChannel.EMAIL, user.notification_target_email
-
+    honeypot = await _representative_honeypot(db, rule)
     error: str | None
-    if not target:
-        error = "No email address or webhook URL is set for this honeypot."
+    if honeypot is None:
+        error = "That company has no honeypot yet to send a test notification for."
     else:
-        app_settings = await get_or_create_app_settings(db)
-        error = await send_test_notification(
-            db, app_settings, user=user, honeypot=honeypot, channel=channel, target=target
-        )
+        target = resolve_target(rule)
+        if not target:
+            error = "No email address or webhook URL is set for this rule."
+        else:
+            app_settings = await get_or_create_app_settings(db)
+            error = await send_test_notification(
+                db,
+                app_settings,
+                user=user,
+                honeypot=honeypot,
+                channel=rule.delivery_channel,
+                target=target,
+            )
 
     query = "test_sent=1" if not error else f"test_error={quote(error, safe='')}"
     return RedirectResponse(

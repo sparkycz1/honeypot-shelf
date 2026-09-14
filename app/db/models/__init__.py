@@ -13,7 +13,6 @@ from app.db.models.honeypot import Honeypot
 from app.db.models.honeypot_company import honeypot_companies
 from app.db.models.honeypot_event import HoneypotEvent
 from app.db.models.honeypot_monitoring_sample import HoneypotMonitoringSample
-from app.db.models.honeypot_notification_subscription import HoneypotNotificationSubscription
 from app.db.models.honeypot_package import HoneypotPackage
 from app.db.models.honeypot_reachability_sample import HoneypotReachabilitySample
 from app.db.models.honeypot_service import HoneypotService
@@ -21,6 +20,8 @@ from app.db.models.honeypot_tag import Tag
 from app.db.models.honeypot_update_run import HoneypotUpdateRun
 from app.db.models.initialize_run import InitializeRun
 from app.db.models.notification_log import NotificationChannel, NotificationKind, NotificationLog
+from app.db.models.notification_rule import NotificationRule, NotificationScope
+from app.db.models.notification_rule_state import NotificationRuleState
 from app.db.models.pending_honeypot import PendingHoneypot
 from app.db.models.saved_honeypot_view import SavedHoneypotView
 from app.db.models.scheduled_task import ScheduledTask
@@ -43,7 +44,6 @@ __all__ = [
     "HoneypotEvent",
     "honeypot_companies",
     "HoneypotMonitoringSample",
-    "HoneypotNotificationSubscription",
     "HoneypotPackage",
     "HoneypotReachabilitySample",
     "HoneypotService",
@@ -52,6 +52,9 @@ __all__ = [
     "NotificationChannel",
     "NotificationKind",
     "NotificationLog",
+    "NotificationRule",
+    "NotificationRuleState",
+    "NotificationScope",
     "PendingHoneypot",
     "SSHIdentity",
     "SavedHoneypotView",

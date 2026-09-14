@@ -14,9 +14,11 @@ Management and monitoring overview for a fleet of
 [OpenCanary](https://github.com/thinkst/opencanary) honeypots deployed at
 customer sites, across **multiple companies**, each with their own scoped
 users. Every page requires a login; a user either is a superadmin (every
-company) or belongs to exactly one company with **read** or **read +
-write** access — nothing in between. Accounts can authenticate locally,
-against LDAP, or via OIDC SSO, with optional TOTP/passkey two-factor.
+company) or holds zero or more per-company memberships, each its own
+**read** or **read + write** access level — the same person can be
+`read + write` at one company and `read`-only at another. Accounts can
+authenticate locally, against LDAP, or via OIDC SSO, with optional
+TOTP/passkey two-factor.
 
 Built on the same stack, project layout, and auth system as
 [debcontrol](https://github.com/sparkycz1/debcontrol) (a sister project for
