@@ -101,6 +101,12 @@ _OIDC_ERROR_MESSAGES = {
         "No enabled HoneyHive account matches your OIDC identity. "
         "Ask an administrator to check the account is set up for OIDC login."
     ),
+    "discovery_failed": (
+        "Could not reach the OIDC provider's discovery document. Ask an administrator to check "
+        "Settings → Integrations: the Issuer URL should be the provider's plain issuer "
+        "(e.g. https://idp.example.com/realms/yours), not the full "
+        "/.well-known/openid-configuration URL — HoneyHive appends that suffix itself."
+    ),
 }
 
 
@@ -725,6 +731,23 @@ async def oidc_login(request: Request, db: AsyncSession = Depends(get_db)) -> Re
     except OidcNotConfiguredError:
         return RedirectResponse(
             url="/login?oidc_error=not_configured", status_code=status.HTTP_303_SEE_OTHER
+        )
+    except Exception:
+        # Fetching/parsing the provider's discovery document (issuer URL +
+        # /.well-known/openid-configuration) failed - a misconfigured
+        # Issuer URL (the most common cause - see the "discovery_failed"
+        # message below), DNS/TLS failure, or the provider itself is down.
+        # Same "OIDC didn't work" signal as a failed callback below, never
+        # a 500 - this used to be an uncaught httpx.HTTPStatusError here.
+        await log_event(
+            db,
+            request=request,
+            action="user.login",
+            summary="OIDC login could not start (provider discovery failed)",
+            outcome=AuditOutcome.DENIED,
+        )
+        return RedirectResponse(
+            url="/login?oidc_error=discovery_failed", status_code=status.HTTP_303_SEE_OTHER
         )
 
 

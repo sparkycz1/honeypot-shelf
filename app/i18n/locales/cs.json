@@ -1014,6 +1014,8 @@
     "settings.integrations.oidc.issuer_url": "URL vydavatele (issuer)",
     "settings.integrations.oidc.issuer_url_hint1": "Musí poskytovat",
     "settings.integrations.oidc.issuer_url_hint2": "(standard pro každého poskytovatele OIDC — Keycloak, Authentik, Entra ID, Okta, Google, ...).",
+    "settings.integrations.oidc.issuer_url_hint3": "HoneyHive si tuhle koncovku připojí sama — nevkládejte sem celou discovery URL, jen samotný issuer (např. URL Keycloak realmu samotného, ne jeho odkaz „OpenID Endpoint Configuration“).",
+    "settings.integrations.oidc.redirect_uri_hint": "Tuhle přesnou URL zaregistrujte u poskytovatele jako redirect/callback URI pro tohoto klienta (Keycloak: „Valid redirect URIs“) — musí sedět přesně, včetně schématu a portu:",
     "settings.integrations.oidc.provider_name": "Název poskytovatele",
     "settings.integrations.oidc.provider_name_hint": "Zobrazí se na přihlašovacím tlačítku („Přihlásit se přes {name}“) místo obecného „Přihlásit se přes OIDC“ — čistě kosmetická úprava.",
     "settings.integrations.oidc.scopes": "Scopes",

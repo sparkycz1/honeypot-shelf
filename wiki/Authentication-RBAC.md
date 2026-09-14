@@ -69,6 +69,28 @@ proxy, that needs `ProxyHeadersMiddleware` to have fixed it from
 `X-Forwarded-Proto` first, or both fail with "Unexpected client data
 origin". See [Installation](Installation.md) for `TRUSTED_PROXY_IPS`.
 
+**Two OIDC setup mistakes that look like unrelated errors**, both now
+surfaced with an in-app hint (Settings → Integrations → OIDC):
+
+- **Issuer URL includes `/.well-known/openid-configuration`.**
+  `app.auth.oidc._build_client` always appends that suffix itself
+  (`{issuer_url}/.well-known/openid-configuration`) — pasting the
+  provider's own "OpenID Endpoint Configuration"/discovery link instead
+  of the plain issuer (a Keycloak realm's own URL, e.g.
+  `https://idp.example.com/realms/yours`) doubles the suffix and the
+  provider 404s. This used to crash `/auth/oidc/login` with an
+  uncaught `httpx.HTTPStatusError` (500) instead of the same graceful
+  `oidc_error` redirect a failed callback already got — see
+  `_OIDC_ERROR_MESSAGES["discovery_failed"]`.
+- **The provider rejects the login with "Invalid redirect_uri" /
+  "Invalid parameter: redirect_uri".** The provider's client
+  registration (Keycloak: "Valid redirect URIs") must contain the
+  *exact* URL `redirect_to_provider` sends — `request.url_for
+  ("oidc_callback")`, i.e. `<scheme>://<host>/auth/oidc/callback` as
+  seen from wherever the login was started, port included. Settings
+  now prints this exact URL next to the Issuer URL field so there's no
+  guessing.
+
 **Login is two steps**: `GET /login` collects only the username (plus
 an OIDC button if enabled, labeled with `AppSettings.oidc_provider_name`
 if set), then `/login/password?username=...` offers a passkey *or* a

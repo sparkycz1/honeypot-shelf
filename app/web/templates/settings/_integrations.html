@@ -116,6 +116,12 @@
              value="{{ app_settings.oidc_issuer_url or '' }}">
       <p class="hint">
         {{ t(request, "settings.integrations.oidc.issuer_url_hint1") }} <code>/.well-known/openid-configuration</code> {{ t(request, "settings.integrations.oidc.issuer_url_hint2") }}
+        {{ t(request, "settings.integrations.oidc.issuer_url_hint3") }}
+      </p>
+
+      <p class="hint">
+        {{ t(request, "settings.integrations.oidc.redirect_uri_hint") }}
+        <code>{{ request.url_for("oidc_callback") }}</code>
       </p>
 
       <label for="oidc_client_id">{{ t(request, "settings.integrations.oidc.client_id") }}</label>

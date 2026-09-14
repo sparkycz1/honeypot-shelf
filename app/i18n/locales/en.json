@@ -1014,6 +1014,8 @@
     "settings.integrations.oidc.issuer_url": "Issuer URL",
     "settings.integrations.oidc.issuer_url_hint1": "Must serve",
     "settings.integrations.oidc.issuer_url_hint2": "(standard for any OIDC provider — Keycloak, Authentik, Entra ID, Okta, Google, ...).",
+    "settings.integrations.oidc.issuer_url_hint3": "HoneyHive appends that suffix itself — don't paste the full discovery URL here, just the issuer (e.g. a Keycloak realm's own URL, not its \"OpenID Endpoint Configuration\" link).",
+    "settings.integrations.oidc.redirect_uri_hint": "Register this exact URL as the provider's redirect/callback URI for this client (Keycloak: \"Valid redirect URIs\") — it must match exactly, scheme and port included:",
     "settings.integrations.oidc.provider_name": "Provider name",
     "settings.integrations.oidc.provider_name_hint": "Shown on the login button (\"Log in with {name}\") instead of the generic \"Log in with OIDC\" — purely cosmetic.",
     "settings.integrations.oidc.scopes": "Scopes",
