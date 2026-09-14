@@ -54,5 +54,39 @@ their own three targets entirely, see
 rule set (id range `107000`-`107099`) for both this feed and the
 honeypot-alert one — covers every audit action this app emits and
 every OpenCanary module, plus brute-force correlation rules for
-repeated failed logins. See the decoders file's own header
-comment for how to wire it into a Wazuh manager.
+repeated failed logins. Both files are plain XML with no comments (some
+Wazuh manager versions' own upload/file-editor path chokes on comments
+and non-ASCII characters), so the install steps live here instead:
+
+1. Copy `honeypotshelf_decoders.xml` to `/var/ossec/etc/decoders/` and
+   `honeypotshelf_rules.xml` to `/var/ossec/etc/rules/` — or point a
+   `<decoder_dir>`/`<rule_dir>` pair in `ossec.conf`'s `<ruleset>` block
+   at wherever you keep this `wazuh` folder instead:
+   ```xml
+   <ruleset>
+     <decoder_dir>etc/decoders</decoder_dir>
+     <rule_dir>etc/rules</rule_dir>
+     ...
+     <decoder_dir>/path/to/wazuh</decoder_dir>
+     <rule_dir>/path/to/wazuh</rule_dir>
+   </ruleset>
+   ```
+2. Point Honeypot Shelf's syslog target(s) at this manager (or an
+   intermediate syslog-ng/rsyslog relay forwarding to it) — Settings →
+   Integrations for the global audit target, each Company's own page
+   and/or "All honeypots" → Integrations for alerts.
+3. `/var/ossec/bin/wazuh-control restart` (or just restart
+   `wazuh-manager`) to load both files.
+4. Verify with `/var/ossec/bin/wazuh-logtest` against a captured line
+   before relying on it in production, as always.
+
+The rules file matches on the `<decoded_as>` names the decoders produce
+(`honeypotshelf-audit` / `honeypotshelf-honeypot-alert`) and on the
+`data.*` fields both decoders expose from each feed's JSON body via
+`JSON_Decoder` — every top-level key in the payload (`event`, `id`,
+`timestamp`, `action`, `actor`, `ip`, `outcome`, `target_type`,
+`target_id`, `target_label`, `summary`, `details` for the audit feed;
+`event`, `id`, `timestamp`, `companies`, `honeypot`, `honeypot_ip`,
+`type` — OpenCanary's own numeric logtype id, as a string — `label`,
+`src_ip`, `src_port`, `dst_port`, `source`, `raw` for the honeypot-alert
+feed).

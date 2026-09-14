@@ -1,26 +1,4 @@
-<!--
-  Wazuh rules for Honeypot Shelf's two syslog feeds - pairs with
-  honeypotshelf_decoders.xml (same folder), which must be loaded first:
-  these rules match on the `<decoded_as>` names that file's decoders
-  produce (honeypotshelf-audit / honeypotshelf-honeypot-alert) and on
-  the `data.*` fields they expose from each feed's JSON body. See that
-  file's own header comment for the full install steps and for what
-  each feed actually carries.
-
-  Rule id range: 107000-107099 (this deployment's own reserved custom
-  range - Wazuh reserves 100000-119999 for local/custom rules; nothing
-  else in this environment is expected to also claim 107000+).
--->
-
 <group name="honeypotshelf,">
-
-  <!-- =============== Base rules: one per feed =============== -->
-  <!-- Deliberately not level 0: an audit/alert line matching nothing
-       more specific below still shows up as a plain, low-severity
-       event rather than being silently invisible - every child rule
-       below fires *in addition to* its own base rule, which is normal,
-       expected Wazuh behavior (a log can and often should match more
-       than one rule). -->
 
   <rule id="107000" level="3">
     <decoded_as>honeypotshelf-audit</decoded_as>
@@ -31,8 +9,6 @@
     <decoded_as>honeypotshelf-honeypot-alert</decoded_as>
     <description>Honeypot Shelf: $(data.label) on honeypot "$(data.honeypot)"</description>
   </rule>
-
-  <!-- =============== Audit: outcome buckets =============== -->
 
   <rule id="107002" level="3">
     <if_sid>107000</if_sid>
@@ -52,8 +28,6 @@
     <field name="data.outcome" type="pcre2">^failure$</field>
     <description>Honeypot Shelf: action failed - $(data.summary)</description>
   </rule>
-
-  <!-- =============== Authentication =============== -->
 
   <rule id="107005" level="8">
     <if_sid>107003</if_sid>
@@ -96,8 +70,6 @@
     <description>Honeypot Shelf: user logged out - $(data.summary)</description>
   </rule>
 
-  <!-- =============== Impersonation =============== -->
-
   <rule id="107011" level="8">
     <if_sid>107000</if_sid>
     <field name="data.action" type="pcre2">^user\.impersonate\.start$</field>
@@ -109,8 +81,6 @@
     <field name="data.action" type="pcre2">^user\.impersonate\.stop$</field>
     <description>Honeypot Shelf: impersonation session ended - $(data.summary)</description>
   </rule>
-
-  <!-- =============== Account lifecycle and self-service security =============== -->
 
   <rule id="107013" level="5">
     <if_sid>107000</if_sid>
@@ -190,8 +160,6 @@
     <description>Honeypot Shelf: a superadmin's personal SSH keys changed - $(data.summary)</description>
   </rule>
 
-  <!-- =============== Possible attacks against the app itself =============== -->
-
   <rule id="107026" level="10">
     <if_sid>107000</if_sid>
     <field name="data.action" type="pcre2">^auth\.csrf_rejected$</field>
@@ -204,8 +172,6 @@
     <field name="data.action" type="pcre2">^auth\.rate_limited$</field>
     <description>Honeypot Shelf: request rate-limited - $(data.summary)</description>
   </rule>
-
-  <!-- =============== Company / honeypot management =============== -->
 
   <rule id="107028" level="5">
     <if_sid>107000</if_sid>
@@ -273,8 +239,6 @@
     <description>Honeypot Shelf: bulk honeypot action - $(data.summary)</description>
   </rule>
 
-  <!-- =============== Instance-wide administration =============== -->
-
   <rule id="107039" level="8">
     <if_sid>107000</if_sid>
     <field name="data.action" type="pcre2">^settings\.</field>
@@ -304,15 +268,6 @@
     <field name="data.action" type="pcre2">\.purge$</field>
     <description>Honeypot Shelf: automatic retention purge ran - $(data.summary)</description>
   </rule>
-
-  <!-- =============== Honeypot alerts, by OpenCanary module =============== -->
-  <!-- data.type is OpenCanary's own numeric logtype id (as a string) -
-       see app.services.opencanary_logtypes._MODULE_OF in the
-       honeypot-shelf repo for the authoritative id-to-module mapping
-       this mirrors. Severity is higher for modules that represent an
-       actual credential-guessing attempt (ssh/ftp/telnet/rdp/vnc/mysql/
-       mssql/mongodb/http-post-login) than for a bare connection/banner
-       read or a service that doesn't authenticate. -->
 
   <rule id="107045" level="5">
     <if_sid>107001</if_sid>
