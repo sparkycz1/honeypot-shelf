@@ -49,6 +49,29 @@ def parse_occurred_at(payload: dict[str, Any]) -> datetime:
     return datetime.now(UTC)
 
 
+def _coerce_port(value: Any) -> int | None:
+    """OpenCanary's JSON usually has `src_port`/`dst_port` as a real
+    number, but confirmed live that at least one module instead emits a
+    numeric *string* (`"42206"`) for it — harmless against the SQLite
+    test harness (which coerces silently), but asyncpg refuses to bind a
+    `str` into an `Integer` column at all and fails the whole insert,
+    taking down every other event batched in the same poll with it (see
+    `app.db.models.honeypot_event.HoneypotEvent.src_port`/`dst_port`).
+    Best-effort like `parse_occurred_at` above: an unparseable value just
+    means "don't know" (`None`), never a reason to drop the rest of an
+    otherwise-good event."""
+    if isinstance(value, bool):  # bool is an int subclass - not a real port
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except ValueError:
+            return None
+    return None
+
+
 def build_event(honeypot: Honeypot, payload: dict[str, Any]) -> HoneypotEvent:
     """One `HoneypotEvent` from one OpenCanary payload, always sourced from
     the SSH log poll (see the module docstring) — not yet added to a
@@ -61,8 +84,8 @@ def build_event(honeypot: Honeypot, payload: dict[str, Any]) -> HoneypotEvent:
         ),
         occurred_at=parse_occurred_at(payload),
         src_ip=payload.get("src_host"),
-        src_port=payload.get("src_port"),
-        dst_port=payload.get("dst_port"),
+        src_port=_coerce_port(payload.get("src_port")),
+        dst_port=_coerce_port(payload.get("dst_port")),
         raw=payload,
         source=EventSource.SSH_POLL,
     )

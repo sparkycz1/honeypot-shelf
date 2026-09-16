@@ -155,6 +155,24 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+    # Overrides the image's own HEALTHCHECK (curls web's :8080/healthz) —
+    # worker never listens on that port at all, so it always failed here
+    # regardless of whether Celery itself was actually fine, permanently
+    # showing "unhealthy" no matter what. A plain liveness check (is the
+    # main process still running) instead — no broker round trip, so a
+    # slow/congested broker can't make this flap on its own; that's what
+    # Celery's own monitoring (Flower, `celery inspect`) is for, not a
+    # container healthcheck.
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import os,sys\nexcl={os.getpid(),os.getppid()}\nfound=False\nfor p in os.listdir('/proc'):\n if not p.isdigit() or int(p) in excl: continue\n try: data=open(f'/proc/{p}/cmdline','rb').read()\n except OSError: continue\n if b'worker' in data: found=True; break\nsys.exit(0 if found else 1)\"",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
 
   # The periodic scheduler: it runs no work itself, it only publishes the
   # beat_schedule entries (fleet sweeps, the per-minute scheduled-task tick,
@@ -177,6 +195,21 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+    # Same fix as worker's own healthcheck above, and the same reasoning —
+    # beat never listens on :8080 either. No broker-RPC equivalent to
+    # `celery inspect ping` exists for beat (it only ever publishes,
+    # nothing answers on its behalf), so this is a plain liveness check
+    # too - not a claim that its schedule is actually firing correctly.
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import os,sys\nexcl={os.getpid(),os.getppid()}\nfound=False\nfor p in os.listdir('/proc'):\n if not p.isdigit() or int(p) in excl: continue\n try: data=open(f'/proc/{p}/cmdline','rb').read()\n except OSError: continue\n if b'beat' in data: found=True; break\nsys.exit(0 if found else 1)\"",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
 
 volumes:
   pg_data:
