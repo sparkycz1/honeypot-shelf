@@ -154,10 +154,10 @@ bigger fleet/host, or a smaller/constrained one.
 
 ## Custom logo & favicon
 
-By default, Honeypot Shelf shows its own built-in bee mark in the nav bar,
-login/two-factor pages, and browser tab — it already adapts to the
-in-app light/dark toggle (and the favicon separately follows the OS/
-browser's own dark-mode preference). To replace it with your own:
+By default, Honeypot Shelf shows its own built-in three-hexagon mark in
+the nav bar, login/two-factor pages, and browser tab — an outline in the
+brand's own amber, which reads fine on any background so it needs no
+light/dark switching of its own. To replace it with your own:
 
 ```bash
 # In .env — either works for LOGO_SOURCE and FAVICON_SOURCE independently:

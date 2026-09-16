@@ -27,39 +27,19 @@ from app.core.config import get_settings
 LOGO_ROUTE = "/branding/logo"
 FAVICON_ROUTE = "/branding/favicon"
 
-# The built-in bee mark, standalone (no page CSS to inherit from — this is
-# a separate document the browser tab fetches on its own), fixed colors.
-# `prefers-color-scheme` is the OS/browser's own dark-mode signal here, not
-# this app's own light/dark toggle (a favicon can't see `data-theme`) —
-# Chrome and Firefox both honor a `<style>` media query inside an SVG
-# favicon, so the bee's body still flips light/dark sensibly without any
-# server involvement.
+# The built-in "three hexagons" mark, standalone (no page CSS to inherit
+# from — this is a separate document the browser tab fetches on its own).
+# Outline-only in the brand's fixed amber: unlike a filled shape, a stroke
+# alone reads fine against both a light and a dark browser tab background,
+# so this needs no `prefers-color-scheme` trick the way a filled mark
+# would (see app/web/templates/partials/_brand_mark.html, the same shape
+# used inline in the app itself).
 _FAVICON_SVG = """\
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-<style>
-.hh-bee{fill:#1b1e26}
-@media (prefers-color-scheme: dark){.hh-bee{fill:#e8eaed}}
-</style>
-<polygon points="50,5 88.97,27.5 88.97,72.5 50,95 11.03,72.5 11.03,27.5"
-         fill="none" stroke="#f2a83a" stroke-width="7" stroke-linejoin="round"/>
-<g class="hh-bee">
-<path d="M44 20 C 40 12, 34 10, 32 6" stroke="currentColor" stroke-width="3"
-      stroke-linecap="round" fill="none"/>
-<path d="M56 20 C 60 12, 66 10, 68 6" stroke="currentColor" stroke-width="3"
-      stroke-linecap="round" fill="none"/>
-<circle cx="32" cy="6" r="2.4"/>
-<circle cx="68" cy="6" r="2.4"/>
-<circle cx="50" cy="27" r="10"/>
-<rect x="37" y="34" width="26" height="17" rx="8.5"/>
-<path id="a" d="M50 45 C 63 45 69 54 69 65 C 69 78 60 87 50 92
-                C 40 87 31 78 31 65 C 31 54 37 45 50 45 Z"/>
-</g>
-<clipPath id="c"><use href="#a"/></clipPath>
-<g fill="#f2a83a" clip-path="url(#c)">
-<rect x="31" y="58" width="38" height="7" rx="3"/>
-<rect x="31" y="70" width="38" height="7" rx="3"/>
-<rect x="31" y="82" width="38" height="7" rx="3"/>
-</g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none"
+     stroke="#e0a761" stroke-width="6" stroke-linejoin="round">
+<polygon points="26,41.2 38,20.4 62,20.4 74,41.2 62,62 38,62"/>
+<polygon points="8,62 20,41.2 44,41.2 56,62 44,82.8 20,82.8"/>
+<polygon points="44,62 56,41.2 80,41.2 92,62 80,82.8 56,82.8"/>
 </svg>"""
 
 DEFAULT_FAVICON_DATA_URI = "data:image/svg+xml," + quote(_FAVICON_SVG)

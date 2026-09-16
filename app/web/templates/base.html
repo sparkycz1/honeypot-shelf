@@ -14,12 +14,15 @@
     <a class="brand" href="/dashboard">
       {% set logo = branding_logo_url() %}
       {% if logo %}
-        <img class="brand-mark" src="{{ logo }}" alt="">
+        {# A custom logo image is assumed to already carry its own visible
+           branding — no separate "Honeypot Shelf" text alongside it, just
+           the image's own accessible name. #}
+        <img class="brand-mark" src="{{ logo }}" alt="Honeypot Shelf">
       {% else %}
         {% set mark_class = "brand-mark" %}
         {% include "partials/_brand_mark.html" %}
+        <span class="brand-text">Honeypot Shelf</span>
       {% endif %}
-      <span class="sr-only">Honeypot Shelf</span>
     </a>
     <input type="checkbox" id="nav-toggle" class="nav-toggle">
     <label for="nav-toggle" class="nav-toggle-label" aria-label="{{ t(request, 'nav.toggle_navigation') }}">☰</label>
