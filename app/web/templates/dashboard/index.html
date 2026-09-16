@@ -1,122 +1,24 @@
 {% extends "base.html" %}
-{% from "macros/charts.html" import sparkline, trend_chart %}
-
-{% set palette = ['#5b8fff', '#46bf8a', '#e0ab4a', '#f0685f', '#a970ff', '#38bdf8', '#f472b6', '#facc15'] %}
 
 {% block title %}{{ t(request, "nav.dashboard") }} — Honeypot Shelf{% endblock %}
 
 {% block content %}
-  <h1>{{ t(request, "nav.dashboard") }}</h1>
+  <h1 data-live-fleet>{{ t(request, "nav.dashboard") }}</h1>
 
-  <section class="panel">
-    <h2>
-      {% if current_user.is_superadmin %}{{ t(request, "dashboard.all_companies") }}
-      {% elif current_user.memberships | length == 1 %}{{ current_user.memberships[0].company.name }}
-      {% else %}{{ t(request, "dashboard.your_companies") }}
-      {% endif %}
-    </h2>
-    <div class="stat-grid">
-      <div class="stat-card">
-        <span class="stat-value">{{ honeypot_stats.total }}</span>
-        <span class="stat-label">{{ t(request, "nav.honeypots") }}</span>
-      </div>
-      <div class="stat-card">
-        <span class="stat-value">{{ honeypot_stats.online }}</span>
-        <span class="stat-label">{{ t(request, "dashboard.online") }}</span>
-      </div>
-      <div class="stat-card">
-        <span class="stat-value">{{ honeypot_stats.offline }}</span>
-        <span class="stat-label">{{ t(request, "dashboard.offline") }}</span>
-      </div>
-      <div class="stat-card">
-        <span class="stat-value">{{ event_stats.last_24h }}</span>
-        <span class="stat-label">{{ t(request, "dashboard.events_24h") }}</span>
-      </div>
-      <div class="stat-card">
-        <span class="stat-value">{{ event_stats.last_7d }}</span>
-        <span class="stat-label">{{ t(request, "dashboard.events_7d") }}</span>
-      </div>
-    </div>
-    <p class="hint">
-      <a href="/honeypots">{{ t(request, "dashboard.all_honeypots") }}</a>
-      {% if current_user.is_superadmin %} · <a href="/companies">{{ company_count }} {{ t(request, "dashboard.company_singular") if company_count == 1 else t(request, "dashboard.company_plural") }}</a>{% endif %}
-    </p>
-  </section>
+  {# Live-refreshed the moment any honeypot's reachability changes or a new
+     OpenCanary event comes in anywhere in view — see
+     app/web/static/js/live-updates.js and app/services/live_updates.py.
+     30s poll stays as the fallback for a missed/dropped push. #}
+  <div
+    id="dashboard-content"
+    hx-get="/dashboard/panel"
+    hx-trigger="every 30s, live-status from:body, live-activity from:body"
+    hx-swap="innerHTML settle:600ms"
+  >
+    {% include "partials/_dashboard_content.html" %}
+  </div>
+{% endblock %}
 
-  {% if company_breakdown %}
-  <section class="panel">
-    <h2>{{ t(request, "dashboard.by_company") }}</h2>
-    <table class="data-table">
-      <thead><tr><th>{{ t(request, "dashboard.company") }}</th><th>{{ t(request, "nav.honeypots") }}</th><th>{{ t(request, "dashboard.online") }}</th><th>{{ t(request, "dashboard.events_24h") }}</th></tr></thead>
-      <tbody>
-        {% for row in company_breakdown %}
-        <tr>
-          <td><a href="/companies/{{ row.company_id }}">{{ row.company_name }}</a></td>
-          <td>{{ row.honeypot_count }}</td>
-          <td>{{ row.online_count }}</td>
-          <td>{{ row.events_24h }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </section>
-  {% endif %}
-
-  {% if daily_snapshots %}
-  <section class="panel">
-    <h2>{{ t(request, "dashboard.event_trend") }}</h2>
-    <p class="hint">
-      {{ t(request, "dashboard.event_trend_hint1", start=daily_snapshots[0].snapshot_date, end=daily_snapshots[-1].snapshot_date) }}
-      <a href="/settings">{{ t(request, "nav.settings") }}</a>{{ t(request, "dashboard.event_trend_hint2") }}
-    </p>
-    {{ sparkline(daily_snapshots | map(attribute='event_count') | list, '#e0ab4a', request=request) }}
-  </section>
-  {% endif %}
-
-  {% if activity.counts_by_type %}
-  <section class="panel">
-    <h2>{{ t(request, "dashboard.by_type_heading") }}</h2>
-    <p class="hint">{{ t(request, "dashboard.by_type_hint") }}</p>
-    {% set by_type_series = [] %}
-    {% for label, points in activity.counts_by_type.items() %}
-      {% set _ = by_type_series.append({'label': label, 'color': palette[loop.index0 % palette|length], 'points': points}) %}
-    {% endfor %}
-    {{ trend_chart(by_type_series, activity.bucket_timestamps) }}
-    <table class="data-table">
-      <thead>
-        <tr><th>{{ t(request, "dashboard.type") }}</th><th>{{ t(request, "dashboard.count") }}</th></tr>
-      </thead>
-      <tbody>
-        {% for label, count in activity.totals_by_type | dictsort(by='value', reverse=True) %}
-          <tr><td>{{ label }}</td><td>{{ count }}</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% if activity.truncated %}
-      <p class="hint">{{ t(request, "dashboard.by_type_truncated") }}</p>
-    {% endif %}
-  </section>
-  {% endif %}
-
-  <section class="panel">
-    <h2>{{ t(request, "dashboard.recent_events") }}</h2>
-    {% if recent_events %}
-      <table class="data-table">
-        <thead><tr><th>{{ t(request, "dashboard.when") }}</th><th>{{ t(request, "nav.honeypots") }}</th><th>{{ t(request, "dashboard.type") }}</th><th>{{ t(request, "dashboard.source_ip") }}</th></tr></thead>
-        <tbody>
-          {% for event in recent_events %}
-          <tr>
-            <td>{{ event.occurred_at | local_time('%Y-%m-%d %H:%M %Z') }}</td>
-            <td><a href="/honeypots/{{ event.honeypot_id }}">{{ event.honeypot.name }}</a></td>
-            <td><span class="badge">{{ event.event_type | canary_label }}</span></td>
-            <td>{{ event.src_ip or '—' }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    {% else %}
-      <p class="hint">{{ t(request, "dashboard.no_events") }}</p>
-    {% endif %}
-    <p class="hint"><a href="/honeypots">{{ t(request, "dashboard.browse_by_honeypot") }}</a></p>
-  </section>
+{% block extra_scripts %}
+  <script src="/static/js/live-updates.js" defer></script>
 {% endblock %}

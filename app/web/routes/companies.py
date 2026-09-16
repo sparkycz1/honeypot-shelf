@@ -133,13 +133,9 @@ async def _get_company_member_counts(db: AsyncSession) -> dict[uuid.UUID, int]:
     return {company_id: count for company_id, count in result.all()}
 
 
-@router.get("")
-async def list_companies(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-    q: str = "",
-) -> Response:
+async def _build_companies_list_context(
+    db: AsyncSession, current_user: User, q: str
+) -> dict[str, object]:
     query = companies_visible_to(current_user)
     if q.strip():
         needle = f"%{q.strip()}%"
@@ -150,16 +146,37 @@ async def list_companies(
     companies = result.scalars().all()
     member_counts = await _get_company_member_counts(db)
     all_honeypots_count = await count_visible_honeypots(db, current_user)
-    return templates.TemplateResponse(
-        request,
-        "companies/list.html",
-        {
-            "companies": companies,
-            "member_counts": member_counts,
-            "all_honeypots_count": all_honeypots_count or 0,
-            "q": q,
-        },
-    )
+    return {
+        "companies": companies,
+        "member_counts": member_counts,
+        "all_honeypots_count": all_honeypots_count or 0,
+        "q": q,
+    }
+
+
+@router.get("")
+async def list_companies(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    q: str = "",
+) -> Response:
+    context = await _build_companies_list_context(db, current_user, q)
+    return templates.TemplateResponse(request, "companies/list.html", context)
+
+
+@router.get("/panel")
+async def companies_list_panel(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    q: str = "",
+) -> Response:
+    """The live-refreshed table's own fetch target (see
+    companies/list.html) — same query as the full page, rendering just
+    the inner partial."""
+    context = await _build_companies_list_context(db, current_user, q)
+    return templates.TemplateResponse(request, "partials/_companies_list_content.html", context)
 
 
 @router.get("/new")

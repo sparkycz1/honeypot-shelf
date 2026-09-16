@@ -231,11 +231,33 @@ happened.
   call sites — the REST API, exports, and both syslog forwarders keep
   the plain English label on purpose, since a machine-consumed response
   shouldn't vary by session.
-- **Live updates over WebSocket**: every honeypot-scoped page opens one
-  WebSocket and turns each background-job message into a DOM event, so
-  a panel updates within about a second instead of waiting out its poll
-  interval. The Monitoring and Activity tabs also have a "Refresh now"
-  button.
+- **Live updates over WebSocket**: a page opens one WebSocket and turns
+  each `{"kind": "..."}` push into a DOM event, so its htmx panel
+  refreshes within about a second instead of waiting out its poll
+  interval — the poll stays only as a fallback for a missed/dropped
+  push. Every message carries a `kind` only, never actual data, so the
+  socket is a doorbell, not a feed: whatever it triggers is still
+  fetched (and permission/scope-checked) exactly like its periodic poll
+  already was. Four independent scopes share this mechanism
+  (`app/services/live_updates.py`, `app/web/routes/live_ws.py`,
+  `app/web/static/js/live-updates.js`):
+  - **Per-honeypot** — Overview, Monitoring, Activity, Updates. The
+    Monitoring and Activity tabs also have a "Refresh now" button.
+  - **Fleet-wide** — the Dashboard and the Map page, refreshed the
+    moment any honeypot's reachability or activity changes anywhere in
+    view.
+  - **Admin-wide** — the Audit log and the Companies list, refreshed
+    the moment a new audit entry is written (which covers company/user
+    create-edit-delete too, since those are always audit-logged).
+    Superadmin-only, matching those pages.
+  - **Per-user** — a user's own Notification history, refreshed the
+    moment a send attempt (real or test) is logged for them.
+
+  Deliberately **not** wired up on pages built around an in-progress
+  form or a bulk-selection checkbox list (the Honeypots list, Users
+  list, Scheduling) — an unannounced full-table swap mid-selection or
+  mid-edit would silently discard whatever the operator was doing.
+  Those keep their existing polling fallback only.
 - **Update rollback**: every real update run captures a package-version
   snapshot right before upgrading. "Roll back this update" diffs a
   fresh snapshot against that stored one and re-installs, pinned by

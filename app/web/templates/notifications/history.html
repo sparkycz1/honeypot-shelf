@@ -3,48 +3,27 @@
 {% block title %}{{ t(request, "notifications.history.title") }} — Honeypot Shelf{% endblock %}
 
 {% block content %}
-  <div class="page-header">
+  <div class="page-header" data-live-notifications>
     <h1>{{ t(request, "notifications.history.title") }}</h1>
     <a href="/account/notifications">{{ t(request, "notifications.history.back") }}</a>
   </div>
 
   <p class="hint">{{ t(request, "notifications.history.hint") }}</p>
 
-  {% if not entries %}
-    <p class="hint">{{ t(request, "notifications.history.none") }}</p>
-  {% else %}
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th>{{ t(request, "notifications.history.column.when") }}</th>
-          <th>{{ t(request, "notifications.history.column.honeypot") }}</th>
-          <th>{{ t(request, "notifications.history.column.kind") }}</th>
-          <th>{{ t(request, "notifications.history.column.channel") }}</th>
-          <th>{{ t(request, "notifications.history.column.target") }}</th>
-          <th>{{ t(request, "notifications.history.column.status") }}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for entry in entries %}
-          <tr>
-            <td>{{ entry.created_at | local_time('%Y-%m-%d %H:%M %Z') }}</td>
-            <td>{{ entry.honeypot_name or '—' }}</td>
-            <td>
-              {{ t(request, "notifications.event." + entry.kind.value) }}
-              {% if entry.is_test %}<span class="badge">{{ t(request, "notifications.history.test_badge") }}</span>{% endif %}
-            </td>
-            <td>{{ t(request, "notifications.subscriptions.channel_" + entry.channel.value) }}</td>
-            <td>{{ entry.target }}</td>
-            <td>
-              {% if entry.success %}
-                <span class="badge badge-ok">{{ t(request, "notifications.history.status_ok") }}</span>
-              {% else %}
-                <span class="badge badge-error" title="{{ entry.error or '' }}">{{ t(request, "notifications.history.status_failed") }}</span>
-              {% endif %}
-            </td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  {% endif %}
+  {# Live-refreshed the moment a send attempt (real or test) is logged for
+     you — see app/web/static/js/live-updates.js and
+     app/services/live_updates.py. 30s poll stays as the fallback for a
+     missed/dropped push. #}
+  <div
+    id="notification-history-content"
+    hx-get="/account/notifications/history/panel"
+    hx-trigger="every 30s, live-notification from:body"
+    hx-swap="innerHTML settle:600ms"
+  >
+    {% include "partials/_notification_history_content.html" %}
+  </div>
+{% endblock %}
+
+{% block extra_scripts %}
+  <script src="/static/js/live-updates.js" defer></script>
 {% endblock %}

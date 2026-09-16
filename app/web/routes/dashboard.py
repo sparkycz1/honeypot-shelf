@@ -44,12 +44,9 @@ def _event_company_filter(company_ids: set[uuid.UUID]) -> ColumnElement[bool]:
     return HoneypotEvent.honeypot.has(Honeypot.companies.any(Company.id.in_(company_ids)))
 
 
-@router.get("/dashboard")
-async def dashboard(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
-) -> object:
+async def _build_dashboard_context(
+    request: Request, db: AsyncSession, user: User
+) -> dict[str, object]:
     company_ids = visible_company_ids(user)
     settings_row = await get_or_create_app_settings(db)
 
@@ -152,17 +149,43 @@ async def dashboard(
         snapshot_query = snapshot_query.where(CompanySnapshot.company_id.in_(company_ids))
     daily_snapshots = (await db.execute(snapshot_query)).scalars().all()
 
-    return templates.TemplateResponse(
-        request,
-        "dashboard/index.html",
-        {
-            "honeypot_stats": honeypot_stats,
-            "event_stats": event_stats,
-            "recent_events": recent_events,
-            "company_count": company_count,
-            "company_breakdown": company_breakdown,
-            "daily_snapshots": daily_snapshots,
-            "dashboard_trends_retention_days": settings_row.dashboard_trends_retention_days,
-            "activity": activity,
-        },
-    )
+    return {
+        # base.html normally sets this itself (`{% set current_user =
+        # request.state.user %}`) for a full page render, but the panel
+        # route below renders this same content standalone, without
+        # extending base.html at all — pass it explicitly so both call
+        # sites work.
+        "current_user": user,
+        "honeypot_stats": honeypot_stats,
+        "event_stats": event_stats,
+        "recent_events": recent_events,
+        "company_count": company_count,
+        "company_breakdown": company_breakdown,
+        "daily_snapshots": daily_snapshots,
+        "dashboard_trends_retention_days": settings_row.dashboard_trends_retention_days,
+        "activity": activity,
+    }
+
+
+@router.get("/dashboard")
+async def dashboard(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> object:
+    context = await _build_dashboard_context(request, db, user)
+    return templates.TemplateResponse(request, "dashboard/index.html", context)
+
+
+@router.get("/dashboard/panel")
+async def dashboard_panel(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> object:
+    """The live-refreshed content div's own fetch target (see
+    dashboard/index.html) — a plain re-read of whatever's currently in the
+    DB, no different from the full page's own query, just rendering the
+    inner partial alone."""
+    context = await _build_dashboard_context(request, db, user)
+    return templates.TemplateResponse(request, "partials/_dashboard_content.html", context)

@@ -413,6 +413,19 @@ async def send_test(
     )
 
 
+async def _build_notification_history_context(
+    db: AsyncSession, current_user: User
+) -> dict[str, object]:
+    result = await db.execute(
+        select(NotificationLog)
+        .where(NotificationLog.user_id == current_user.id)
+        .order_by(NotificationLog.created_at.desc())
+        .limit(200)
+    )
+    entries = list(result.scalars().all())
+    return {"entries": entries}
+
+
 @router.get("/history")
 async def notification_history(
     request: Request,
@@ -422,11 +435,20 @@ async def notification_history(
     """The current user's own last 200 notification send attempts (real or
     test) — never another user's, since this whole feature has no
     admin/superadmin gate (see this module's docstring)."""
-    result = await db.execute(
-        select(NotificationLog)
-        .where(NotificationLog.user_id == current_user.id)
-        .order_by(NotificationLog.created_at.desc())
-        .limit(200)
+    context = await _build_notification_history_context(db, current_user)
+    return templates.TemplateResponse(request, "notifications/history.html", context)
+
+
+@router.get("/history/panel")
+async def notification_history_panel(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """The live-refreshed table's own fetch target (see
+    notifications/history.html) — same query as the full page, rendering
+    just the inner partial."""
+    context = await _build_notification_history_context(db, current_user)
+    return templates.TemplateResponse(
+        request, "partials/_notification_history_content.html", context
     )
-    entries = list(result.scalars().all())
-    return templates.TemplateResponse(request, "notifications/history.html", {"entries": entries})

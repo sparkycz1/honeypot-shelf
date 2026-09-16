@@ -81,16 +81,9 @@ def _entry_to_export_row(entry: AuditLogEntry) -> dict[str, Any]:
     }
 
 
-@router.get("")
-async def list_audit_log(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    q: str = "",
-    outcome: str = "",
-    target_type: str = "",
-    target_id: str = "",
-    page: int = 1,
-) -> Response:
+async def _build_audit_context(
+    db: AsyncSession, *, q: str, outcome: str, target_type: str, target_id: str, page: int
+) -> dict[str, object]:
     page = max(page, 1)
     query = apply_audit_filters(
         select(AuditLogEntry), q=q, outcome=outcome, target_type=target_type, target_id=target_id
@@ -111,21 +104,52 @@ async def list_audit_log(
     # target just doesn't get the banner, no worse than before this existed).
     target_label = entries[0].target_label if entries and target_type and target_id else None
 
-    return templates.TemplateResponse(
-        request,
-        "audit/list.html",
-        {
-            "entries": entries,
-            "outcomes": list(AuditOutcome),
-            "q": q,
-            "outcome": outcome,
-            "target_type": target_type,
-            "target_id": target_id,
-            "target_label": target_label,
-            "page": page,
-            "has_older": has_older,
-        },
+    return {
+        "entries": entries,
+        "outcomes": list(AuditOutcome),
+        "q": q,
+        "outcome": outcome,
+        "target_type": target_type,
+        "target_id": target_id,
+        "target_label": target_label,
+        "page": page,
+        "has_older": has_older,
+    }
+
+
+@router.get("")
+async def list_audit_log(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    q: str = "",
+    outcome: str = "",
+    target_type: str = "",
+    target_id: str = "",
+    page: int = 1,
+) -> Response:
+    context = await _build_audit_context(
+        db, q=q, outcome=outcome, target_type=target_type, target_id=target_id, page=page
     )
+    return templates.TemplateResponse(request, "audit/list.html", context)
+
+
+@router.get("/panel")
+async def audit_panel(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    q: str = "",
+    outcome: str = "",
+    target_type: str = "",
+    target_id: str = "",
+    page: int = 1,
+) -> Response:
+    """The live-refreshed results table's own fetch target (see
+    audit/list.html) — same filters/pagination as the full page, rendering
+    just the inner partial."""
+    context = await _build_audit_context(
+        db, q=q, outcome=outcome, target_type=target_type, target_id=target_id, page=page
+    )
+    return templates.TemplateResponse(request, "partials/_audit_content.html", context)
 
 
 @router.get("/export")

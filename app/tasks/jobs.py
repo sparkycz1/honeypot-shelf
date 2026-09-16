@@ -72,6 +72,7 @@ from app.services.live_updates import (
     KIND_SERVICES,
     KIND_STATUS,
     KIND_UPDATES,
+    publish_fleet_event,
     publish_honeypot_event,
 )
 from app.services.notifications import notify_alert, notify_recovered, notify_unavailable
@@ -949,6 +950,10 @@ async def _ping_all_honeypots() -> None:
             await session.commit()
             for honeypot, _outcome in results:
                 await publish_honeypot_event(str(honeypot.id), KIND_STATUS)
+            # One fleet-wide doorbell per sweep, not per honeypot — the
+            # Dashboard/Map's live refresh only needs to know "something's
+            # reachability changed somewhere", not how many times.
+            await publish_fleet_event(KIND_STATUS)
 
             # Not gated on `app_settings.smtp_enabled` here — a webhook
             # rule fires regardless (see `_evaluate_unavailability_notifications`
@@ -1124,6 +1129,7 @@ async def _check_honeypot_reachability(honeypot_id: str) -> dict[str, Any]:
         )
         await session.commit()
         await publish_honeypot_event(honeypot_id, KIND_STATUS)
+        await publish_fleet_event(KIND_STATUS)
         return {"ok": True, "reachable": outcome.reachable}
 
 
@@ -1547,6 +1553,11 @@ async def _poll_honeypot_canary_log(honeypot_id: str) -> dict[str, Any]:
             honeypot.last_seen_ip = honeypot.ip_address
         await session.commit()
         await publish_honeypot_event(honeypot_id, KIND_ACTIVITY)
+        if new_rows:
+            # Dashboard/Map only care once there's actually something new
+            # to show — no point waking every viewer's socket on a poll
+            # that ingested nothing.
+            await publish_fleet_event(KIND_ACTIVITY)
         for row in new_rows:
             await forward_honeypot_event_to_syslog(session, honeypot, row)
 

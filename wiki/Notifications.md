@@ -88,10 +88,13 @@ A webhook rule fires even when SMTP is off; an email rule is silently
 skipped if SMTP isn't configured. Every send attempt — real or test —
 is logged (`NotificationLog`, purged on its own configurable retention,
 Settings → Checks & retention), and each user sees only their own last
-200 attempts at Notifications → Notification history. "Send test" fires
-one synthetic alert straight to a rule's current channel/target,
-against a real honeypot in its scope, bypassing rule-matching and
-debounce state entirely.
+200 attempts at Notifications → Notification history — that page
+live-refreshes over WebSocket the moment a new attempt is logged for
+that user (see [Honeypot Management's "Live updates over
+WebSocket"](Honeypot-Management.md#small-but-worth-knowing)). "Send
+test" fires one synthetic alert straight to a rule's current
+channel/target, against a real honeypot in its scope, bypassing
+rule-matching and debounce state entirely.
 
 ## The SSRF guard on webhooks
 

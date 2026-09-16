@@ -3,7 +3,7 @@
 {% block title %}{{ t(request, "companies.list.title") }} — Honeypot Shelf{% endblock %}
 
 {% block content %}
-  <div class="page-header">
+  <div class="page-header" data-live-admin>
     <h1>{{ t(request, "companies.list.heading") }}</h1>
     <a class="button" href="/companies/new">{{ t(request, "companies.list.add") }}</a>
   </div>
@@ -14,47 +14,20 @@
     {% if q %}<a class="button button-secondary" href="/companies">{{ t(request, "companies.list.clear") }}</a>{% endif %}
   </form>
 
-  {% set show_all_row = not q or 'all' in q.lower() or 'honeypot' in q.lower() %}
+  {# Live-refreshed the moment a company/user is created, edited, or
+     deleted anywhere (every such change is audit-logged) — see
+     app/web/static/js/live-updates.js and app/services/live_updates.py.
+     30s poll stays as the fallback for a missed/dropped push. #}
+  <div
+    id="companies-list-content"
+    hx-get="/companies/panel?q={{ q | urlencode }}"
+    hx-trigger="every 30s, live-audit from:body"
+    hx-swap="innerHTML settle:600ms"
+  >
+    {% include "partials/_companies_list_content.html" %}
+  </div>
+{% endblock %}
 
-  {% if not companies and not show_all_row %}
-    <div class="empty-state">
-      <p>{{ t(request, "companies.list.no_match", query=q) }}</p>
-    </div>
-  {% else %}
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th>{{ t(request, "companies.all.col_name") }}</th>
-          <th>{{ t(request, "companies.list.col_description") }}</th>
-          <th>{{ t(request, "companies.all.col_updates") }}</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% if show_all_row %}
-          <tr>
-            <td><a href="/companies/all">{{ t(request, "companies.all.title") }}</a> <span class="badge badge-ok">{{ t(request, "companies.list.automatic") }}</span></td>
-            <td>{{ t(request, "companies.list.all_row_description") }}</td>
-            <td>{{ all_honeypots_count }}</td>
-            <td><a href="/companies/all">{{ t(request, "companies.list.details") }}</a></td>
-          </tr>
-        {% endif %}
-        {% for company in companies %}
-          <tr>
-            <td><a href="/companies/{{ company.id }}">{{ company.name }}</a></td>
-            <td>{{ company.description or '—' }}</td>
-            <td>{{ member_counts.get(company.id, 0) }}</td>
-            <td><a href="/companies/{{ company.id }}">{{ t(request, "companies.list.details") }}</a></td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  {% endif %}
-
-  {% if not companies and not q %}
-    <div class="empty-state">
-      <p>{{ t(request, "companies.list.empty") }}</p>
-      <a class="button" href="/companies/new">{{ t(request, "companies.list.add_first") }}</a>
-    </div>
-  {% endif %}
+{% block extra_scripts %}
+  <script src="/static/js/live-updates.js" defer></script>
 {% endblock %}

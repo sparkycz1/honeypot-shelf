@@ -53,6 +53,7 @@ from app.db.models.app_settings import AppSettings
 from app.db.models.honeypot import Honeypot
 from app.db.models.notification_log import NotificationChannel, NotificationKind, NotificationLog
 from app.i18n import DEFAULT_LOCALE_CODE
+from app.services.live_updates import publish_notifications_event
 from app.services.smtp import SmtpNotConfiguredError, send_email
 from app.services.webhook import UnsafeWebhookTargetError, send_webhook
 
@@ -186,6 +187,7 @@ async def _log(
             )
         )
         await db.commit()
+        await publish_notifications_event(str(user_id))
     except Exception:
         logger.warning("Failed to write NotificationLog", exc_info=True)
 

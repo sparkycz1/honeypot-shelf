@@ -57,12 +57,7 @@ class MapDot:
     label: str
 
 
-@router.get("/map")
-async def map_page(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
-) -> object:
+async def _build_map_context(db: AsyncSession, user: User) -> dict[str, object]:
     company_ids = visible_company_ids(user)
     # `None` for a superadmin means "every company" (see
     # `visible_company_ids`'s own docstring) - including a honeypot
@@ -146,17 +141,36 @@ async def map_page(
     total_events = total_events_result.scalar_one()
     located_events = sum(row.event_count for row in location_rows)
 
-    return templates.TemplateResponse(
-        request,
-        "map/index.html",
-        {
-            "dots": dots,
-            "top_countries": top_countries,
-            "map_width": _MAP_WIDTH,
-            "map_height": _MAP_HEIGHT,
-            "geoip_ready": geoip_ready,
-            "total_events": total_events,
-            "located_events": located_events,
-            "is_superadmin": user.is_superadmin,
-        },
-    )
+    return {
+        "dots": dots,
+        "top_countries": top_countries,
+        "map_width": _MAP_WIDTH,
+        "map_height": _MAP_HEIGHT,
+        "geoip_ready": geoip_ready,
+        "total_events": total_events,
+        "located_events": located_events,
+        "is_superadmin": user.is_superadmin,
+    }
+
+
+@router.get("/map")
+async def map_page(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> object:
+    context = await _build_map_context(db, user)
+    return templates.TemplateResponse(request, "map/index.html", context)
+
+
+@router.get("/map/panel")
+async def map_panel(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> object:
+    """The live-refreshed content div's own fetch target (see
+    map/index.html) — same query as the full page, rendering just the
+    inner partial."""
+    context = await _build_map_context(db, user)
+    return templates.TemplateResponse(request, "partials/_map_content.html", context)

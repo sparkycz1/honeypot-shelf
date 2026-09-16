@@ -230,6 +230,15 @@ async def log_event(
             await forward_to_syslog(app_settings, entry)
         except Exception:
             logger.warning("Failed to forward audit entry to syslog", exc_info=True)
+
+        # Doorbell for the Audit log page and the Companies list (every
+        # create/edit/delete there is itself audit-logged) — see
+        # app.services.live_updates's module docstring. Already
+        # best-effort/exception-swallowing on its own, same as every other
+        # publish_*_event call site in this codebase.
+        from app.services.live_updates import publish_admin_event  # local: avoid an import cycle
+
+        await publish_admin_event()
     except Exception:
         # An audit trail gap is far better than a broken feature — never let
         # a failure to log take down the action it's describing.

@@ -3,7 +3,7 @@
 {% block title %}{{ t(request, "nav.audit") }} — Honeypot Shelf{% endblock %}
 
 {% block content %}
-  <div class="page-header">
+  <div class="page-header" data-live-admin>
     <h1>{{ t(request, "nav.audit") }}</h1>
   </div>
 
@@ -12,14 +12,6 @@
     {{ t(request, "audit.list.explanation2") }}
     <a href="/settings">{{ t(request, "nav.settings") }}</a>{{ t(request, "audit.list.explanation3") }}
   </p>
-
-  {% if target_type and target_id %}
-    <p class="hint">
-      {{ t(request, "audit.list.showing_entries_for", target_type=target_type) }}
-      {% if target_label %}"{{ target_label }}"{% else %}<code>{{ target_id }}</code>{% endif %}
-      {{ t(request, "audit.list.only") }} <a href="/audit?q={{ q | urlencode }}&outcome={{ outcome | urlencode }}">{{ t(request, "audit.list.clear_filter") }}</a>.
-    </p>
-  {% endif %}
 
   <form method="get" class="search-form">
     <input type="search" name="q" value="{{ q }}"
@@ -45,75 +37,21 @@
   </form>
   <p class="hint">{{ t(request, "audit.list.export_hint") }}</p>
 
-  {% if entries %}
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th>{{ t(request, "audit.list.time_utc") }}</th>
-          <th>{{ t(request, "audit.list.user") }}</th>
-          <th>{{ t(request, "audit.list.ip_address") }}</th>
-          <th>{{ t(request, "audit.list.action") }}</th>
-          <th>{{ t(request, "audit.list.target") }}</th>
-          <th>{{ t(request, "audit.list.summary") }}</th>
-          <th>{{ t(request, "audit.list.outcome") }}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for entry in entries %}
-          <tr>
-            <td>{{ entry.created_at | local_time('%Y-%m-%d %H:%M:%S %Z') }}</td>
-            <td>{{ entry.actor or '—' }}</td>
-            <td>
-              {{ entry.ip_address or '—' }}
-              {% if entry.source_country_code %}
-                <span class="hint">{{ geoip_flag(entry.source_country_code) }} {{ entry.source_country_name }}</span>
-              {% endif %}
-            </td>
-            <td><code>{{ entry.action }}</code></td>
-            <td>
-              {% if entry.target_label %}
-                {{ entry.target_type }}: {{ entry.target_label }}
-              {% else %}
-                —
-              {% endif %}
-            </td>
-            <td>
-              {{ entry.summary }}
-              {% if entry.details %}
-                <br><span class="hint">{{ entry.details }}</span>
-              {% endif %}
-            </td>
-            <td>
-              {% if entry.outcome.value == 'success' %}
-                <span class="badge badge-ok">{{ t(request, "audit.list.outcome_success") }}</span>
-              {% elif entry.outcome.value == 'denied' %}
-                <span class="badge badge-error">{{ t(request, "audit.list.outcome_denied") }}</span>
-              {% else %}
-                <span class="badge badge-warn">{{ t(request, "audit.list.outcome_failure") }}</span>
-              {% endif %}
-            </td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  {# Live-refreshed the moment a new audit entry is written — see
+     app/web/static/js/live-updates.js and app/services/live_updates.py.
+     30s poll stays as the fallback for a missed/dropped push. Carries the
+     current filters/page along so a filtered/paginated view doesn't reset
+     itself on every push. #}
+  <div
+    id="audit-content"
+    hx-get="/audit/panel?q={{ q | urlencode }}&outcome={{ outcome | urlencode }}&target_type={{ target_type | urlencode }}&target_id={{ target_id | urlencode }}&page={{ page }}"
+    hx-trigger="every 30s, live-audit from:body"
+    hx-swap="innerHTML settle:600ms"
+  >
+    {% include "partials/_audit_content.html" %}
+  </div>
+{% endblock %}
 
-    <div class="page-header-actions">
-      {% if page > 1 %}
-        <a class="button button-secondary"
-           href="/audit?q={{ q | urlencode }}&outcome={{ outcome | urlencode }}&target_type={{ target_type | urlencode }}&target_id={{ target_id | urlencode }}&page={{ page - 1 }}">
-          {{ t(request, "audit.list.newer") }}
-        </a>
-      {% endif %}
-      {% if has_older %}
-        <a class="button button-secondary"
-           href="/audit?q={{ q | urlencode }}&outcome={{ outcome | urlencode }}&target_type={{ target_type | urlencode }}&target_id={{ target_id | urlencode }}&page={{ page + 1 }}">
-          {{ t(request, "audit.list.older") }}
-        </a>
-      {% endif %}
-    </div>
-  {% else %}
-    <div class="empty-state">
-      <p>{{ t(request, "audit.list.empty_match") if (q or outcome or target_type) else t(request, "audit.list.empty_yet") }}</p>
-    </div>
-  {% endif %}
+{% block extra_scripts %}
+  <script src="/static/js/live-updates.js" defer></script>
 {% endblock %}

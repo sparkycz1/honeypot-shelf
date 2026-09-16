@@ -12,6 +12,12 @@ source IP, and a plain-language summary. A background job (the
 scheduler, a retention purge) logs under a fixed actor label instead of
 a user, since it has no request to read one from.
 
+The Audit log page itself live-refreshes over WebSocket the moment a new
+entry is written — no need to reload to see something that just
+happened. See [Honeypot Management's "Live updates over
+WebSocket"](Honeypot-Management.md#small-but-worth-knowing) for how that
+mechanism works across the app.
+
 ## Tamper-evident by construction
 
 Every entry is hash-chained: `entry_hash` covers this entry's own
