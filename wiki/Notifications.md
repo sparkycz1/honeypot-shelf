@@ -15,12 +15,12 @@ rule creation self-service, open to every access level.
 The create/edit form asks the same four questions in order, then shows
 the actual wording last:
 
-1. **Co (what)** — a whole **company** (covers every honeypot in it,
+1. **What** — a whole **company** (covers every honeypot in it,
    including ones added later — re-resolved on every sweep, no rule
    edit needed) or a single **honeypot**. A superadmin can pick any
    company; anyone else only one they already have access to — checked
    server-side, not just by what the picker offers.
-2. **Proč (why)** — which of the three events fire it, each independently:
+2. **Why** — which of the three events fire it, each independently:
    - **New alert** — every newly ingested OpenCanary event.
    - **Becomes unavailable** — continuously unreachable for at least
      *this rule's own* threshold (minutes).
@@ -29,8 +29,8 @@ the actual wording last:
      notification actually fired for it — a blip that recovers before
      its own threshold never claims "it's back" for something that was
      never reported down.
-3. **Přes co (how)** — email (default) or a webhook POST.
-4. **Kam (where)** — for email, defaults to your own account email;
+3. **How** — email (default) or a webhook POST.
+4. **Where** — for email, defaults to your own account email;
    override it per rule (e.g. a shared team alias). For webhook, the
    URL — must resolve to a public address (see the SSRF note below).
 5. **The actual wording**, collapsed at the end — one subject/body pair

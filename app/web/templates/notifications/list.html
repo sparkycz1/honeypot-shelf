@@ -36,7 +36,7 @@
   </div>
   <p class="hint">{{ t(request, "notifications.rule.scope_hint") }}</p>
 
-  {# --- Proč: which events --- #}
+  {# --- Why: which events --- #}
   <fieldset>
     <legend>{{ t(request, "notifications.rule.events_legend") }}</legend>
 
@@ -64,7 +64,7 @@
            value="{{ rule.recovered_after_minutes if rule else 5 }}">
   </fieldset>
 
-  {# --- Přes co: email or webhook --- #}
+  {# --- How: email or webhook --- #}
   <label for="{{ prefix }}-channel">{{ t(request, "notifications.rule.channel_label") }}</label>
   <select id="{{ prefix }}-channel" name="delivery_channel"
           data-toggle-hidden="{{ prefix }}-email-field" data-toggle-hidden-unless-value="webhook">
