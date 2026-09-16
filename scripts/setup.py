@@ -183,15 +183,24 @@ def _read_env_value(path: Path, key: str) -> str | None:
 
 
 def _vpn_overlay_running(docker_path: str) -> bool:
-    """Same detection `scripts/upgrade.sh` uses for Caddy — a running
-    container carrying the Compose service label is a more reliable signal
-    than an `.env` marker would be, since which compose files to pass is a
+    """Same detection `scripts/upgrade.sh` uses for Caddy — a container
+    carrying the Compose service label is a more reliable signal than an
+    `.env` marker would be, since which compose files to pass is a
     deploy-topology choice, not something the app itself configures (the
     actual VPN setup key/config are entered from Settings -> VPN, after
-    the app is already running)."""
+    the app is already running).
+
+    `docker ps -a`, not `docker ps` — a currently-*stopped* container
+    must still count as "part of this deployment," not get silently
+    dropped from this and every future `up -d` the moment it merely isn't
+    running at the exact instant this check happens to run. Confirmed
+    live: this exact gap (checking `docker ps` instead) dropped a
+    deployment's VPN overlay after two routine upgrades, with no error —
+    `up -d` without `-f docker-compose.vpn.yml` just never manages that
+    service again."""
     result = subprocess.run(  # noqa: S603 - fixed args, no user input
         [
-            docker_path, "ps",
+            docker_path, "ps", "-a",
             "--filter", "label=com.docker.compose.project=honeypotshelf",
             "--filter", "label=com.docker.compose.service=vpn",
             "--format", "{{.Names}}",

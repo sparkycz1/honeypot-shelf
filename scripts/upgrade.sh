@@ -76,14 +76,24 @@ else
 fi
 
 compose_files=(-f docker-compose.yml)
-if docker ps \
+# `docker ps -a`, not `docker ps` — a currently-*stopped* (crashed, or
+# just not started back up after a host reboot with no restart policy)
+# Caddy/VPN container must still count as "part of this deployment",
+# not get silently dropped from every future `up -d` onward the moment
+# it isn't running at the exact instant this script happens to check.
+# Confirmed live: exactly this dropped the VPN overlay from a deployment
+# after two routine upgrades, with no error - `up -d` without
+# `-f docker-compose.vpn.yml` just never manages that service again,
+# leaving Settings -> VPN unable to reach it ("not running") even though
+# the operator had already set it up.
+if docker ps -a \
     --filter "label=com.docker.compose.project=honeypotshelf" \
     --filter "label=com.docker.compose.service=caddy" \
     --format '{{.Names}}' | grep -q .; then
   echo "==> Bundled Caddy reverse proxy detected — including docker-compose.caddy.yml."
   compose_files+=(-f docker-compose.caddy.yml)
 fi
-if docker ps \
+if docker ps -a \
     --filter "label=com.docker.compose.project=honeypotshelf" \
     --filter "label=com.docker.compose.service=vpn" \
     --format '{{.Names}}' | grep -q .; then
