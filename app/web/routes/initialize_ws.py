@@ -340,7 +340,7 @@ async def initialize_websocket(websocket: WebSocket, run_id: str) -> None:
 
         script = build_initialize_command(
             device_name=run.device_name,
-            service_user=service_user_for(run.username, platform),
+            service_user=service_user_for(run.username),
             platform=platform,
             vpn_provider=run.vpn_provider,
             netbird_setup_key=run.netbird_setup_key,

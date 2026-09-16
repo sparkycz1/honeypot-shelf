@@ -53,19 +53,15 @@ class DetectedPlatform:
     label: str  # human-readable, e.g. "Debian 13 (trixie)"
     has_raspi_config: bool  # drives the read-only-root toggle - see module docstring
 
-    @property
-    def default_service_user(self) -> str:
-        """Fallback account name (`app.ssh.initialize.service_user_for`)
-        used only when Initialize connected as `root` and needs *some*
-        non-root account to prefer for anything that shouldn't be
-        root-owned (the Samba share directory) — matches each ecosystem's
-        own conventional default first-user name (Raspberry Pi OS's `pi`;
-        Debian's and Ubuntu's own official cloud images likewise default
-        to `debian`/`ubuntu`), not a guarantee any of them actually
-        exists on this specific device."""
-        if self.has_raspi_config:
-            return "pi"
-        return self.distro  # "debian" or "ubuntu"
+    # No `default_service_user` here any more — a previous version guessed
+    # a fallback account name per ecosystem ("pi" for Raspberry Pi OS,
+    # "debian"/"ubuntu" for the other two, matching each vendor's own
+    # cloud-image convention). Confirmed live that this was wrong: a
+    # plain, hand-installed Debian 13 VM (no cloud-init, no "debian" user
+    # at all) failed Initialize outright with "chown: invalid user:
+    # 'debian:debian'". `app.ssh.initialize.service_user_for` now falls
+    # back to `nobody` unconditionally instead - guaranteed to exist on
+    # every Debian-family system, not a guess.
 
 
 def build_detect_command() -> str:

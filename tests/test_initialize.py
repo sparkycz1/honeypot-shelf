@@ -285,10 +285,15 @@ async def test_post_initialize_without_csrf_is_rejected(client):
     assert response.status_code == 403
 
 
-def test_service_user_for_root_falls_back_to_pi():
-    assert service_user_for("root", _RPI_PLATFORM) == "pi"
-    assert service_user_for("pi", _RPI_PLATFORM) == "pi"
-    assert service_user_for("alice", _RPI_PLATFORM) == "alice"
+def test_service_user_for_root_falls_back_to_nobody():
+    """Regression guard for a real bug found live: a plain, hand-installed
+    Debian 13 VM (no cloud-init, no "debian" user at all) failed
+    Initialize outright with "chown: invalid user: 'debian:debian'" when
+    this used to guess a per-platform convention name instead. `nobody`
+    is guaranteed to exist on every supported release."""
+    assert service_user_for("root") == "nobody"
+    assert service_user_for("pi") == "pi"
+    assert service_user_for("alice") == "alice"
 
 
 def test_build_initialize_command_includes_hostname_and_installs_no_vpn_by_default():
@@ -457,21 +462,21 @@ def test_build_initialize_command_ubuntu_also_uses_persistent_log():
     assert f'"filename"] = "{PERSISTENT_LOG_PATH}"' in script
 
 
-def test_service_user_for_falls_back_to_distro_default_when_no_raspi_config():
-    debian_platform = DetectedPlatform(
-        distro="debian", codename="bookworm", label="Debian 12 (bookworm)", has_raspi_config=False
+def test_build_initialize_command_chowns_smb_share_to_nobody_nogroup_when_connecting_as_root():
+    """Regression guard for the exact live failure: `chown nobody:nobody`
+    would be just as wrong as `chown debian:debian` - `nobody`'s own
+    primary group is `nogroup`, not `nobody`."""
+    script = build_initialize_command(
+        platform=_RPI_PLATFORM, device_name="acme-honey1", service_user="nobody"
     )
-    ubuntu_platform = DetectedPlatform(
-        distro="ubuntu",
-        codename="noble",
-        label="Ubuntu 24.04 LTS (Noble Numbat)",
-        has_raspi_config=False,
+    assert "chown nobody:nogroup /samba" in script
+
+
+def test_build_initialize_command_chowns_smb_share_to_the_real_login_account():
+    script = build_initialize_command(
+        platform=_RPI_PLATFORM, device_name="acme-honey1", service_user="alice"
     )
-    assert service_user_for("root", debian_platform) == "debian"
-    assert service_user_for("root", ubuntu_platform) == "ubuntu"
-    assert service_user_for("root", _RPI_PLATFORM) == "pi"
-    # A non-root login account is always used as-is, regardless of platform.
-    assert service_user_for("alice", debian_platform) == "alice"
+    assert "chown alice:alice /samba" in script
 
 
 def test_build_initialize_command_generates_config_only_if_missing():

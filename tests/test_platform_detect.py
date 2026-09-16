@@ -49,14 +49,6 @@ def test_raspberry_pi_os_reports_id_debian_but_is_distinguished_by_raspi_config(
     assert rpi.codename == plain_debian.codename == "trixie"
     assert rpi.has_raspi_config is True
     assert plain_debian.has_raspi_config is False
-    assert rpi.default_service_user == "pi"
-    assert plain_debian.default_service_user == "debian"
-
-
-def test_default_service_user_matches_each_ecosystems_own_convention():
-    assert parse_detect_output(_raw("ubuntu", "noble", "no")).default_service_user == "ubuntu"
-    assert parse_detect_output(_raw("debian", "bookworm", "no")).default_service_user == "debian"
-    assert parse_detect_output(_raw("debian", "trixie", "yes")).default_service_user == "pi"
 
 
 def test_unsupported_release_is_rejected():

@@ -392,7 +392,7 @@ def log_path_for(platform: DetectedPlatform) -> str:
     return TMPFS_LOG_PATH if platform.has_raspi_config else PERSISTENT_LOG_PATH
 
 
-def service_user_for(ssh_username: str, platform: DetectedPlatform) -> str:
+def service_user_for(ssh_username: str) -> str:
     """The account used for anything *other* than the opencanary.service
     unit itself (which now always runs as root — see
     `_opencanary_service_unit`'s own comment for why) — currently just the
@@ -400,10 +400,15 @@ def service_user_for(ssh_username: str, platform: DetectedPlatform) -> str:
     smb-prep step). The SSH login account itself when it's a real,
     non-root user (the common case — a device imaged with a normal
     account, e.g. via RPi Imager, or a cloud-init default user), or
-    `platform`'s own conventional default when connecting as root, since
-    root itself isn't the right account to own a share directory served
-    to guests — see `DetectedPlatform.default_service_user`."""
-    return ssh_username if ssh_username != "root" else platform.default_service_user
+    `nobody` when connecting as root — root itself isn't the right account
+    to own a share directory served to guests, and `nobody` is guaranteed
+    to exist on every Debian-family system (it's also the exact account
+    `_opencanary_service_unit` itself drops to). A previous version
+    guessed a per-ecosystem convention name instead ("pi"/"debian"/
+    "ubuntu") — confirmed live that this was wrong: a plain, hand-
+    installed Debian 13 VM with no "debian" user at all failed here with
+    "chown: invalid user: 'debian:debian'"."""
+    return ssh_username if ssh_username != "root" else "nobody"
 
 
 def _heredoc(path: str, content: str, marker: str) -> str:
@@ -633,7 +638,15 @@ def build_initialize_command(
     # docstring. ---
     lines.append(_step("Preparing Samba (service left disabled)"))
     lines.append(f"mkdir -p {_SMB_SHARE_PATH}")
-    lines.append(f"chown {shlex.quote(service_user)}:{shlex.quote(service_user)} {_SMB_SHARE_PATH}")
+    # `nobody`'s own primary group is `nogroup`, not `nobody` - a real SSH
+    # login account's own primary group matches its username on every
+    # supported platform (standard useradd/adduser behavior), so this only
+    # needs the special case for the one account name that isn't also its
+    # own group name.
+    service_group = "nogroup" if service_user == "nobody" else service_user
+    lines.append(
+        f"chown {shlex.quote(service_user)}:{shlex.quote(service_group)} {_SMB_SHARE_PATH}"
+    )
     lines.append(f"chmod 755 {_SMB_SHARE_PATH}")
     lines.append(f"touch {_SMB_SHARE_PATH}/testing.txt")
     lines.append(

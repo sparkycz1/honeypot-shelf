@@ -27,10 +27,9 @@ Ubuntu (LTS, Desktop or Server — indistinguishable over plain SSH) — see
 after connecting, a quick read-only probe (`/etc/os-release` plus
 `command -v raspi-config`) decides which; an unsupported OS is refused
 before any change is made, with a clear error naming what's supported.
-Only two things actually differ by platform — the fallback account name
-when connecting as root, and where OpenCanary's own log lives (a tmpfs
-ramdisk on a device with raspi-config, to spare an SD card the write
-wear the read-only-root toggle exists for — see
+Only one thing actually differs by platform — where OpenCanary's own log
+lives (a tmpfs ramdisk on a device with raspi-config, to spare an SD
+card the write wear the read-only-root toggle exists for — see
 [Honeypot Management](Honeypot-Management.md)'s own Config-tab section —
 or a plain persistent path otherwise, since Debian/Ubuntu typically
 aren't running off an SD card at all). Every other step is identical
