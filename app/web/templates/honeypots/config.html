@@ -16,6 +16,7 @@
     </div>
   {% endif %}
 
+  {% if honeypot.supports_readonly_root %}
   <section class="panel">
     <h2>{{ t(request, 'honeypots.config.readonly_heading') }}</h2>
     <p class="hint">
@@ -73,6 +74,7 @@
       <p class="hint">{{ t(request, 'honeypots.confirm_fingerprint_first') }}</p>
     {% endif %}
   </section>
+  {% endif %}
 
   {% if opencanary_config is not none %}
     <section class="panel">

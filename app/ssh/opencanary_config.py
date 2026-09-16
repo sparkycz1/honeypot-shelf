@@ -15,9 +15,10 @@ config (https://github.com/thinkst/opencanary/blob/master/data/.opencanary.conf)
 except two deliberately left untouched by this editor:
 
 - `logger` — this app's own Initialize already repoints its file handler
-  at the `/mnt/tmpfs` ramdisk (see `app.ssh.initialize`); re-exposing the
-  whole logging/formatter tree here would be a lot of surface for
-  something nobody needs to touch per-honeypot.
+  at the platform-appropriate path (a tmpfs ramdisk, or a plain
+  persistent one — see `app.ssh.initialize`/`app.ssh.platform_detect`);
+  re-exposing the whole logging/formatter tree here would be a lot of
+  surface for something nobody needs to touch per-honeypot.
 - `telnet.honeycreds` — a list of fake credential hashes, not a simple
   scalar/list-of-scalars field this generic form model can represent;
   left exactly as `--copyconfig` shipped it (or whatever a previous save

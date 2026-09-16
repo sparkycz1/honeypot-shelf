@@ -194,13 +194,47 @@ class Honeypot(Base):
     # app.ssh.canary_activity, app.tasks.jobs.poll_all_honeypot_canary_logs)
     # — the only way a HoneypotEvent row gets created; see
     # HoneypotEvent.source. ---
-    # Byte offset already read from OPENCANARY_LOG_PATH — only the bytes
+    # Byte offset already read from opencanary_log_path — only the bytes
     # appended since this offset are fetched on the next poll. Reset to 0 if
     # the file has shrunk since (rotated/truncated).
     opencanary_log_offset: Mapped[int] = mapped_column(
         BigInteger, nullable=False, server_default="0"
     )
     opencanary_log_polled_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    # Where OpenCanary's own file logger writes on *this* honeypot — set
+    # once, at Initialize, from the detected platform
+    # (app.ssh.platform_detect): a tmpfs ramdisk
+    # ("/mnt/tmpfs/opencanary.log") on a device with raspi-config (spares
+    # an SD card the write wear — see app.ssh.readonly), a plain
+    # persistent path ("/var/log/opencanary/opencanary.log") on Debian/
+    # Ubuntu, which typically don't run off an SD card at all. Left at the
+    # tmpfs default for a device Onboarded instead of Initialized
+    # (app.ssh.onboarding never touches OpenCanary's own config), or
+    # Initialized before this column existed — every row that predates
+    # this feature really was that, back when Initialize only ever
+    # targeted Raspberry Pi OS. Editable by hand from the honeypot's own
+    # Edit form for a device whose log genuinely lives somewhere else.
+    opencanary_log_path: Mapped[str] = mapped_column(
+        String(255), nullable=False, server_default="/mnt/tmpfs/opencanary.log"
+    )
+    # Whether the Config tab should offer the read-only-root toggle
+    # (app.ssh.readonly) for this honeypot at all — Raspberry Pi OS's own
+    # raspi-config, detected once at Initialize
+    # (app.ssh.platform_detect.DetectedPlatform.has_raspi_config).
+    #
+    # Python-level `default` (False) vs `server_default` ("true")
+    # deliberately differ: a freshly-created `Honeypot()` row (about to be
+    # Initialized, Onboarded, or added by hand) starts False and only
+    # becomes True once Initialize actually detects raspi-config — no
+    # claiming support without evidence. The DB-level `server_default`
+    # ("true") is what backfills every row that already existed when this
+    # column was added, via that migration's own ALTER TABLE default —
+    # historically accurate, not a guess: Initialize only ever targeted
+    # Raspberry Pi OS before this feature existed, so every one of those
+    # rows really does have raspi-config.
+    supports_readonly_root: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="true"
+    )
 
     events: Mapped[list[HoneypotEvent]] = relationship(
         back_populates="honeypot", cascade="all, delete-orphan"

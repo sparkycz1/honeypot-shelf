@@ -30,11 +30,15 @@ from app.ssh.client import open_connection
 DEFAULT_LINE_LIMIT = 200
 MAX_LINE_LIMIT = 5000
 
-# Where OpenCanary's own file logger writes once a honeypot has been
-# through Initialize (see `app.ssh.initialize`'s `/mnt/tmpfs` tmpfs setup)
-# — the Logs tab's one-click "Honeypot logs" shortcut. Must be inside
-# `LOG_FILE_ALLOWED_PATHS` (the default includes `/mnt/tmpfs`) for the
-# shortcut to actually work.
+# The legacy default — every honeypot's own `opencanary_log_path` column
+# (app.db.models.honeypot) is what the Logs tab's "Honeypot logs"
+# shortcut and the Activity tab's poll actually use now (set per-device by
+# Initialize/facts gathering — see app.ssh.platform_detect and
+# app.ssh.initialize's TMPFS_PATH/PERSISTENT_LOG_PATH); this constant only
+# still matters as `app.ssh.canary_activity.poll_log`'s own fallback
+# default when a caller doesn't pass `path=` explicitly. Must be inside
+# `LOG_FILE_ALLOWED_PATHS` (the default includes both `/mnt/tmpfs` and
+# `/var/log`) for the shortcut to actually work either way.
 HONEYPOT_LOG_PATH = "/mnt/tmpfs/opencanary.log"
 
 

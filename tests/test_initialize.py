@@ -12,12 +12,24 @@ from typing import TYPE_CHECKING, cast
 
 from app.db.models.user import AccessLevel, User
 from app.ssh.initialize import build_initialize_command, service_user_for, wrap_for_sudo
+from app.ssh.platform_detect import DetectedPlatform
 from app.web.routes.initialize import PENDING_RUNS, PendingInitializeRun
 from app.web.routes.initialize_ws import _persist_initialize_run
 from tests.conftest import ADMIN_USERNAME, create_company
 
 if TYPE_CHECKING:
     from fastapi import WebSocket
+
+# Every existing test below predates cross-distro support and exercises
+# what was, at the time, the only target: Raspberry Pi OS. Kept as the
+# default `platform=` for all of them rather than touching each one's own
+# assertions - app.ssh.platform_detect's own tests cover detection/parsing,
+# and test_platform_specific_initialize_behavior below covers the actual
+# Debian/Ubuntu fork (tmpfs vs. persistent log, "pi" vs. distro-default
+# service user).
+_RPI_PLATFORM = DetectedPlatform(
+    distro="debian", codename="trixie", label="Debian 13 (trixie)", has_raspi_config=True
+)
 
 
 def _csrf_from(response) -> str:
@@ -274,13 +286,14 @@ async def test_post_initialize_without_csrf_is_rejected(client):
 
 
 def test_service_user_for_root_falls_back_to_pi():
-    assert service_user_for("root") == "pi"
-    assert service_user_for("pi") == "pi"
-    assert service_user_for("alice") == "alice"
+    assert service_user_for("root", _RPI_PLATFORM) == "pi"
+    assert service_user_for("pi", _RPI_PLATFORM) == "pi"
+    assert service_user_for("alice", _RPI_PLATFORM) == "alice"
 
 
 def test_build_initialize_command_includes_hostname_and_installs_no_vpn_by_default():
     script = build_initialize_command(
+        platform=_RPI_PLATFORM,
         device_name="acme-honey1",
         service_user="pi",
     )
@@ -298,7 +311,9 @@ def test_build_initialize_command_runs_opencanary_service_as_root():
     for Raspberry Pi OS's default `pi` account, not guaranteed for any
     other). Running the unit as root (no `User=` line) sidesteps that
     assumption entirely."""
-    script = build_initialize_command(device_name="acme-honey1", service_user="pi")
+    script = build_initialize_command(
+        platform=_RPI_PLATFORM, device_name="acme-honey1", service_user="pi"
+    )
     assert "User=" not in script
     assert "ExecStart=/opt/myenv/bin/opencanaryd --start --uid=nobody --gid=nogroup" in script
 
@@ -313,13 +328,16 @@ def test_build_initialize_command_opencanary_service_is_type_forking():
     restarts). `Type=forking` + the same `PIDFile` opencanaryd already
     writes fixes it — confirmed live against the actual crash-looping
     device before landing."""
-    script = build_initialize_command(device_name="acme-honey1", service_user="pi")
+    script = build_initialize_command(
+        platform=_RPI_PLATFORM, device_name="acme-honey1", service_user="pi"
+    )
     assert "Type=forking" in script
     assert "PIDFile=/var/run/opencanaryd.pid" in script
 
 
 def test_build_initialize_command_installs_netbird_without_joining_when_no_key():
     script = build_initialize_command(
+        platform=_RPI_PLATFORM,
         device_name="acme-honey1",
         service_user="pi",
         vpn_provider="netbird",
@@ -337,6 +355,7 @@ def test_build_initialize_command_gpg_dearmor_never_prompts_on_a_rerun():
     no pty, gpg can't read that prompt at all, crashing with "cannot open
     '/dev/tty'" (confirmed live) instead of just overwriting it."""
     script = build_initialize_command(
+        platform=_RPI_PLATFORM,
         device_name="acme-honey1", service_user="pi", vpn_provider="netbird"
     )
     assert "gpg --batch --yes --dearmor" in script
@@ -344,6 +363,7 @@ def test_build_initialize_command_gpg_dearmor_never_prompts_on_a_rerun():
 
 def test_build_initialize_command_joins_netbird_when_setup_key_given():
     script = build_initialize_command(
+        platform=_RPI_PLATFORM,
         device_name="acme-honey1",
         service_user="pi",
         vpn_provider="netbird",
@@ -357,6 +377,7 @@ def test_build_initialize_command_joins_netbird_when_setup_key_given():
 def test_build_initialize_command_joins_wireguard_when_config_given():
     config = "[Interface]\nPrivateKey = abc\n[Peer]\nPublicKey = xyz\nEndpoint = 1.2.3.4:51820"
     script = build_initialize_command(
+        platform=_RPI_PLATFORM,
         device_name="acme-honey1",
         service_user="pi",
         vpn_provider="wireguard",
@@ -372,6 +393,7 @@ def test_build_initialize_command_sets_up_tmpfs_ramdisk():
     from app.ssh.initialize import TMPFS_PATH, TMPFS_SIZE_MB
 
     script = build_initialize_command(
+        platform=_RPI_PLATFORM,
         device_name="acme-honey1",
         service_user="pi",
         netbird_setup_key=None,
@@ -386,6 +408,7 @@ def test_build_initialize_command_repoints_opencanary_log_to_tmpfs():
     from app.ssh.logs import HONEYPOT_LOG_PATH
 
     script = build_initialize_command(
+        platform=_RPI_PLATFORM,
         device_name="acme-honey1",
         service_user="pi",
         netbird_setup_key=None,
@@ -394,8 +417,66 @@ def test_build_initialize_command_repoints_opencanary_log_to_tmpfs():
     assert f'"filename"] = "{HONEYPOT_LOG_PATH}"' in script
 
 
+def test_build_initialize_command_skips_tmpfs_and_uses_persistent_log_without_raspi_config():
+    """Debian/Ubuntu: no SD card, no reason to keep OpenCanary's log off
+    real storage — see PERSISTENT_LOG_PATH's own comment."""
+    from app.ssh.initialize import PERSISTENT_LOG_PATH, TMPFS_PATH
+
+    debian_platform = DetectedPlatform(
+        distro="debian", codename="bookworm", label="Debian 12 (bookworm)", has_raspi_config=False
+    )
+    script = build_initialize_command(
+        platform=debian_platform,
+        device_name="acme-honey1",
+        service_user="debian",
+        netbird_setup_key=None,
+        netbird_management_url=None,
+    )
+    assert f"mkdir -p {TMPFS_PATH}" not in script
+    assert "mountpoint -q" not in script
+    assert f"install -d -m 1777 {PERSISTENT_LOG_PATH.rsplit('/', 1)[0]}" in script
+    assert f'"filename"] = "{PERSISTENT_LOG_PATH}"' in script
+
+
+def test_build_initialize_command_ubuntu_also_uses_persistent_log():
+    from app.ssh.initialize import PERSISTENT_LOG_PATH
+
+    ubuntu_platform = DetectedPlatform(
+        distro="ubuntu",
+        codename="noble",
+        label="Ubuntu 24.04 LTS (Noble Numbat)",
+        has_raspi_config=False,
+    )
+    script = build_initialize_command(
+        platform=ubuntu_platform,
+        device_name="acme-honey1",
+        service_user="ubuntu",
+        netbird_setup_key=None,
+        netbird_management_url=None,
+    )
+    assert f'"filename"] = "{PERSISTENT_LOG_PATH}"' in script
+
+
+def test_service_user_for_falls_back_to_distro_default_when_no_raspi_config():
+    debian_platform = DetectedPlatform(
+        distro="debian", codename="bookworm", label="Debian 12 (bookworm)", has_raspi_config=False
+    )
+    ubuntu_platform = DetectedPlatform(
+        distro="ubuntu",
+        codename="noble",
+        label="Ubuntu 24.04 LTS (Noble Numbat)",
+        has_raspi_config=False,
+    )
+    assert service_user_for("root", debian_platform) == "debian"
+    assert service_user_for("root", ubuntu_platform) == "ubuntu"
+    assert service_user_for("root", _RPI_PLATFORM) == "pi"
+    # A non-root login account is always used as-is, regardless of platform.
+    assert service_user_for("alice", debian_platform) == "alice"
+
+
 def test_build_initialize_command_generates_config_only_if_missing():
     script = build_initialize_command(
+        platform=_RPI_PLATFORM,
         device_name="acme-honey1",
         service_user="pi",
         netbird_setup_key=None,
@@ -407,6 +488,7 @@ def test_build_initialize_command_generates_config_only_if_missing():
 
 def test_build_initialize_command_prepares_portscan():
     script = build_initialize_command(
+        platform=_RPI_PLATFORM,
         device_name="acme-honey1",
         service_user="pi",
         netbird_setup_key=None,
@@ -423,13 +505,16 @@ def test_build_initialize_command_makes_kern_log_world_readable():
     $FileGroup (0640 root:adm) would otherwise make a freshly created
     kern.log unreadable by opencanaryd's unprivileged nobody:nogroup once
     the portscan module tails it."""
-    script = build_initialize_command(device_name="acme-honey1", service_user="pi")
+    script = build_initialize_command(
+        platform=_RPI_PLATFORM, device_name="acme-honey1", service_user="pi"
+    )
     assert "touch /var/log/kern.log" in script
     assert "chmod 644 /var/log/kern.log" in script
 
 
 def test_build_initialize_command_prepares_samba_with_service_disabled():
     script = build_initialize_command(
+        platform=_RPI_PLATFORM,
         device_name="acme-honey1",
         service_user="pi",
         netbird_setup_key=None,
@@ -454,7 +539,9 @@ def test_build_initialize_command_does_not_chown_to_the_nonexistent_syslog_user(
     file actually needs — rsyslogd itself runs as root regardless of file
     ownership, and opencanaryd's smb module, which tails this file as
     nobody:nogroup, only needs world-read."""
-    script = build_initialize_command(device_name="acme-honey1", service_user="pi")
+    script = build_initialize_command(
+        platform=_RPI_PLATFORM, device_name="acme-honey1", service_user="pi"
+    )
     assert "syslog:adm" not in script
     assert "chmod 644 /var/log/samba-audit.log" in script
     assert '"portscan.enabled": true' not in script
@@ -464,7 +551,9 @@ def test_build_initialize_command_does_not_install_mlocate():
     """Regression guard: mlocate was dropped from the Debian archive as of
     trixie (13, what Raspberry Pi OS 13 is based on) — `apt-get install
     mlocate` fails outright there. `plocate` is its drop-in replacement."""
-    script = build_initialize_command(device_name="acme-honey1", service_user="pi")
+    script = build_initialize_command(
+        platform=_RPI_PLATFORM, device_name="acme-honey1", service_user="pi"
+    )
     assert "mlocate" not in script
     assert "plocate" in script
 
@@ -472,7 +561,9 @@ def test_build_initialize_command_does_not_install_mlocate():
 def test_build_initialize_command_moves_ssh_to_the_new_port_last():
     from app.ssh.initialize import INITIALIZE_SUCCESS_MARKER, NEW_SSH_PORT
 
-    script = build_initialize_command(device_name="acme-honey1", service_user="pi")
+    script = build_initialize_command(
+        platform=_RPI_PLATFORM, device_name="acme-honey1", service_user="pi"
+    )
     assert (
         f"echo 'Port {NEW_SSH_PORT}' > /etc/ssh/sshd_config.d/honeypotshelf-ssh-port.conf"
         in script
@@ -491,6 +582,7 @@ def test_build_initialize_command_moves_ssh_to_the_new_port_last():
 
 def test_build_initialize_command_honors_a_custom_new_ssh_port():
     script = build_initialize_command(
+        platform=_RPI_PLATFORM,
         device_name="acme-honey1", service_user="pi", new_ssh_port=2222
     )
     assert "echo 'Port 2222' > /etc/ssh/sshd_config.d/honeypotshelf-ssh-port.conf" in script
@@ -500,6 +592,7 @@ def test_build_initialize_command_honors_a_custom_new_ssh_port():
 def test_build_initialize_command_installs_authorized_keys_when_given():
     key = "ssh-ed25519 AAAAfake honeypotshelf"
     script = build_initialize_command(
+        platform=_RPI_PLATFORM,
         device_name="acme-honey1",
         service_user="pi",
         ssh_username="pi",
@@ -513,12 +606,15 @@ def test_build_initialize_command_installs_authorized_keys_when_given():
 
 
 def test_build_initialize_command_skips_authorized_keys_step_when_none_given():
-    script = build_initialize_command(device_name="acme-honey1", service_user="pi")
+    script = build_initialize_command(
+        platform=_RPI_PLATFORM, device_name="acme-honey1", service_user="pi"
+    )
     assert "getent passwd" not in script
 
 
 def test_build_initialize_command_grants_passwordless_sudo_for_a_non_root_connection():
     script = build_initialize_command(
+        platform=_RPI_PLATFORM,
         device_name="acme-honey1", service_user="pi", ssh_username="pi"
     )
     assert "pi ALL=(root) NOPASSWD" in script
@@ -533,25 +629,32 @@ def test_build_initialize_command_skips_sudo_grant_for_a_root_connection():
     """Root never needs sudo granted to itself — see app.ssh.readiness's
     module docstring for the same reasoning applied on the read side."""
     script = build_initialize_command(
+        platform=_RPI_PLATFORM,
         device_name="acme-honey1", service_user="pi", ssh_username="root"
     )
     assert "NOPASSWD" not in script
 
 
 def test_build_initialize_command_skips_sudo_grant_when_no_ssh_username_given():
-    script = build_initialize_command(device_name="acme-honey1", service_user="pi")
+    script = build_initialize_command(
+        platform=_RPI_PLATFORM, device_name="acme-honey1", service_user="pi"
+    )
     assert "NOPASSWD" not in script
 
 
 def test_build_initialize_command_installs_ncurses_term():
-    script = build_initialize_command(device_name="acme-honey1", service_user="pi")
+    script = build_initialize_command(
+        platform=_RPI_PLATFORM, device_name="acme-honey1", service_user="pi"
+    )
     assert "ncurses-term" in script
 
 
 def test_build_initialize_command_reboots_last_of_all():
     from app.ssh.initialize import INITIALIZE_SUCCESS_MARKER
 
-    script = build_initialize_command(device_name="acme-honey1", service_user="pi")
+    script = build_initialize_command(
+        platform=_RPI_PLATFORM, device_name="acme-honey1", service_user="pi"
+    )
     assert "reboot" in script
     # After the success marker, not before — a reader (app.web.routes.
     # initialize_ws) must see "the script succeeded" before the reboot
@@ -564,6 +667,7 @@ def test_build_initialize_command_emits_step_markers():
     from app.ssh.initialize import STEP_MARKER_PREFIX
 
     script = build_initialize_command(
+        platform=_RPI_PLATFORM,
         device_name="acme-honey1",
         service_user="pi",
         netbird_setup_key=None,

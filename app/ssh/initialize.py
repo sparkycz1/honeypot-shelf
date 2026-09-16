@@ -1,7 +1,28 @@
-"""Builds the shell script that provisions a **brand new** Raspberry Pi OS
-13 (Debian trixie) device into a working OpenCanary honeypot, run once over
-SSH (see `app.web.routes.initialize_ws`, the only caller) — the
-"Initialize" top-nav action (`app.web.routes.initialize`).
+"""Builds the shell script that provisions a **brand new** device into a
+working OpenCanary honeypot, run once over SSH (see `app.web.routes.
+initialize_ws`, the only caller) — the "Initialize" top-nav action
+(`app.web.routes.initialize`).
+
+**Six supported OS releases** — the two newest of each of Raspberry Pi
+OS, Debian, and Ubuntu (LTS): see `app.ssh.platform_detect.
+SUPPORTED_RELEASES` for the exact list, and that module's own docstring
+for why "is this really a Raspberry Pi" isn't decided from `/etc/
+os-release` at all (it can't be, not reliably — Raspberry Pi OS has
+reported `ID=debian`, identical to plain Debian, since bookworm).
+`build_initialize_command`'s `platform` parameter (`app.ssh.
+platform_detect.DetectedPlatform`, probed by `initialize_ws` before this
+module is ever called) is what actually forks behavior — and only for
+the two things that genuinely differ: the fallback account name when
+connecting as root, and where OpenCanary's own log lives (a tmpfs
+ramdisk that spares an SD card the write wear on a device with
+raspi-config, a plain persistent path otherwise — see `TMPFS_PATH`/
+`PERSISTENT_LOG_PATH`'s own comments, and `app.ssh.readonly` for the
+read-only-root toggle this pairs with). Every other step — packages,
+locale/timezone, the OpenCanary venv/service, NetBird/WireGuard, the
+portscan/Samba prep below — is identical across all six; Ubuntu Server
+and Ubuntu Desktop are indistinguishable from here too (both report the
+same `/etc/os-release`, and this app only ever drives a device over
+plain SSH shell commands — no GUI assumed either way).
 
 Adapted from the team's own Ansible playbook (packages, the venv +
 OpenCanary/scapy/pcapy-ng install, the `opencanary.service` unit, locales,
@@ -15,11 +36,13 @@ in that config — confirmed against OpenCanary's own wiki (only these two
 need it; every other module is a self-contained listener):
 
 - **portscan** — https://github.com/thinkst/opencanary/wiki/OpenCanary-Wiki#portscan-not-working-on-debian-12
-  Debian 12+ dropped file-based kernel logging in favor of journald-only,
-  and defaults to the nftables-backed `iptables` binary, neither of which
-  the portscan module can read. Fixed by loading rsyslog's `imjournal`
-  module (bridges journald back to a plain `/var/log/kern.log`) and
-  switching the `iptables` alternative to `iptables-legacy`.
+  Debian 12+ (and Ubuntu, which inherits the same systemd/journald and
+  nftables-backed-`iptables` defaults) dropped file-based kernel logging
+  in favor of journald-only, and defaults to the nftables-backed
+  `iptables` binary, neither of which the portscan module can read.
+  Fixed by loading rsyslog's `imjournal` module (bridges journald back to
+  a plain `/var/log/kern.log`) and switching the `iptables` alternative
+  to `iptables-legacy`.
 - **smb** — https://github.com/thinkst/opencanary/wiki/Opencanary-and-Samba
   Needs Samba itself configured with a `full_audit` VFS module that
   writes to syslog, which rsyslog then routes to a plain audit log file
@@ -86,8 +109,8 @@ import shlex
 from collections.abc import Sequence
 
 from app.ssh.authorized_keys import build_authorized_keys_append_command
-from app.ssh.logs import HONEYPOT_LOG_PATH
 from app.ssh.onboarding import build_sudoers_grant_command
+from app.ssh.platform_detect import DetectedPlatform
 
 # Printed as the script's last line on success — same "did it actually run
 # to completion" reasoning as app.ssh.onboarding.ONBOARD_SUCCESS_MARKER.
@@ -136,17 +159,14 @@ REBOOT_WAIT_MAX_SECONDS = 240
 
 # See app.ssh.readonly's module docstring for why this exists — a small
 # ramdisk OpenCanary's log can still write to once root itself is
-# read-only. Shared with app.ssh.logs.HONEYPOT_LOG_PATH (the actual log
-# file lives at "<TMPFS_PATH>/opencanary.log").
+# read-only. Only ever set up when `DetectedPlatform.has_raspi_config` —
+# see `_log_setup_lines` below; Debian/Ubuntu get a plain persistent path
+# instead (`PERSISTENT_LOG_PATH`), since neither typically runs off an SD
+# card, so there's no write-wear reason to keep the log off real storage.
 TMPFS_PATH = "/mnt/tmpfs"
 TMPFS_SIZE_MB = 512
-
-# The account opencanaryd's systemd unit runs as (it drops to
-# --uid=nobody --gid=nogroup itself once it has bound its listening
-# ports — see the service unit below). Matches the source Ansible
-# playbook's own hardcoded `User=pi`; used only when the operator
-# connected as root, where there's no more specific account to prefer.
-_DEFAULT_SERVICE_USER = "pi"
+TMPFS_LOG_PATH = f"{TMPFS_PATH}/opencanary.log"
+PERSISTENT_LOG_PATH = "/var/log/opencanary/opencanary.log"
 
 # python3-scapy is installed via apt (not pip) specifically so the venv
 # can be built with --system-site-packages and see it — same reasoning
@@ -163,7 +183,10 @@ _APT_PACKAGES = [
     "samba",
     "rsyslog",
     "iptables",
-    # --- General admin/runbook tool set (Debian >=12 package names) ---
+    # --- General admin/runbook tool set — same package names across every
+    # supported release (app.ssh.platform_detect.SUPPORTED_RELEASES):
+    # Debian bookworm/trixie, Ubuntu noble/resolute, and Raspberry Pi OS
+    # (Debian underneath either way). ---
     "tmux",
     "htop",
     "iftop",
@@ -184,9 +207,10 @@ _APT_PACKAGES = [
     "iperf3",
     # mlocate was dropped from the Debian archive as of trixie (13) —
     # plocate is its actively maintained, drop-in replacement (same
-    # `locate`/`updatedb` commands). Verified against a real
-    # `debian:trixie-slim` image: `apt-get install mlocate` fails with
-    # "Unable to locate package", `plocate` installs cleanly.
+    # `locate`/`updatedb` commands), and has been Ubuntu's own default
+    # `locate` provider since well before noble (24.04) too. Verified
+    # against a real `debian:trixie-slim` image: `apt-get install mlocate`
+    # fails with "Unable to locate package", `plocate` installs cleanly.
     "plocate",
     "dnsutils",
     "bash-completion",
@@ -359,17 +383,27 @@ WantedBy=multi-user.target
 """
 
 
-def service_user_for(ssh_username: str) -> str:
+def log_path_for(platform: DetectedPlatform) -> str:
+    """Where `build_initialize_command` points OpenCanary's own file
+    logger at for `platform` — the single source of truth both that
+    function (building the script) and its caller
+    (`app.web.routes.initialize_ws`, storing `Honeypot.opencanary_log_
+    path` once the run succeeds) use, so the two can never disagree."""
+    return TMPFS_LOG_PATH if platform.has_raspi_config else PERSISTENT_LOG_PATH
+
+
+def service_user_for(ssh_username: str, platform: DetectedPlatform) -> str:
     """The account used for anything *other* than the opencanary.service
     unit itself (which now always runs as root — see
     `_opencanary_service_unit`'s own comment for why) — currently just the
     Samba share's ownership (`app.ssh.initialize.build_initialize_command`'s
     smb-prep step). The SSH login account itself when it's a real,
     non-root user (the common case — a device imaged with a normal
-    account, e.g. via RPi Imager), or the source playbook's own `pi`
-    default when connecting as root, since root itself isn't the right
-    account to own a share directory served to guests."""
-    return ssh_username if ssh_username != "root" else _DEFAULT_SERVICE_USER
+    account, e.g. via RPi Imager, or a cloud-init default user), or
+    `platform`'s own conventional default when connecting as root, since
+    root itself isn't the right account to own a share directory served
+    to guests — see `DetectedPlatform.default_service_user`."""
+    return ssh_username if ssh_username != "root" else platform.default_service_user
 
 
 def _heredoc(path: str, content: str, marker: str) -> str:
@@ -384,6 +418,7 @@ def build_initialize_command(
     *,
     device_name: str,
     service_user: str,
+    platform: DetectedPlatform,
     vpn_provider: str = "none",
     netbird_setup_key: str | None = None,
     netbird_management_url: str | None = None,
@@ -401,6 +436,16 @@ def build_initialize_command(
     connectivity" section for how the two relate), OpenCanary's own config
     (`--copyconfig`), and the portscan/Samba host-side prep described in
     the module docstring above.
+
+    `platform` — from `app.ssh.platform_detect.parse_detect_output`,
+    already probed against this exact device before this function is ever
+    called (`app.web.routes.initialize_ws`) — decides two things: the
+    fallback account name when connecting as root (`service_user_for`),
+    and whether OpenCanary's log goes to a tmpfs ramdisk (a device with
+    raspi-config) or a plain persistent path (one without) — see
+    `TMPFS_PATH`/`PERSISTENT_LOG_PATH`'s own comments. Every other step is
+    identical across every supported release
+    (`app.ssh.platform_detect.SUPPORTED_RELEASES`).
     """
     name = shlex.quote(device_name.strip())
     apt_packages = " ".join(shlex.quote(p) for p in dict.fromkeys(_APT_PACKAGES))
@@ -523,19 +568,28 @@ def build_initialize_command(
         lines.append("systemctl enable wg-quick@wg0")
         lines.append("wg-quick up wg0 || (wg-quick down wg0 || true; wg-quick up wg0)")
 
-    # --- /mnt/tmpfs: a small ramdisk OpenCanary's own log writes to
-    # instead of the SD card (see app.ssh.readonly's module docstring —
-    # the Honeypot Config tab's read-only-root toggle assumes this exists
-    # so there's still somewhere for OpenCanary to write once root itself
-    # is read-only). Idempotent: adding the fstab line twice would mount
-    # it twice, so this checks first. ---
-    lines.append(_step(f"Setting up the {TMPFS_SIZE_MB}MB tmpfs at {TMPFS_PATH}"))
-    lines.append(f"mkdir -p {TMPFS_PATH}")
-    lines.append(
-        f"grep -q '{TMPFS_PATH} ' /etc/fstab || "
-        f"echo 'tmpfs {TMPFS_PATH} tmpfs defaults,noatime,size={TMPFS_SIZE_MB}M 0 0' >> /etc/fstab"
-    )
-    lines.append(f"mountpoint -q {TMPFS_PATH} || mount {TMPFS_PATH}")
+    # --- Where OpenCanary's own log actually lives on this device — see
+    # TMPFS_PATH/PERSISTENT_LOG_PATH's own comments for why this forks on
+    # `platform.has_raspi_config`. Either way the directory ends up
+    # world-writable (mode 1777, same as /tmp) — OpenCanaryd's systemd
+    # unit binds its privileged ports as root then drops to
+    # --uid=nobody --gid=nogroup (see `_opencanary_service_unit`), so
+    # whichever directory holds the log file has to be writable by an
+    # account with no more specific grant on it. ---
+    log_path = log_path_for(platform)
+    if platform.has_raspi_config:
+        lines.append(_step(f"Setting up the {TMPFS_SIZE_MB}MB tmpfs at {TMPFS_PATH}"))
+        lines.append(f"mkdir -p {TMPFS_PATH}")
+        lines.append(
+            f"grep -q '{TMPFS_PATH} ' /etc/fstab || "
+            f"echo 'tmpfs {TMPFS_PATH} tmpfs defaults,noatime,size={TMPFS_SIZE_MB}M 0 0' "
+            ">> /etc/fstab"
+        )
+        lines.append(f"mountpoint -q {TMPFS_PATH} || mount {TMPFS_PATH}")
+    else:
+        log_dir = log_path.rsplit("/", 1)[0]
+        lines.append(_step(f"Setting up the OpenCanary log directory at {log_dir}"))
+        lines.append(f"install -d -m 1777 {log_dir}")
 
     # --- OpenCanary's own config (JSON) — generated once, never
     # overwritten on a re-run (an operator may have already hand-edited
@@ -623,7 +677,7 @@ def build_initialize_command(
         'cfg["portscan.iptables_path"] = "/usr/sbin/iptables"\n'
         'cfg["smb.auditfile"] = "/var/log/samba-audit.log"\n'
         "try:\n"
-        f'    cfg["logger"]["kwargs"]["handlers"]["file"]["filename"] = "{HONEYPOT_LOG_PATH}"\n'
+        f'    cfg["logger"]["kwargs"]["handlers"]["file"]["filename"] = "{log_path}"\n'
         "except (KeyError, TypeError):\n"
         "    pass\n"
         "with open(path, \"w\") as f:\n"
@@ -714,8 +768,9 @@ def wrap_for_sudo(script: str, *, ssh_username: str, sudo_password: str | None) 
       `sudo -S` reads it from stdin.
     - Otherwise (the shared-key path — no password known to this app):
       `sudo -n`, which only succeeds if the account already has
-      passwordless sudo — the Raspberry Pi OS default for its initial
-      user. A device without that needs either password auth chosen
+      passwordless sudo — Raspberry Pi OS's own default for its initial
+      user, though not Debian's or Ubuntu's own default first-user
+      accounts. A device without that needs either password auth chosen
       instead, or NOPASSWD sudo granted to the account by hand first.
 
     The script is first written to a temp file (as the unprivileged login

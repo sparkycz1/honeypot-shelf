@@ -2710,7 +2710,7 @@ async def honeypot_logs(
             "browse_root": settings.log_file_allowed_path_list[0]
             if settings.log_file_allowed_path_list
             else "/var/log",
-            "honeypot_log_path": ssh_logs.HONEYPOT_LOG_PATH,
+            "honeypot_log_path": honeypot.opencanary_log_path,
             "error": error,
             "path": path,
             "lines": lines,
@@ -3179,6 +3179,11 @@ async def set_honeypot_readonly_endpoint(
     error: str | None = None
     if not honeypot.host_key_fingerprint:
         error = "Confirm the server's key fingerprint on the Overview tab first."
+    elif not honeypot.supports_readonly_root:
+        # Defense in depth — the Config tab already hides this section
+        # entirely for a honeypot without raspi-config (see config.html),
+        # this only matters for a direct POST bypassing that.
+        error = "This honeypot doesn't support the read-only-root toggle (no raspi-config)."
     else:
         try:
             async_result = tasks.set_honeypot_readonly.delay(str(honeypot.id), enable=enable_bool)

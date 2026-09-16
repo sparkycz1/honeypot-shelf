@@ -34,6 +34,7 @@ _SECTION_MARKERS = (
     "SHUTDOWN_SUDO",
     "DMIDECODE_SUDO",
     "SYSTEMCTL_SUDO",
+    "RASPI_CONFIG_PRESENT",
     "RASPI_CONFIG_SUDO",
     "FLATPAK_SNAP_PRESENT",
     "FLATPAK_SNAP_SUDO",
@@ -55,6 +56,14 @@ READINESS_COMMAND = (
     "echo ===SYSTEMCTL_SUDO===; "
     '[ "$is_root" = 1 ] && echo ok || '
     "(sudo -n systemctl --version >/dev/null 2>&1 && echo ok || echo missing); "
+    # Checked separately from the sudo grant below (same pattern as
+    # FLATPAK_SNAP_PRESENT/_SUDO) — raspi-config genuinely doesn't exist
+    # on Debian/Ubuntu (see app.ssh.platform_detect's module docstring),
+    # so "missing sudo for it" would be a nonsensical, unfixable finding
+    # on those; this is what lets `missing_requirements` skip it there
+    # instead of reporting a permanent, unactionable item.
+    "echo ===RASPI_CONFIG_PRESENT===; "
+    "command -v raspi-config >/dev/null 2>&1 && echo yes || echo no; "
     "echo ===RASPI_CONFIG_SUDO===; "
     '[ "$is_root" = 1 ] && echo ok || '
     "(sudo -n raspi-config --version >/dev/null 2>&1 && echo ok || echo missing); "
@@ -79,6 +88,7 @@ class ReadinessResult(TypedDict):
     shutdown_sudo_ok: bool
     dmidecode_sudo_ok: bool
     systemctl_sudo_ok: bool
+    raspi_config_present: bool
     raspi_config_sudo_ok: bool
     flatpak_or_snap_present: bool
     flatpak_snap_sudo_ok: bool
@@ -103,6 +113,7 @@ def parse_readiness_output(raw: str) -> ReadinessResult:
         shutdown_sudo_ok=sections.get("SHUTDOWN_SUDO") == "ok",
         dmidecode_sudo_ok=sections.get("DMIDECODE_SUDO") == "ok",
         systemctl_sudo_ok=sections.get("SYSTEMCTL_SUDO") == "ok",
+        raspi_config_present=sections.get("RASPI_CONFIG_PRESENT") == "yes",
         raspi_config_sudo_ok=sections.get("RASPI_CONFIG_SUDO") == "ok",
         flatpak_or_snap_present=sections.get("FLATPAK_SNAP_PRESENT") == "yes",
         flatpak_snap_sudo_ok=sections.get("FLATPAK_SNAP_SUDO") == "ok",
@@ -110,7 +121,10 @@ def parse_readiness_output(raw: str) -> ReadinessResult:
 
 
 # (result key, human-readable description) — checked in this order so the
-# banner's list reads roughly most-to-least impactful.
+# banner's list reads roughly most-to-least impactful. raspi_config_sudo_ok
+# is deliberately *not* here — see `missing_requirements` below for why it
+# needs its own `raspi_config_present`-gated handling, the same pattern
+# flatpak_snap_sudo_ok already gets.
 _REQUIREMENT_LABELS: tuple[tuple[str, str], ...] = (
     ("apt_sudo_ok", "passwordless sudo for apt-get (needed for checking/running updates)"),
     ("shutdown_sudo_ok", "passwordless sudo for shutdown (needed for reboot/power actions)"),
@@ -118,11 +132,6 @@ _REQUIREMENT_LABELS: tuple[tuple[str, str], ...] = (
     (
         "systemctl_sudo_ok",
         "passwordless sudo for systemctl (needed for the Honeypot Config tab's module editor)",
-    ),
-    (
-        "raspi_config_sudo_ok",
-        "passwordless sudo for raspi-config (needed for the Honeypot Config tab's "
-        "read-only-root toggle)",
     ),
     ("ncurses_term_installed", "ncurses-term (needed for full-color terminal output)"),
 )
@@ -145,8 +154,16 @@ def missing_requirements(result: ReadinessResult) -> list[str]:
     — empty means everything checked is in place. `flatpak_snap_sudo_ok`
     is only reported when flatpak or snap is actually present (no point
     telling an operator to fix sudo for a package manager the honeypot
-    doesn't even have)."""
+    doesn't even have) — `raspi_config_sudo_ok` gets the identical
+    treatment against `raspi_config_present`: raspi-config genuinely
+    doesn't exist on Debian/Ubuntu, so "missing sudo for it" there would
+    be a permanent, unfixable finding, not an actionable one."""
     missing = [label for key, label in _REQUIREMENT_LABELS if not result[key]]  # type: ignore[literal-required]
+    if result["raspi_config_present"] and not result["raspi_config_sudo_ok"]:
+        missing.append(
+            "passwordless sudo for raspi-config (needed for the Honeypot Config tab's "
+            "read-only-root toggle)"
+        )
     if result["flatpak_or_snap_present"] and not result["flatpak_snap_sudo_ok"]:
         missing.append("passwordless sudo for flatpak/snap (needed for those updates)")
     return missing

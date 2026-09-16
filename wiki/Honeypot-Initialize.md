@@ -1,25 +1,40 @@
 # 🌱 Initialize
 
-*A blank Raspberry Pi walks in a plain SD card and walks out a convincing liar.*
+*A blank device walks in a plain OS install and walks out a convincing liar.*
 
 **Initialize** (top nav, visible to anyone with write access —
 company-scoped `READ_WRITE` or superadmin) provisions a **brand new**
-Raspberry Pi OS 13 (Debian trixie) device into a working OpenCanary
-honeypot over SSH, in one run: base + admin-tool packages, a Python venv
-with OpenCanary/scapy/pcapy-ng, the `opencanary.service` systemd unit,
-locale (English + Czech, matching this app's own two) and timezone
-(Europe/Prague), a full `apt` upgrade, the team's `vim`/`bash.bashrc`
-config, hostname/`/etc/hosts`, at most one of [NetBird](https://netbird.io)
-or [WireGuard](https://www.wireguard.com) (see [Architecture](Architecture.md)'s
-"VPN connectivity" section for how this relates to Honeypot Shelf's own,
-independent VPN choice in Settings → VPN), generating OpenCanary's config
-(`opencanaryd --copyconfig`), and host-side prep for the two modules that
-need it beyond `enabled: true` (see "Modules prepared, not enabled"
-below — confirmed against
+device into a working OpenCanary honeypot over SSH, in one run: base +
+admin-tool packages, a Python venv with OpenCanary/scapy/pcapy-ng, the
+`opencanary.service` systemd unit, locale (English + Czech, matching this
+app's own two) and timezone (Europe/Prague), a full `apt` upgrade, the
+team's `vim`/`bash.bashrc` config, hostname/`/etc/hosts`, at most one of
+[NetBird](https://netbird.io) or [WireGuard](https://www.wireguard.com)
+(see [Architecture](Architecture.md)'s "VPN connectivity" section for how
+this relates to Honeypot Shelf's own, independent VPN choice in Settings
+→ VPN), generating OpenCanary's config (`opencanaryd --copyconfig`), and
+host-side prep for the two modules that need it beyond `enabled: true`
+(see "Modules prepared, not enabled" below — confirmed against
 [OpenCanary's own wiki](https://github.com/thinkst/opencanary/wiki)).
 Adapted from the team's own Ansible playbook — see `app.ssh.initialize`'s
 module docstring for why this runs as one shell script instead of a real
 `ansible-playbook` invocation.
+
+**Six supported OS releases, auto-detected — nothing to pick on the
+form.** The two newest releases of each of Raspberry Pi OS, Debian, and
+Ubuntu (LTS, Desktop or Server — indistinguishable over plain SSH) — see
+`app.ssh.platform_detect.SUPPORTED_RELEASES` for the exact list. Right
+after connecting, a quick read-only probe (`/etc/os-release` plus
+`command -v raspi-config`) decides which; an unsupported OS is refused
+before any change is made, with a clear error naming what's supported.
+Only two things actually differ by platform — the fallback account name
+when connecting as root, and where OpenCanary's own log lives (a tmpfs
+ramdisk on a device with raspi-config, to spare an SD card the write
+wear the read-only-root toggle exists for — see
+[Honeypot Management](Honeypot-Management.md)'s own Config-tab section —
+or a plain persistent path otherwise, since Debian/Ubuntu typically
+aren't running off an SD card at all). Every other step is identical
+across all six.
 
 **Run history**: `/initialize/history` keeps the last 50 runs (device,
 outcome, who ran it, full output) — the run page's own live output is
@@ -133,18 +148,26 @@ Connecting as `root` needs no sudo. Otherwise:
 
 - With a password: supplied to `sudo -S`.
 - With the shared key: `sudo -n`, which only works if the account already
-  has passwordless sudo — the Raspberry Pi OS default for its initial
-  user. Otherwise use password auth, or grant NOPASSWD sudo by hand first.
+  has passwordless sudo — Raspberry Pi OS's own default for its initial
+  user, not Debian's or Ubuntu's. Otherwise use password auth, or grant
+  NOPASSWD sudo by hand first.
 
-## A tmpfs ramdisk for OpenCanary's own log
+## Where OpenCanary's own log lives
 
-Before generating the config, Initialize sets up a 512&nbsp;MB tmpfs at
-`/mnt/tmpfs` (an `/etc/fstab` entry + mounting it, idempotent) and
-best-effort repoints OpenCanary's file logger there. This is what the
-[Honeypot Config tab](Architecture.md)'s read-only-root toggle assumes
-exists — once `/` is read-only, OpenCanary still needs somewhere to
-write, and a ramdisk both works and is one less thing hitting the SD
-card. The Logs tab's "Honeypot logs" shortcut points at this same path.
+Before generating the config, Initialize decides this per the detected
+platform (see above): on a device with raspi-config, a 512&nbsp;MB tmpfs
+at `/mnt/tmpfs` (an `/etc/fstab` entry + mounting it, idempotent) — what
+the [Honeypot Config tab](Architecture.md)'s read-only-root toggle
+assumes exists, so OpenCanary still has somewhere to write once `/` is
+read-only, sparing the SD card that same write. On Debian/Ubuntu instead
+— no read-only-root toggle offered at all, see
+[Honeypot Management](Honeypot-Management.md) — a plain persistent path,
+`/var/log/opencanary/opencanary.log`, which survives a reboot (a feature
+there, not something to work around). Either way, Initialize repoints
+OpenCanary's file logger at whichever path it set up, and the honeypot's
+own `opencanary_log_path` column (kept in sync by every facts refresh,
+not just at Initialize — see `app.ssh.facts`) is what the Logs tab's
+"Honeypot logs" shortcut and the Activity tab's poll actually read.
 
 ## Modules prepared, not enabled
 
@@ -155,9 +178,10 @@ flips `"<module>.enabled"` to `true`. What it does do, for the two
 modules that need real host-OS setup beyond that (every other module is a
 self-contained listener, nothing further to prepare):
 
-- **portscan** — Debian 12+ dropped file-based kernel logging for
-  journald-only, and defaults to nftables-backed `iptables`; neither
-  works with the module as shipped. Fixed by loading rsyslog's
+- **portscan** — Debian 12+ (and Ubuntu, same systemd/journald and
+  nftables-backed-`iptables` defaults) dropped file-based kernel logging
+  for journald-only; neither works with the module as shipped. Fixed by
+  loading rsyslog's
   `imjournal` module (bridges journald back to `/var/log/kern.log`) and
   switching the `iptables` alternative to `iptables-legacy` — see
   [OpenCanary's wiki](https://github.com/thinkst/opencanary/wiki/OpenCanary-Wiki#portscan-not-working-on-debian-12).

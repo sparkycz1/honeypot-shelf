@@ -1,5 +1,8 @@
-"""Builds the shell script that prepares a fresh, not-yet-managed Debian/
-Raspbian honeypot for Honeypot Shelf, run directly over SSH (see
+"""Builds the shell script that prepares a fresh, not-yet-managed
+Debian-family honeypot (Raspberry Pi OS, Debian, or Ubuntu — see
+`app.ssh.platform_detect` for the six releases Initialize itself detects
+and targets; this script doesn't need to tell them apart at all, see
+below) for Honeypot Shelf, run directly over SSH (see
 `app.tasks.jobs._run_honeypot_onboarding`, the only caller):
 
 1. Create a dedicated `honeypotshelf` user (idempotent — `id -u` first).
@@ -8,11 +11,15 @@ Raspbian honeypot for Honeypot Shelf, run directly over SSH (see
    `app.tasks.jobs._push_pending_ssh_key`).
 3. Grant it passwordless sudo, scoped to exactly what Honeypot Shelf needs
    (`apt-get`, `shutdown`, `dmidecode`, `systemctl`, `raspi-config` — the
-   read-only-root toggle — and `bash /tmp/.honeypotshelf-*` — running this
-   app's own generated scripts, e.g. the Honeypot Config tab's module
-   editor restarting `opencanary` and toggling `smbd`/`nmbd` — and
-   `flatpak`/`snap` if either is present) — see
-   `build_sudoers_grant_command`'s own docstring for the full reasoning.
+   read-only-root toggle, granted unconditionally even though it only
+   ever resolves to anything on a device that actually has raspi-config
+   (Raspberry Pi OS) — a sudoers rule for a command that doesn't exist
+   simply never matches, so this is harmless dead weight on Debian/Ubuntu,
+   not a bug — and `bash /tmp/.honeypotshelf-*` — running this app's own
+   generated scripts, e.g. the Honeypot Config tab's module editor
+   restarting `opencanary` and toggling `smbd`/`nmbd` — and `flatpak`/
+   `snap` if either is present) — see `build_sudoers_grant_command`'s own
+   docstring for the full reasoning.
 4. Best-effort install `ncurses-term`, so the web Terminal tab gets colors
    and box-drawing without a separate manual step. Its failure (no
    network, offline apt cache) must never fail onboarding itself — only

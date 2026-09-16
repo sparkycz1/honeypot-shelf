@@ -85,7 +85,7 @@ async def test_new_alert_emails_only_subscribed_active_recipients(
         new_offset=1,
     )
 
-    async def fake_poll_log(honeypot, secret, timeout_seconds):
+    async def fake_poll_log(honeypot, secret, timeout_seconds, *, path=""):
         return fake_result
 
     monkeypatch.setattr("app.tasks.jobs.poll_log", fake_poll_log)
@@ -118,7 +118,7 @@ async def test_no_email_sent_when_smtp_disabled(db_session_factory, monkeypatch)
         new_offset=1,
     )
 
-    async def fake_poll_log(honeypot, secret, timeout_seconds):
+    async def fake_poll_log(honeypot, secret, timeout_seconds, *, path=""):
         return fake_result
 
     monkeypatch.setattr("app.tasks.jobs.poll_log", fake_poll_log)
@@ -144,7 +144,7 @@ async def test_no_new_events_means_no_rule_query_needed(db_session_factory, monk
 
     fake_result = LogPollResult(events=[], new_offset=1)
 
-    async def fake_poll_log(honeypot, secret, timeout_seconds):
+    async def fake_poll_log(honeypot, secret, timeout_seconds, *, path=""):
         return fake_result
 
     monkeypatch.setattr("app.tasks.jobs.poll_log", fake_poll_log)
@@ -201,7 +201,7 @@ async def test_company_scoped_rule_matches_a_honeypot_in_that_company(
         events=[{"logtype": 4002, "local_time": "2026-01-01 12:00:00.000000"}], new_offset=1
     )
 
-    async def fake_poll_log(honeypot, secret, timeout_seconds):
+    async def fake_poll_log(honeypot, secret, timeout_seconds, *, path=""):
         return fake_result
 
     monkeypatch.setattr("app.tasks.jobs.poll_log", fake_poll_log)

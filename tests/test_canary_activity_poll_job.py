@@ -51,7 +51,7 @@ async def test_poll_skips_internal_logtypes_but_keeps_real_alerts(db_session_fac
     )
 
     async def fake_poll_log(
-        honeypot: object, secret: object, timeout_seconds: int
+        honeypot: object, secret: object, timeout_seconds: int, *, path: str = ""
     ) -> LogPollResult:
         return fake_result
 
@@ -102,7 +102,7 @@ async def test_poll_still_marks_the_honeypot_seen_when_only_internal_lines_found
     )
 
     async def fake_poll_log(
-        honeypot: object, secret: object, timeout_seconds: int
+        honeypot: object, secret: object, timeout_seconds: int, *, path: str = ""
     ) -> LogPollResult:
         return fake_result
 
@@ -142,7 +142,7 @@ async def test_poll_does_not_mark_seen_when_the_read_itself_failed(
     fake_result = LogPollResult(events=[], new_offset=-1)
 
     async def fake_poll_log(
-        honeypot: object, secret: object, timeout_seconds: int
+        honeypot: object, secret: object, timeout_seconds: int, *, path: str = ""
     ) -> LogPollResult:
         return fake_result
 
@@ -194,7 +194,7 @@ async def test_poll_forwards_each_real_alert_to_the_companys_syslog_target(
     )
 
     async def fake_poll_log(
-        honeypot: object, secret: object, timeout_seconds: int
+        honeypot: object, secret: object, timeout_seconds: int, *, path: str = ""
     ) -> LogPollResult:
         return fake_result
 

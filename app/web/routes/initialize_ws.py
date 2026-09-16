@@ -44,7 +44,7 @@ from app.db.models.audit_log import AuditOutcome
 from app.db.models.honeypot import AuthMethod, Honeypot
 from app.db.models.initialize_run import MAX_OUTPUT_CHARS, InitializeRun
 from app.db.models.user import User
-from app.ssh.client import discover_host_key_fingerprint, open_process_session
+from app.ssh.client import discover_host_key_fingerprint, open_connection, open_process_session
 from app.ssh.exceptions import SSHConnectionError
 from app.ssh.identity import get_or_create_identity
 from app.ssh.initialize import (
@@ -57,6 +57,11 @@ from app.ssh.initialize import (
     build_initialize_command,
     service_user_for,
     wrap_for_sudo,
+)
+from app.ssh.platform_detect import (
+    UnsupportedPlatformError,
+    build_detect_command,
+    parse_detect_output,
 )
 from app.web.routes.initialize import PENDING_RUNS, PendingInitializeRun
 
@@ -314,9 +319,29 @@ async def initialize_websocket(websocket: WebSocket, run_id: str) -> None:
                         superadmin.username,
                     )
 
+        await websocket.send_text(json.dumps({"kind": "step", "label": "Detecting OS"}))
+        try:
+            async with await open_connection(
+                device, secret, app_settings.ssh_connect_timeout
+            ) as conn:
+                detect_result = await conn.run(
+                    build_detect_command(),
+                    check=False,
+                    timeout=app_settings.ssh_connect_timeout,
+                )
+            detect_stdout = detect_result.stdout or ""
+            detect_raw = (
+                detect_stdout if isinstance(detect_stdout, str) else detect_stdout.decode()
+            )
+            platform = parse_detect_output(detect_raw)
+        except (SSHConnectionError, UnsupportedPlatformError) as exc:
+            error = str(exc)
+            return
+
         script = build_initialize_command(
             device_name=run.device_name,
-            service_user=service_user_for(run.username),
+            service_user=service_user_for(run.username, platform),
+            platform=platform,
             vpn_provider=run.vpn_provider,
             netbird_setup_key=run.netbird_setup_key,
             netbird_management_url=run.netbird_management_url,

@@ -715,7 +715,7 @@
     "initialize.history.status_failed": "selhalo",
     "initialize.history.status_succeeded": "úspěch",
     "initialize.history.title": "Historie běhů Initialize",
-    "initialize.intro": "Připraví zcela nové zařízení Raspberry Pi OS 13 na funkční honeypot OpenCanary přes SSH — balíčky, venv a službu OpenCanary, locale/časové pásmo, NetBird a přípravu modulů portscan/Samba. Spusť jednou a pak zařízení přidej na stránce Honeypoty.",
+    "initialize.intro": "Připraví zcela nové zařízení na funkční honeypot OpenCanary přes SSH — balíčky, venv a službu OpenCanary, locale/časové pásmo, NetBird a přípravu modulů portscan/Samba. Podporuje Raspberry Pi OS, Debian a Ubuntu (Desktop i Server) — dvě nejnovější verze každého, automaticky detekované po připojení, nic se tu nevybírá. Spusť jednou a pak zařízení přidej na stránce Honeypoty.",
     "initialize.new_ssh_port_note": "Při úspěchu tento běh přesune sshd zařízení na port {port} — při přidání jako honeypot použij ten port (ne ten výše).",
     "initialize.output": "Výstup",
     "initialize.submit": "Spustit",

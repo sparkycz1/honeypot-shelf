@@ -1,6 +1,9 @@
-""""Initialize" — provisions a brand new Raspberry Pi OS 13 device (not yet
-managed by Honeypot Shelf at all) into a working OpenCanary honeypot over SSH.
-See `app.ssh.initialize` for exactly what the provisioning script does and
+""""Initialize" — provisions a brand new device (not yet managed by
+Honeypot Shelf at all) into a working OpenCanary honeypot over SSH — any
+of the six OS releases `app.ssh.platform_detect.SUPPORTED_RELEASES`
+lists, auto-detected once connected (`app.web.routes.initialize_ws`), not
+picked on this form. See `app.ssh.initialize` for exactly what the
+provisioning script does and
 `app.web.routes.initialize_ws` for where it's actually run — this module
 only ever handles the form (`GET`/`POST /initialize`) and the run page
 shell (`GET /initialize/run/{run_id}`); the SSH connection and live output

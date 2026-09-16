@@ -1170,6 +1170,9 @@ async def _refresh_honeypot_facts(honeypot_id: str) -> dict[str, Any]:
         honeypot.process_count = facts["process_count"]
         honeypot.filesystems = facts["filesystems"]
         honeypot.network_interfaces = facts["network_interfaces"]
+        honeypot.supports_readonly_root = facts["supports_readonly_root"]
+        if facts["opencanary_log_path"] is not None:
+            honeypot.opencanary_log_path = facts["opencanary_log_path"]
         honeypot.facts_updated_at = datetime.now(UTC)
         await session.commit()
         await publish_honeypot_event(honeypot_id, KIND_FACTS)
@@ -1462,7 +1465,12 @@ async def _poll_honeypot_canary_log(honeypot_id: str) -> dict[str, Any]:
         app_settings = await get_or_create_app_settings(session)
 
         try:
-            result = await poll_log(honeypot, secret, app_settings.ssh_connect_timeout)
+            result = await poll_log(
+                honeypot,
+                secret,
+                app_settings.ssh_connect_timeout,
+                path=honeypot.opencanary_log_path,
+            )
         except SSHConnectionError as exc:
             logger.warning("poll_honeypot_canary_log failed for %s: %s", honeypot.name, exc)
             return {"ok": False, "error": str(exc)}

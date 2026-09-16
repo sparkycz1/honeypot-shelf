@@ -51,7 +51,9 @@ async def test_ingested_events_get_geo_columns_from_a_shared_reader(
         ],
         new_offset=1,
     )
-    async def fake_poll_log(honeypot: object, secret: object, timeout_seconds: int):
+    async def fake_poll_log(
+        honeypot: object, secret: object, timeout_seconds: int, *, path: str = ""
+    ):
         return fake_result
 
     monkeypatch.setattr("app.tasks.jobs.poll_log", fake_poll_log)
@@ -105,7 +107,9 @@ async def test_ingested_events_keep_geo_columns_none_when_geoip_isnt_configured(
         ],
         new_offset=1,
     )
-    async def fake_poll_log(honeypot: object, secret: object, timeout_seconds: int):
+    async def fake_poll_log(
+        honeypot: object, secret: object, timeout_seconds: int, *, path: str = ""
+    ):
         return fake_result
 
     monkeypatch.setattr("app.tasks.jobs.poll_log", fake_poll_log)

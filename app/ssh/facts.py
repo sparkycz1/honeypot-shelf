@@ -30,6 +30,8 @@ _SECTION_MARKERS = (
     "PROCESSES",
     "FILESYSTEMS",
     "NETWORK",
+    "RASPI_CONFIG",
+    "OPENCANARY_LOG",
 )
 
 # One round trip: each section is delimited by a "===NAME===" marker so the
@@ -89,7 +91,28 @@ FACTS_COMMAND = (
     "df -B1 --output=target,size,used,avail,pcent "
     "-x tmpfs -x devtmpfs -x squashfs -x overlay 2>/dev/null | tail -n +2; "
     "echo ===NETWORK===; "
-    "ip -4 -o addr show scope global 2>/dev/null | awk '{print $2, $4}'"
+    "ip -4 -o addr show scope global 2>/dev/null | awk '{print $2, $4}'; "
+    # Whether this honeypot supports the Config tab's read-only-root
+    # toggle (app.ssh.readonly) at all — Raspberry Pi OS's own
+    # raspi-config. Live-detected on every facts refresh rather than only
+    # once at Initialize, so it stays correct for a honeypot Onboarded
+    # instead of Initialized (app.ssh.onboarding never probes this), one
+    # added by hand, or one whose OS changed since the last check. See
+    # `app.ssh.platform_detect`'s module docstring for why this — not
+    # `OS_ID` above — is what actually decides it.
+    "echo ===RASPI_CONFIG===; "
+    "command -v raspi-config >/dev/null 2>&1 && echo yes || echo no; "
+    # Where OpenCanary's own file logger is actually configured to write,
+    # read straight back out of its own config — the honeypot's own state
+    # is the only copy of the truth, same philosophy the Logs/Config tabs
+    # already use (see app.ssh.opencanary_config's module docstring).
+    # Empty (kept at whatever Honeypot.opencanary_log_path already had)
+    # if OpenCanary isn't installed/configured yet, or its config doesn't
+    # have the expected shape.
+    "echo ===OPENCANARY_LOG===; "
+    "python3 -c \"import json; print(json.load(open("
+    "'/etc/opencanaryd/opencanary.conf'))['logger']['kwargs']['handlers']"
+    "['file']['filename'])\" 2>/dev/null"
 )
 
 
@@ -112,6 +135,11 @@ class HoneypotFacts(TypedDict):
     process_count: int | None
     filesystems: list[dict[str, Any]]
     network_interfaces: list[dict[str, Any]]
+    # Live-detected — see FACTS_COMMAND's RASPI_CONFIG/OPENCANARY_LOG
+    # comments. `opencanary_log_path` is `None` (leave the honeypot's
+    # existing value alone) rather than a guess when it couldn't be read.
+    supports_readonly_root: bool
+    opencanary_log_path: str | None
 
 
 def _split_sections(raw: str) -> dict[str, str]:
@@ -197,6 +225,13 @@ def parse_facts_output(raw: str) -> HoneypotFacts:
         interface, address = fields
         network_interfaces.append({"interface": interface.rstrip(":"), "address": address})
 
+    opencanary_log_path = sections.get("OPENCANARY_LOG", "").strip() or None
+    # A well-formed absolute path only — a truncated/garbled read (a stray
+    # traceback line slipping through, say) must never silently become a
+    # bogus path future polls try to `tail`.
+    if opencanary_log_path is not None and not opencanary_log_path.startswith("/"):
+        opencanary_log_path = None
+
     return HoneypotFacts(
         hostname=sections.get("HOSTNAME") or None,
         os_version=sections.get("OS") or None,
@@ -213,6 +248,8 @@ def parse_facts_output(raw: str) -> HoneypotFacts:
         process_count=process_count,
         filesystems=filesystems,
         network_interfaces=network_interfaces,
+        supports_readonly_root=sections.get("RASPI_CONFIG", "").strip() == "yes",
+        opencanary_log_path=opencanary_log_path,
     )
 
 

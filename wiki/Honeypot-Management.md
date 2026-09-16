@@ -67,11 +67,19 @@ app's own containers.
 Two independent live-SSH sections, neither persisted in this app's own
 DB — the honeypot's own state is the only copy of the truth.
 
-**Read-only root filesystem** protects the SD card from write wear via
-Raspberry Pi OS's own overlay filesystem — takes effect on next reboot,
-not immediately (the Config tab says so explicitly). Not literal
-read-only: every write still succeeds at runtime, just discarded on
-reboot.
+**Read-only root filesystem** — only offered for a honeypot with
+`supports_readonly_root` set (live-detected on every facts refresh via
+`command -v raspi-config`, see `app.ssh.platform_detect`'s module
+docstring for why that — not the OS/distro itself — is the actual
+gate). Protects the SD card from write wear via Raspberry Pi OS's own
+overlay filesystem — takes effect on next reboot, not immediately (the
+Config tab says so explicitly). Not literal read-only: every write still
+succeeds at runtime, just discarded on reboot. Debian/Ubuntu never show
+this section at all, and get no substitute for it — those releases
+typically aren't running off an SD card, so the whole reason this toggle
+exists doesn't apply. OpenCanary's log just goes to a plain persistent
+path instead there (see [Initialize](Honeypot-Initialize.md)'s own
+"Where OpenCanary's own log lives" section).
 
 **The OpenCanary module editor** is a category-by-category form over
 every OpenCanary module (FTP, HTTP(S), SSH, Telnet, databases, RDP,
@@ -107,7 +115,7 @@ ever removes *links*, never the honeypot or user account itself.
 sequenceDiagram
     participant Beat as beat (scheduler)
     participant Worker as worker (Celery)
-    participant Pi as Honeypot (Raspberry Pi)
+    participant Pi as Honeypot (Raspberry Pi OS/Debian/Ubuntu)
     participant DB as PostgreSQL
 
     Beat->>Worker: every opencanary_log_poll_interval_seconds

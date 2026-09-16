@@ -47,6 +47,11 @@ async def _create_pinned_honeypot(db_session_factory, company_id) -> Honeypot:
             username="honeypotshelf",
             auth_method=AuthMethod.SSH_KEY,
             host_key_fingerprint="SHA256:fake-fingerprint-for-tests",
+            # This whole file tests the toggle mechanism itself, not the
+            # Debian/Ubuntu gating (that's tests/test_platform_detect.py
+            # and tests/test_facts_parsing.py's job) - simulate a honeypot
+            # a facts refresh already confirmed has raspi-config.
+            supports_readonly_root=True,
         )
         db.add(honeypot)
         await db.commit()
@@ -187,3 +192,67 @@ async def test_readonly_toggle_failure_is_surfaced_after_redirect_not_lost(
     )
     assert response.status_code == 200
     assert "sudo: a password is required" in response.text
+
+
+async def test_config_tab_hides_readonly_section_without_raspi_config(
+    client, db_session_factory, celery_calls
+):
+    """Debian/Ubuntu — no raspi-config, no section at all (see
+    app.ssh.readonly's module docstring)."""
+    company = await create_company(db_session_factory)
+    async with db_session_factory() as db:
+        company_row = await db.get(Company, company.id)
+        honeypot = Honeypot(
+            companies=[company_row],
+            name="debian-honey1",
+            ip_address="192.0.2.11",
+            port=22,
+            username="honeypotshelf",
+            auth_method=AuthMethod.SSH_KEY,
+            host_key_fingerprint="SHA256:fake-fingerprint-for-tests",
+            supports_readonly_root=False,
+        )
+        db.add(honeypot)
+        await db.commit()
+        await db.refresh(honeypot)
+
+    response = await client.get(f"/honeypots/{honeypot.id}/config")
+    assert response.status_code == 200
+    assert "Read-only root filesystem" not in response.text
+
+
+async def test_readonly_toggle_rejected_without_raspi_config(
+    client, db_session_factory, celery_calls
+):
+    """Defense in depth — a direct POST bypassing the hidden section is
+    still rejected server-side, never reaches the SSH layer at all."""
+    company = await create_company(db_session_factory)
+    async with db_session_factory() as db:
+        company_row = await db.get(Company, company.id)
+        honeypot = Honeypot(
+            companies=[company_row],
+            name="debian-honey2",
+            ip_address="192.0.2.12",
+            port=22,
+            username="honeypotshelf",
+            auth_method=AuthMethod.SSH_KEY,
+            host_key_fingerprint="SHA256:fake-fingerprint-for-tests",
+            supports_readonly_root=False,
+        )
+        db.add(honeypot)
+        await db.commit()
+        await db.refresh(honeypot)
+
+    form = await client.get(f"/honeypots/{honeypot.id}/config")
+    match = re.search(r'name="csrf_token" value="([^"]+)"', form.text)
+    assert match
+    csrf_token = match.group(1)
+
+    response = await client.post(
+        f"/honeypots/{honeypot.id}/config/readonly",
+        data={"enable": "true", "csrf_token": csrf_token},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert "doesn&#39;t support" in response.text or "doesn't support" in response.text
+    assert "app.tasks.jobs.set_honeypot_readonly" not in celery_calls.names

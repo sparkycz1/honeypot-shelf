@@ -1,5 +1,10 @@
 """Toggling a honeypot's root filesystem between read-only (overlay) and
-writable — the Honeypot Config tab's one action.
+writable — the Honeypot Config tab's one action, offered only for a
+honeypot with `Honeypot.supports_readonly_root` set (live-detected on
+every facts refresh — `command -v raspi-config`, see `app.ssh.
+platform_detect`'s module docstring for why that's the right signal, not
+`os_id`/codename). Debian and Ubuntu never get this section at all — see
+below for why there's no substitute for them.
 
 **Why**: an SD card wears out from repeated writes; a honeypot that's
 finished being provisioned has no real need to write to its own root
@@ -42,6 +47,14 @@ lives in Honeypot Shelf's own DB (pushed or SSH-polled, see
 stays worth having independently of this toggle, for a honeypot that
 never enables it at all, to spare the card from OpenCanary's own log
 writes on every boot.
+
+**Debian/Ubuntu get no substitute for this toggle at all** — deliberately,
+not an oversight: the reason it exists (SD card write wear) doesn't apply
+to a target that typically isn't running off an SD card in the first
+place (a VM, a cloud instance, a real server disk). Those releases keep
+OpenCanary's log on a plain persistent path instead
+(`app.ssh.initialize.PERSISTENT_LOG_PATH`) — it survives a reboot, which
+is a feature there, not a problem to work around.
 
 **Must be disabled before running system updates** (the Updates tab) —
 `apt` can't write to a read-only root. The Config tab always shows

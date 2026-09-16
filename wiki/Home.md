@@ -9,7 +9,9 @@
 
 Management and monitoring for a fleet of
 [OpenCanary](https://github.com/thinkst/opencanary) honeypots (Raspberry
-Pis at customer sites), scoped per **company** — every page needs a login
+Pis, Debian, or Ubuntu boxes at customer sites — see
+[Initialize](Honeypot-Initialize.md) for the six supported OS releases),
+scoped per **company** — every page needs a login
 (local, LDAP, or OIDC, plus TOTP/passkey 2FA), and what an account can see
 is gated by RBAC (see [Authentication & RBAC](Authentication-RBAC.md)).
 A honeypot is managed exactly like a machine in
@@ -59,7 +61,7 @@ flowchart LR
 | [🍯 Honeypot Management](Honeypot-Management.md) | Provisioning, VPN, the Config tab, the data model, how events arrive |
 | [📝 Audit Log](Audit-Log.md) | Hash-chain integrity, retention, export, SIEM forwarding |
 | [🔔 Notifications](Notifications.md) | Rules, scope, wording, the webhook SSRF guard |
-| [🌱 Initialize](Honeypot-Initialize.md) | Provision a brand-new Raspberry Pi into a honeypot over SSH |
+| [🌱 Initialize](Honeypot-Initialize.md) | Provision a brand-new Raspberry Pi OS/Debian/Ubuntu device into a honeypot over SSH |
 | [🛠️ Development](Development.md) | Run it locally, add a feature, ship a migration |
 
 ## 🔒 Sitting behind a reverse proxy
@@ -78,7 +80,7 @@ TLS terminator in front of it, always. Pick your fighter:
 | 📊 **Dashboard** | Fleet counts (online/offline, needs-updates), a trend sparkline, and a fleet-wide "activity by alert type" breakdown |
 | 🍯 **Honeypots** | Facts, packages, live monitoring (with an **OpenCanary service** up/down graph), a browser SSH terminal, log browsing, an **Activity** tab reading OpenCanary's own log over SSH, a **Config** tab (read-only-root toggle + a full editor for every OpenCanary module), tags & saved views, bulk actions, JSON/CSV export, and **update rollback** if a `dist-upgrade` goes sideways |
 | 🗺️ **Map** | Where honeypot alerts actually come from — a world graticule with dots sized by event count, plus a top-countries table, company-scoped like the Dashboard. Needs Settings → GeoIP configured first |
-| 🌱 **Initialize** | Turns a blank Raspberry Pi OS install into a working honeypot over SSH — packages, the OpenCanary service, NetBird, live streamed progress, a persisted run history |
+| 🌱 **Initialize** | Turns a blank Raspberry Pi OS/Debian/Ubuntu install into a working honeypot over SSH — auto-detected OS, packages, the OpenCanary service, NetBird, live streamed progress, a persisted run history |
 | ⏱️ **Scheduling** | Cron any action against a honeypot/company/fleet — updates, power, custom commands, on-demand "force a sweep now" debug buttons |
 | 🏢 **Companies** | Each company's own page (users + honeypots), a per-company syslog target for that company's own alerts, plus the "All honeypots" virtual company and its own fleet-wide alert target |
 | 📚 **API docs** (`/api`) | Live Swagger UI over the full read/write REST API — everything the web UI can do, an API can too |
