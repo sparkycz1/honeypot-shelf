@@ -1,16 +1,17 @@
-{# The built-in "three hexagons" mark — used whenever no custom
-   LOGO_SOURCE is configured (see app.web.branding). Inlined as markup
-   (not an <img>) so it renders crisply at any size with no extra request,
-   the same reasoning the previous bee mark had. Amber is the brand's own
-   fixed accent (deliberately unaffected by theme, like the honeycomb
-   frame the old mark used); the outline width is set generously so the
-   mark stays legible shrunk down to header/favicon size. Set `mark_class`
-   before including this partial to size it (see .brand-mark /
-   .brand-mark-lg in style.css). #}
+{# The built-in honeycomb mark (three pointy-top hexagons, sharing edges
+   at one central point — a real honeycomb tessellation, traced from the
+   brand reference) — used whenever no custom LOGO_SOURCE is configured
+   (see app.web.branding). Inlined as markup (not an <img>) so it renders
+   crisply at any size with no extra request, the same reasoning the
+   previous bee mark had. Amber is the brand's own fixed accent
+   (deliberately unaffected by theme); the outline width and rounded
+   joins are set to stay legible shrunk down to header/favicon size. Set
+   `mark_class` before including this partial to size it (see .brand-mark
+   / .brand-mark-lg in style.css). #}
 <svg class="{{ mark_class }}" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"
      aria-hidden="true" focusable="false" fill="none" stroke="var(--brand-amber)"
-     stroke-width="5" stroke-linejoin="round">
-  <polygon points="26,41.2 38,20.4 62,20.4 74,41.2 62,62 38,62"/>
-  <polygon points="8,62 20,41.2 44,41.2 56,62 44,82.8 20,82.8"/>
-  <polygon points="44,62 56,41.2 80,41.2 92,62 80,82.8 56,82.8"/>
+     stroke-width="6" stroke-linejoin="round" stroke-linecap="round">
+  <polygon points="50,2 70.78,14 70.78,38 50,50 29.22,38 29.22,14"/>
+  <polygon points="29.22,38 50,50 50,74 29.22,86 8.44,74 8.44,50"/>
+  <polygon points="70.78,38 91.56,50 91.56,74 70.78,86 50,74 50,50"/>
 </svg>

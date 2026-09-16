@@ -27,8 +27,8 @@ from app.core.config import get_settings
 LOGO_ROUTE = "/branding/logo"
 FAVICON_ROUTE = "/branding/favicon"
 
-# The built-in "three hexagons" mark, standalone (no page CSS to inherit
-# from — this is a separate document the browser tab fetches on its own).
+# The built-in honeycomb mark, standalone (no page CSS to inherit from —
+# this is a separate document the browser tab fetches on its own).
 # Outline-only in the brand's fixed amber: unlike a filled shape, a stroke
 # alone reads fine against both a light and a dark browser tab background,
 # so this needs no `prefers-color-scheme` trick the way a filled mark
@@ -36,10 +36,10 @@ FAVICON_ROUTE = "/branding/favicon"
 # used inline in the app itself).
 _FAVICON_SVG = """\
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none"
-     stroke="#e0a761" stroke-width="6" stroke-linejoin="round">
-<polygon points="26,41.2 38,20.4 62,20.4 74,41.2 62,62 38,62"/>
-<polygon points="8,62 20,41.2 44,41.2 56,62 44,82.8 20,82.8"/>
-<polygon points="44,62 56,41.2 80,41.2 92,62 80,82.8 56,82.8"/>
+     stroke="#e0a761" stroke-width="6" stroke-linejoin="round" stroke-linecap="round">
+<polygon points="50,2 70.78,14 70.78,38 50,50 29.22,38 29.22,14"/>
+<polygon points="29.22,38 50,50 50,74 29.22,86 8.44,74 8.44,50"/>
+<polygon points="70.78,38 91.56,50 91.56,74 70.78,86 50,74 50,50"/>
 </svg>"""
 
 DEFAULT_FAVICON_DATA_URI = "data:image/svg+xml," + quote(_FAVICON_SVG)
