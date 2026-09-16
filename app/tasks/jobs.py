@@ -1171,11 +1171,34 @@ async def _refresh_honeypot_facts(honeypot_id: str) -> dict[str, Any]:
         honeypot.filesystems = facts["filesystems"]
         honeypot.network_interfaces = facts["network_interfaces"]
         honeypot.supports_readonly_root = facts["supports_readonly_root"]
-        if facts["opencanary_log_path"] is not None:
+        log_path_changed = False
+        if (
+            facts["opencanary_log_path"] is not None
+            and facts["opencanary_log_path"] != honeypot.opencanary_log_path
+        ):
+            # A byte offset from the *previous* path means nothing against
+            # a different file - keeping it risks either re-parsing
+            # content already counted once (if the new file happens to be
+            # smaller) or, worse, silently skipping real content the poll
+            # has never actually seen (if it happens to be larger). Reset
+            # to 0 so the very next poll reads this file from the start.
             honeypot.opencanary_log_path = facts["opencanary_log_path"]
+            honeypot.opencanary_log_offset = 0
+            log_path_changed = True
         honeypot.facts_updated_at = datetime.now(UTC)
         await session.commit()
         await publish_honeypot_event(honeypot_id, KIND_FACTS)
+
+        if log_path_changed:
+            # Don't make an operator who just fixed their config (or
+            # re-ran Initialize) wait out a full poll interval on top of
+            # the facts refresh they already triggered - e.g. confirmed
+            # live: a honeypot's log_path defaulted to the legacy tmpfs
+            # path until its first facts refresh corrected it to the
+            # platform-appropriate one (app.ssh.platform_detect), and the
+            # Activity tab stayed empty until the next scheduled poll
+            # picked that correction up.
+            poll_honeypot_canary_log.delay(honeypot_id)
 
         return {"ok": True}
 

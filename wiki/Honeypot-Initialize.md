@@ -166,7 +166,13 @@ there, not something to work around). Either way, Initialize repoints
 OpenCanary's file logger at whichever path it set up, and the honeypot's
 own `opencanary_log_path` column (kept in sync by every facts refresh,
 not just at Initialize — see `app.ssh.facts`) is what the Logs tab's
-"Honeypot logs" shortcut and the Activity tab's poll actually read.
+"Honeypot logs" shortcut and the Activity tab's poll actually read. A
+correction from a facts refresh resets the stored byte offset too (a
+different file's old offset means nothing) and immediately triggers a
+canary-log poll — so a honeypot added right after Initialize doesn't sit
+with an empty Activity tab until the next scheduled poll happens to
+notice; click "Refresh facts" on the Overview tab if you don't want to
+wait for the periodic sweep either.
 
 ## Modules prepared, not enabled
 
