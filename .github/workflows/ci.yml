@@ -1,9 +1,11 @@
 name: CI
 
-# The exact gate wiki/Development.md documents for a local commit — ruff,
-# mypy, the full test suite (in-memory SQLite, no real Postgres/Redis/
-# Celery broker needed, see tests/conftest.py), and a single-alembic-head
-# check — now also enforced here so a PR can't merge without it.
+# The exact gate the wiki's Development page documents
+# (https://github.com/sparkycz1/honeypot-shelf/wiki/Development) for a
+# local commit — ruff, mypy, the full test suite (in-memory SQLite, no
+# real Postgres/Redis/Celery broker needed, see tests/conftest.py), and a
+# single-alembic-head check — now also enforced here so a PR can't merge
+# without it.
 #
 # No Postgres/Redis service containers: nothing in the gate needs a real
 # one — pytest bootstraps its own dummy-but-valid env vars for
@@ -20,14 +22,21 @@ on:
     branches: [main]
   pull_request:
 
+# No job here needs to write anything — checkout, run tests/lint, read
+# dependency metadata. Explicit top-level `read` (rather than relying on
+# the repo-wide default) is what OpenSSF Scorecard's Token-Permissions
+# check looks for — see https://github.com/ossf/scorecard/blob/main/docs/checks.md#token-permissions.
+permissions:
+  contents: read
+
 jobs:
   gate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.1.0
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
         with:
           version: "0.12.13"
 
@@ -68,10 +77,10 @@ jobs:
   security:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.1.0
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
         with:
           version: "0.12.13"
 
@@ -99,5 +108,5 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/dependency-review-action@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48  # v4.9.0
