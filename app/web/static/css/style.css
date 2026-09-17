@@ -1,15 +1,26 @@
-/* Brand palette (Adobe Color export, Sept 2026 redesign) — the four raw
-   swatches everything below is mixed from:
-     cream #E8DCC4   navy #0F2D45   amber #E0A761   slate #57666B
+/* Brand palette (Sept 2026 redesign, updated with the official 5-swatch
+   brand sheet):
+     navy #0F2D45   blue #003C6B   amber #E0A761   coral #ED685A   green #88CF93
+   Plus two neutrals kept from the original Adobe Color export that the
+   brand sheet doesn't replace (cream/slate — backgrounds and muted text
+   only, never a "meaning" color the way coral/green are):
+     cream #E8DCC4   slate #57666B
    Kept here as their own tokens (rather than only inlined into the
    --color-* roles below) so a future palette tweak has one place to
    start from, and so anything that deliberately wants the brand color
    itself — not whatever role it happens to play in a given theme — has
-   something to reach for (see partials/_brand_mark.html's stroke). */
+   something to reach for (see partials/_brand_mark.html's stroke).
+   --color-danger/--color-ok are always exactly --brand-coral/--brand-green
+   in both themes on purpose — "this is broken/off/disconnected" vs. "this
+   is fine/on/connected" is meant to read as the same two brand colors
+   everywhere, not a per-theme reinterpretation of them. */
 :root {
   --brand-cream: #e8dcc4;
   --brand-navy: #0f2d45;
+  --brand-blue: #003c6b;
   --brand-amber: #e0a761;
+  --brand-coral: #ed685a;
+  --brand-green: #88cf93;
   --brand-slate: #57666b;
 
   /* Dark theme: navy *is* the surface color (cards/header sit on a
@@ -26,10 +37,10 @@
   --color-accent: var(--brand-amber);
   --color-accent-hover: #eab97d;
   --color-accent-contrast: var(--brand-navy);
-  --color-danger: #f0685f;
-  --color-danger-hover: #f37f77;
+  --color-danger: var(--brand-coral);
+  --color-danger-hover: #f07f6c;
   --color-warn: #caa53c;
-  --color-ok: #46bf8a;
+  --color-ok: var(--brand-green);
 
   --radius-sm: 5px;
   --radius: 8px;
@@ -66,7 +77,8 @@
      exactly as given in the palette, and amber steps back to a warm
      "caution" warn tone rather than covering every button — a wash of
      amber across every link/button on a light background read as too
-     much of one warm color at that scale. */
+     much of one warm color at that scale. Hover on that navy accent is
+     the brand sheet's own blue, not an arbitrary lighter navy. */
   --color-bg: #f6f1e7;
   --color-surface: #ffffff;
   --color-surface-raised: var(--brand-cream);
@@ -75,12 +87,12 @@
   --color-text: #14263a;
   --color-muted: var(--brand-slate);
   --color-accent: var(--brand-navy);
-  --color-accent-hover: #1c3f5c;
+  --color-accent-hover: var(--brand-blue);
   --color-accent-contrast: #ffffff;
-  --color-danger: #c8382f;
-  --color-danger-hover: #a92e26;
+  --color-danger: var(--brand-coral);
+  --color-danger-hover: #ce5e51;
   --color-warn: #a66a1f;
-  --color-ok: #1f8a5c;
+  --color-ok: var(--brand-green);
 
   --shadow-sm: 0 1px 2px rgba(15, 45, 69, 0.1);
   --shadow-md: 0 4px 16px rgba(15, 45, 69, 0.12);
@@ -94,7 +106,13 @@ html { -webkit-text-size-adjust: 100%; }
 
 body {
   margin: 0;
-  font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  /* Brand sheet: "Arial" everywhere except the logo wordmark (see
+     .brand-text below) — kept as a real font stack rather than the
+     literal single name, since Arial itself isn't installed on every
+     OS (Linux commonly substitutes Liberation Sans via fontconfig,
+     which is metric-compatible; Helvetica covers macOS when Arial is
+     unavailable there for some reason). */
+  font-family: Arial, "Liberation Sans", Helvetica, sans-serif;
   background: var(--color-bg);
   color: var(--color-text);
   line-height: 1.55;
@@ -196,7 +214,18 @@ img.brand-mark-lg { object-fit: contain; }
 /* The built-in mark's own wordmark text (see partials/_brand_mark.html) —
    not applied to a custom LOGO_SOURCE image, which is assumed to already
    carry its own visible branding. */
-.brand-text { text-transform: uppercase; letter-spacing: 0.03em; }
+/* Brand sheet: the wordmark itself is the one deliberate exception to
+   the app-wide Arial stack (see body's own font-family) — "Arial
+   Rounded MT Bold" isn't installed everywhere either (it's a Monotype
+   font bundled with classic Microsoft Office/Windows), so this falls
+   back to the same rounded-adjacent system faces already used for the
+   OS's own UI chrome rather than plain Arial, which would read as a
+   visibly different (unstyled) wordmark on a machine without it. */
+.brand-text {
+  font-family: "Arial Rounded MT Bold", "Arial Rounded MT", Verdana, "Segoe UI", sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
 .auth-page .brand-text { line-height: 1.15; }
 
 /* Checkbox-driven mobile nav toggle — no JS needed, works with the CSP here.
@@ -707,9 +736,9 @@ img.brand-mark-lg { object-fit: contain; }
   white-space: nowrap;
 }
 
-.badge-ok { background: rgba(70, 191, 138, 0.16); color: var(--color-ok); }
+.badge-ok { background: rgba(136, 207, 147, 0.16); color: var(--color-ok); }
 .badge-warn { background: rgba(224, 171, 74, 0.16); color: var(--color-warn); }
-.badge-error { background: rgba(240, 104, 95, 0.16); color: var(--color-danger); }
+.badge-error { background: rgba(237, 104, 90, 0.16); color: var(--color-danger); }
 
 /* A machine tag (app.db.models.machine_tag) — neutral color since a tag
    carries no ok/warn/error meaning of its own, and a link (to that tag's
@@ -1162,13 +1191,13 @@ img.brand-mark-lg { object-fit: contain; }
   font-weight: 700;
 }
 
-.alert-error { background: rgba(240, 104, 95, 0.1); border-color: rgba(240, 104, 95, 0.4); color: var(--color-text); }
+.alert-error { background: rgba(237, 104, 90, 0.1); border-color: rgba(237, 104, 90, 0.4); color: var(--color-text); }
 .alert-error::before { content: "✕"; color: var(--color-danger); }
 
 .alert-warn { background: rgba(224, 171, 74, 0.1); border-color: rgba(224, 171, 74, 0.4); color: var(--color-text); }
 .alert-warn::before { content: "!"; color: var(--color-warn); }
 
-.alert-ok { background: rgba(70, 191, 138, 0.1); border-color: rgba(70, 191, 138, 0.4); color: var(--color-text); }
+.alert-ok { background: rgba(136, 207, 147, 0.1); border-color: rgba(136, 207, 147, 0.4); color: var(--color-text); }
 .alert-ok::before { content: "✓"; color: var(--color-ok); }
 
 /* --- Dashboard stat tiles --- */

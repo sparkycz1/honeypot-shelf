@@ -1,4 +1,4 @@
-# <img src="app/web/static/img/logo.svg" width="32" height="32" align="center" alt=""> Honeypot Shelf
+# ![Honeypot Shelf](app/web/static/img/logo_wordmark.svg)
 
 [![CI](https://github.com/sparkycz1/honeypot-shelf/actions/workflows/ci.yml/badge.svg)](https://github.com/sparkycz1/honeypot-shelf/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue)](LICENSE)
