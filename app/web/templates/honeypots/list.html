@@ -3,6 +3,8 @@
 
 {% block title %}{{ t(request, 'honeypots.title') }} — Honeypot Shelf{% endblock %}
 
+{% block main_class %}container-wide{% endblock %}
+
 {% macro status_badge(request, honeypot) %}
   {% if honeypot.is_reachable is none %}
     <span class="badge badge-warn">{{ t(request, 'honeypots.list.status_unknown') }}</span>
@@ -245,6 +247,7 @@
             <tr>
               <th><input type="checkbox" data-select-all="honeypot_ids" aria-label="{{ t(request, 'honeypots.list.select_all_aria') }}"></th>
               <th>{{ t(request, 'honeypots.table.name') }}</th>
+              <th>{{ t(request, 'honeypots.table.tags') }}</th>
               <th>{{ t(request, 'honeypots.table.ip') }}</th>
               <th>{{ t(request, 'honeypots.table.hostname') }}</th>
               <th>{{ t(request, 'honeypots.table.company') }}</th>
@@ -262,9 +265,12 @@
                 <td>
                   {{ render_os_badge(honeypot.os_id) }}
                   <a href="/honeypots/{{ honeypot.id }}">{{ honeypot.name }}</a>
+                </td>
+                <td>
                   {% if honeypot.tags %}
-                    <br>
                     {{ tag_chips(honeypot) }}
+                  {% else %}
+                    <span class="hint">—</span>
                   {% endif %}
                 </td>
                 <td>{{ honeypot.ip_address }}</td>

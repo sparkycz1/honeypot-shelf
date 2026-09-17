@@ -57,6 +57,27 @@ async def test_honeypot_list_has_no_separate_tag_picker(client, db_session_facto
     assert '<select name="tag"' not in list_response.text
 
 
+async def test_table_view_shows_tags_in_their_own_column(client, db_session_factory):
+    """Tags used to render wrapped under the honeypot's name in the Name
+    cell — now a dedicated column between Name and IP (see
+    honeypots/list.html's table `<thead>`)."""
+    company = await create_company(db_session_factory)
+    new_form = await client.get("/honeypots/new")
+    csrf_token = _csrf_from(new_form)
+    await _create_honeypot(
+        client, csrf_token, company.id, name="tagged-one", ip_address="10.0.0.6", tags="prod,edge"
+    )
+
+    list_response = await client.get("/honeypots")
+    assert list_response.status_code == 200
+    name_index = list_response.text.index('<th>Name</th>')
+    tags_index = list_response.text.index('<th>Tags</th>')
+    ip_index = list_response.text.index('<th>IP</th>')
+    assert name_index < tags_index < ip_index
+    assert '?tag=prod' in list_response.text
+    assert '?tag=edge' in list_response.text
+
+
 async def test_plain_search_box_also_matches_a_tag_name(client, db_session_factory):
     """The honeypot list folds tag search into its one plain search field
     rather than a separate picker control."""

@@ -25,7 +25,7 @@
               class="world-map-border"></rect>
         {% for dot in dots %}
           <circle cx="{{ dot.x | round(1) }}" cy="{{ dot.y | round(1) }}" r="{{ dot.radius | round(1) }}"
-                  class="world-map-dot">
+                  data-base-r="{{ dot.radius | round(2) }}" class="world-map-dot">
             <title>{{ dot.label }}</title>
           </circle>
         {% endfor %}

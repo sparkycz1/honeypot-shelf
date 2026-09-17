@@ -78,7 +78,11 @@
     </div>
   </header>
 
-  <main class="container" id="main-content">
+  {# A page with an unusually wide table (e.g. honeypots/list.html, once
+     it grew a Tags column) can opt into more horizontal room than the
+     rest of the app by overriding this block with "container-wide" —
+     see that class in style.css. #}
+  <main class="container {% block main_class %}{% endblock %}" id="main-content">
     {% block content %}{% endblock %}
   </main>
 

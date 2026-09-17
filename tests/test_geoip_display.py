@@ -49,8 +49,8 @@ def test_dot_radius_handles_a_single_location_with_no_variation():
     """max_count <= 1 (every location tied, or only one location at all) -
     no meaningful scale to log against, so every dot is just the minimum
     radius rather than dividing by log1p(1) == 0."""
-    assert dot_radius(1, max_count=1) == 3.0
-    assert dot_radius(1, max_count=0) == 3.0
+    assert dot_radius(1, max_count=1) == 1.5
+    assert dot_radius(1, max_count=0) == 1.5
 
 
 def test_country_flag_builds_regional_indicator_pairs():

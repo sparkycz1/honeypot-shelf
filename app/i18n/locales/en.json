@@ -603,6 +603,7 @@
     "honeypots.table.ip": "IP",
     "honeypots.table.name": "Name",
     "honeypots.table.status": "Status",
+    "honeypots.table.tags": "Tags",
     "honeypots.table.updates": "Updates",
     "honeypots.tabs.activity": "Activity",
     "honeypots.tabs.config": "Honeypot config",

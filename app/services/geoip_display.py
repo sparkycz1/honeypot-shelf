@@ -51,14 +51,24 @@ def project(lat: float, lon: float, width: float, height: float) -> tuple[float,
 
 
 def dot_radius(
-    count: int, max_count: int, *, min_radius: float = 3.0, max_radius: float = 14.0
+    count: int, max_count: int, *, min_radius: float = 1.5, max_radius: float = 8.0
 ) -> float:
     """Log-scaled, not linear — a single-event location and a
     thousand-event one would otherwise be visually indistinguishable (both
     "the smallest dot") or the busiest location would dwarf the map (both
     real shapes this data takes: one attacker hitting once, and a
     brute-force botnet hitting the same honeypot thousands of times from
-    one source)."""
+    one source).
+
+    In this 760-unit-wide viewBox (the whole map, pole to pole/date line
+    to date line), even the old `min_radius=3.0` visibly swallowed a
+    small country (Czech Republic is only ~27 units wide at this
+    projection's scale) for a single-event location — confirmed live.
+    Halved both bounds; `map-zoom.js` also keeps every dot's *on-screen*
+    size constant as you zoom in/out (see its own comment) rather than
+    letting it keep growing with the viewBox, so a single event reads as
+    a small, precise pin at any zoom level instead of a blob that gets
+    *less* precise the more you zoom in."""
     if max_count <= 1:
         return min_radius
     # log1p so count=1 still maps to a nonzero fraction (log(1)=0 would

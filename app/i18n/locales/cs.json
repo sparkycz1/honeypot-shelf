@@ -603,6 +603,7 @@
     "honeypots.table.ip": "IP",
     "honeypots.table.name": "Název",
     "honeypots.table.status": "Stav",
+    "honeypots.table.tags": "Štítky",
     "honeypots.table.updates": "Aktualizace",
     "honeypots.tabs.activity": "Aktivita",
     "honeypots.tabs.config": "Konfigurace honeypotu",

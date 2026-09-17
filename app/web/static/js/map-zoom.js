@@ -36,8 +36,23 @@
     const maxW = base.w;
     let view = { x: base.x, y: base.y, w: base.w, h: base.h };
 
+    // Event dots keep a constant *on-screen* radius as you zoom, instead
+    // of growing right along with the viewBox — a fixed geometry `r`
+    // would otherwise make a single-event dot balloon into something
+    // bigger than a small country the more you zoom in, the opposite of
+    // "more precise" (see app.services.geoip_display.dot_radius's own
+    // docstring for the same reasoning from the server side). Each dot's
+    // server-rendered radius (data-base-r) is for the *base* (1x) view;
+    // scaling it by view.w/base.w exactly cancels out the viewBox zoom.
+    const dots = svg.querySelectorAll(".world-map-dot");
+
     function apply() {
       svg.setAttribute("viewBox", `${view.x} ${view.y} ${view.w} ${view.h}`);
+      const scale = view.w / base.w;
+      dots.forEach((dot) => {
+        const baseR = Number.parseFloat(dot.dataset.baseR);
+        if (Number.isFinite(baseR)) dot.setAttribute("r", (baseR * scale).toFixed(3));
+      });
     }
 
     function clientToUserSpace(clientX, clientY) {

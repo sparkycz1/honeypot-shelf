@@ -442,6 +442,14 @@ img.brand-mark-lg { object-fit: contain; }
   padding: var(--space-6) var(--space-5);
 }
 
+/* Opt-in override (base.html's `main_class` block) for a page whose
+   table genuinely needs more room than the standard 1080px — the
+   Honeypots list, once its table grew a Tags column between Name and
+   IP, started wrapping/crowding at the default width. */
+.container-wide {
+  max-width: 1400px;
+}
+
 .site-footer {
   text-align: center;
   color: var(--color-muted);
