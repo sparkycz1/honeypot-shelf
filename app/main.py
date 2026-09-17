@@ -158,7 +158,7 @@ async def _reconnect_vpn_if_configured() -> None:
                     config=decrypt_secret(app_settings.wireguard_config_encrypted)
                 )
                 logger.info("Reconnected WireGuard on startup.")
-    except Exception:  # noqa: BLE001 - startup must never crash over this
+    except Exception:
         logger.warning("Could not reconnect the configured VPN on startup.", exc_info=True)
 
 

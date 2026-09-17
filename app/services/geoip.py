@@ -44,6 +44,7 @@ import tarfile
 import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import geoip2.database
 import geoip2.errors
@@ -120,7 +121,7 @@ def _validate_mmdb(data: bytes) -> None:
         raise GeoipDownloadError(f"not a valid GeoIP database ({exc})") from exc
     finally:
         with contextlib.suppress(OSError):
-            os.unlink(path)
+            Path(path).unlink()
 
 
 async def _fetch_and_validate(url: str) -> bytes:
@@ -221,7 +222,12 @@ class _ReaderCache:
         except Exception:
             logger.exception("Failed to open the downloaded GeoIP database")
             with contextlib.suppress(OSError):
-                os.unlink(path)
+                # Plain os.unlink, not Path.unlink — this one's called
+                # from an async function (unlike _validate_mmdb/_reset's
+                # own cleanup below), and pathlib's blocking methods are
+                # flagged (ASYNC240) there; a one-time temp-file cleanup
+                # isn't worth a run_in_executor hop for.
+                os.unlink(path)  # noqa: PTH108
             return None
         self._tmp_path = path
         self._db_updated_at = row.updated_at
@@ -233,7 +239,7 @@ class _ReaderCache:
                 self._reader.close()
         if self._tmp_path is not None:
             with contextlib.suppress(OSError):
-                os.unlink(self._tmp_path)
+                Path(self._tmp_path).unlink()
         self._reader = None
         self._tmp_path = None
         self._db_updated_at = None

@@ -23,7 +23,7 @@ that's built). No country borders or place labels — just enough
 geography to tell at a glance where a cluster of dots actually is,
 without turning this into a full political map. The page itself is
 pannable/zoomable (`app/web/static/js/map-zoom.js` — wheel, drag,
-pinch, or the +/−/reset buttons), for the same reason: a screenful of
+pinch, or the +/-/reset buttons), for the same reason: a screenful of
 dots at world scale hides exactly the clustering a company with lots of
 regional traffic most wants to see.
 """

@@ -130,7 +130,10 @@ async def _get_company_member_counts(db: AsyncSession) -> dict[uuid.UUID, int]:
         select(honeypot_companies.c.company_id, func.count())
         .group_by(honeypot_companies.c.company_id)
     )
-    return {company_id: count for company_id, count in result.all()}
+    # Not simplified to dict(result.all()) (C416) — mypy doesn't see a
+    # SQLAlchemy Row as the tuple[UUID, int] dict() needs under strict
+    # mode, whereas unpacking it in a comprehension type-checks cleanly.
+    return {company_id: count for company_id, count in result.all()}  # noqa: C416
 
 
 async def _build_companies_list_context(

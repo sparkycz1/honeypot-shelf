@@ -20,7 +20,13 @@ updates:
     labels:
       - "dependencies"
 
-  # Pinned action versions in .github/workflows/ci.yml.
+  # Every action pinned in .github/workflows/*.yml (ci.yml, codeql.yml,
+  # scorecard.yml) — `directory: "/"` scans the whole workflows folder,
+  # not just one file. Each `uses: owner/action@<sha>  # vX.Y.Z` is pinned
+  # by commit SHA (see those workflows' own comments for why); Dependabot
+  # already understands that exact pattern and opens a PR bumping both
+  # the SHA and the trailing version comment together when a new release
+  # ships — nothing extra to configure for that specifically.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

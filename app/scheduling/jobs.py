@@ -134,7 +134,7 @@ async def _run_scheduled_task(task_id: str) -> dict[str, Any]:
         try:
             honeypots = await resolve_target_honeypots(session, task)
             result = await action.run(session, honeypots, task.action_params or {})
-        except Exception as exc:  # noqa: BLE001 - recorded, not swallowed
+        except Exception as exc:
             summary = f"Failed to run: {exc}"
             task.last_run_at = datetime.now(UTC)
             task.last_run_summary = summary

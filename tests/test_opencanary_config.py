@@ -119,7 +119,7 @@ def test_apply_form_to_config_ignores_unparseable_int():
 def test_apply_form_to_config_does_not_mutate_input():
     original = dict(_SAMPLE_CONFIG)
     apply_form_to_config(_SAMPLE_CONFIG, {"ftp.enabled": "on"})
-    assert _SAMPLE_CONFIG == original
+    assert original == _SAMPLE_CONFIG
 
 
 def test_build_read_command_reads_the_conf_path():

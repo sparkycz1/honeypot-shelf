@@ -391,7 +391,7 @@ async def initialize_websocket(websocket: WebSocket, run_id: str) -> None:
             process = None
             conn = None
             error = await _wait_for_reboot(websocket, run.ip_address, run.new_ssh_port, fingerprint)
-    except Exception as exc:  # noqa: BLE001 - reported to the client, not swallowed
+    except Exception as exc:
         error = str(exc)
     finally:
         if process is not None:

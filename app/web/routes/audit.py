@@ -160,7 +160,7 @@ async def export_audit_log(
     outcome: str = "",
     target_type: str = "",
     target_id: str = "",
-    format: str = "csv",  # noqa: A002 - matches the query param name, not shadowing anything here
+    format: str = "csv",
 ) -> Response:
     """Export the audit log — respecting the same filters as the list view —
     as CSV or JSON, for archival/compliance outside the app. A plain

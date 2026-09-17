@@ -705,7 +705,7 @@ async def export_honeypot_config_endpoint(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    format: str = "json",  # noqa: A002
+    format: str = "json",
 ) -> Response:
     """Export every honeypot's and company's *structural* configuration —
     deliberately never `secret_encrypted` or `host_key_fingerprint`, see
@@ -1491,7 +1491,7 @@ async def run_onboarding_endpoint(
                 error = str(result.get("error") or "Unknown error.")
     except CeleryTimeoutError:
         error = "The setup script did not finish in time. Reload this page shortly."
-    except Exception as exc:  # noqa: BLE001 - reported, not swallowed
+    except Exception as exc:
         error = str(exc)
 
     await log_event(
@@ -1609,7 +1609,7 @@ async def run_onboarding_with_credential_endpoint(
             error = str(result.get("error") or "Unknown error.")
     except CeleryTimeoutError:
         error = "The setup script did not finish in time. Reload this page shortly."
-    except Exception as exc:  # noqa: BLE001 - reported, not swallowed
+    except Exception as exc:
         error = str(exc)
 
     if error is not None:
@@ -1671,7 +1671,7 @@ async def fix_readiness_directly_endpoint(
             error = str(result.get("error") or "Unknown error.")
     except CeleryTimeoutError:
         error = "Timed out. Reload this page shortly."
-    except Exception as exc:  # noqa: BLE001 - reported, not swallowed
+    except Exception as exc:
         error = str(exc)
 
     await log_event(
@@ -2570,7 +2570,7 @@ async def honeypot_logs(
                     error = str(result.get("error") or "Unknown error.")
         except CeleryTimeoutError:
             error = "The command did not finish in time."
-        except Exception as exc:  # noqa: BLE001 - reported, not swallowed
+        except Exception as exc:
             error = str(exc)
 
         await log_event(
@@ -2608,7 +2608,7 @@ async def honeypot_logs(
                     error = str(result.get("error") or "Unknown error.")
         except CeleryTimeoutError:
             error = "The command did not finish in time."
-        except Exception as exc:  # noqa: BLE001 - reported, not swallowed
+        except Exception as exc:
             error = str(exc)
 
         await log_event(
@@ -2826,7 +2826,7 @@ async def export_honeypot_activity(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     range_key: str = "",
-    format: str = "csv",  # noqa: A002
+    format: str = "csv",
 ) -> Response:
     """Every `HoneypotEvent` for this honeypot, as CSV or JSON — same
     filter as the Activity tab's chart when `range_key` is one of
@@ -2904,7 +2904,7 @@ async def _load_readonly_state(
             return None, str(result.get("error") or "Unknown error.")
     except CeleryTimeoutError:
         return None, "The status check did not finish in time."
-    except Exception as exc:  # noqa: BLE001 - reported, not swallowed
+    except Exception as exc:
         return None, str(exc)
     return None, "Unknown error."
 
@@ -2927,7 +2927,7 @@ async def _load_opencanary_config(
             return None, str(result.get("error") or "Unknown error.")
     except CeleryTimeoutError:
         return None, "Reading the config did not finish in time."
-    except Exception as exc:  # noqa: BLE001 - reported, not swallowed
+    except Exception as exc:
         return None, str(exc)
     return None, "Unknown error."
 
@@ -3047,7 +3047,7 @@ async def save_honeypot_opencanary_config_endpoint(
                         error = str(result.get("error") or "Unknown error.")
             except CeleryTimeoutError:
                 error = "Applying the config did not finish in time."
-            except Exception as exc:  # noqa: BLE001 - reported, not swallowed
+            except Exception as exc:
                 error = str(exc)
 
         readonly_state, readonly_error = await _load_readonly_state(honeypot, app_settings)
@@ -3126,7 +3126,7 @@ async def set_honeypot_readonly_endpoint(
                 error = str(result.get("error") or "Unknown error.")
         except CeleryTimeoutError:
             error = "The command did not finish in time."
-        except Exception as exc:  # noqa: BLE001 - reported, not swallowed
+        except Exception as exc:
             error = str(exc)
 
     await log_event(

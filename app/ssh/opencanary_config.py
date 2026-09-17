@@ -38,6 +38,7 @@ itself is installed by Initialize.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import shlex
 from dataclasses import dataclass, field
@@ -398,10 +399,9 @@ def apply_form_to_config(
                 updated[field_def.key] = field_def.key in form
             elif field_def.type == "int":
                 if raw is not None and raw.strip():
-                    try:
+                    # leave the existing value on a bad int — caller validates before this
+                    with contextlib.suppress(ValueError):
                         updated[field_def.key] = int(raw.strip())
-                    except ValueError:
-                        pass  # leave the existing value — caller validates before this
             elif field_def.type == "list":
                 items = [p.strip() for p in (raw or "").split(",") if p.strip()]
                 updated[field_def.key] = items

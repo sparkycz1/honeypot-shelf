@@ -29,6 +29,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from pathlib import Path
 
 from app.core.config import get_settings
 
@@ -146,7 +147,7 @@ def tail_log(lines: int = 200) -> str:
     an empty/explanatory result."""
     settings = get_settings()
     try:
-        with open(settings.wireguard_log_path, encoding="utf-8", errors="replace") as f:
+        with Path(settings.wireguard_log_path).open(encoding="utf-8", errors="replace") as f:
             all_lines = f.readlines()
     except FileNotFoundError:
         return ""

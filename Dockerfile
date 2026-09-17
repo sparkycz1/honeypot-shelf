@@ -30,24 +30,49 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # --- Stage 2: minimal runtime image ------------------------------------------
 FROM python:3.14.7-slim@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6 AS runtime
 
-# The netbird CLI/daemon binary only — installed straight from its GitHub
-# release tarball, not the `.deb` (whose postinst script tries to install
-# and start a SysV init service — nothing this image ever has, since it
-# only ever runs a single foreground process, so that install would fail
-# the build for no benefit; nothing here needs the systemd unit the `.deb`
-# would set up either). Never run inside `web`/`worker` themselves (that
-# needs CAP_NET_ADMIN/`/dev/net/tun`, which this image's containers
-# deliberately don't have; see app/services/netbird.py's module docstring)
-# — this lets `web` issue `netbird up/down/status` against the optional
-# `docker-compose.vpn.yml` sidecar's daemon over a shared socket volume
-# instead. Harmless to have installed even when that overlay isn't used —
-# the CLI just fails with a clear "can't reach the daemon" error, same as
-# any other optional integration (LDAP/OIDC/syslog) left unconfigured.
-ARG NETBIRD_VERSION=0.78.1
+# Both VPN clients below are fetched fresh (latest NetBird release,
+# latest Debian-packaged wireguard-tools) on every image build rather
+# than pinned to a version this Dockerfile hardcodes — a stale VPN client
+# is a real security/compatibility liability (NetBird's management
+# protocol and WireGuard's kernel module both move), and unlike the
+# app's own Python dependencies (deliberately pinned in uv.lock, bumped
+# deliberately via Dependabot) there's no equivalent lockfile/PR-review
+# story for either of these, so "always latest at build time" is the
+# simpler, safer default here.
+#
+# CACHE_BUST alone (an ARG whose *value* changes) is what actually forces
+# Docker to re-run both RUN layers below instead of reusing a
+# months-old cached one — `docker compose build` on an unchanged
+# Dockerfile would otherwise happily keep serving whatever NetBird/
+# wireguard-tools version was cached from the very first build forever.
+# `docker-compose.yml` sets this from a `CACHE_BUST` shell variable;
+# `scripts/upgrade.sh` exports a fresh one (the current date) before
+# every build, same mechanism as `GIT_COMMIT` below. Defaults to
+# "unknown" for a plain `docker build` with nothing passed — cache reuse
+# in that case is the same tradeoff a bare `docker build` already makes
+# for every other layer.
+ARG CACHE_BUST=unknown
+
+# The netbird CLI/daemon binary only — installed straight from its latest
+# GitHub release tarball, not the `.deb` (whose postinst script tries to
+# install and start a SysV init service — nothing this image ever has,
+# since it only ever runs a single foreground process, so that install
+# would fail the build for no benefit; nothing here needs the systemd
+# unit the `.deb` would set up either). Never run inside `web`/`worker`
+# themselves (that needs CAP_NET_ADMIN/`/dev/net/tun`, which this image's
+# containers deliberately don't have; see app/services/netbird.py's
+# module docstring) — this lets `web` issue `netbird up/down/status`
+# against the optional `docker-compose.vpn.yml` sidecar's daemon over a
+# shared socket volume instead. Harmless to have installed even when
+# that overlay isn't used — the CLI just fails with a clear "can't reach
+# the daemon" error, same as any other optional integration (LDAP/OIDC/
+# syslog) left unconfigured.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl ca-certificates \
+    && netbird_latest_url="$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/netbirdio/netbird/releases/latest)" \
+    && netbird_version="${netbird_latest_url##*/v}" \
     && curl -fsSL \
-        "https://github.com/netbirdio/netbird/releases/download/v${NETBIRD_VERSION}/netbird_${NETBIRD_VERSION}_linux_amd64.tar.gz" \
+        "https://github.com/netbirdio/netbird/releases/download/v${netbird_version}/netbird_${netbird_version}_linux_amd64.tar.gz" \
         | tar xz -C /usr/local/bin netbird \
     && chmod +x /usr/local/bin/netbird \
     && rm -rf /var/lib/apt/lists/*
@@ -59,7 +84,9 @@ RUN apt-get update \
 # CAP_NET_ADMIN/`/dev/net/tun`), not by `web`/`worker` themselves; same
 # "harmless to have either way, reused from the same shared image"
 # reasoning as the NetBird CLI above. Both ship in Debian's own repos,
-# unlike NetBird — no extra apt source needed.
+# unlike NetBird — no extra apt source needed, and `apt-get update`
+# immediately before `install` (rather than relying on a cached package
+# index) is what actually gets the latest version Debian currently ships.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends wireguard-tools iproute2 \
     && rm -rf /var/lib/apt/lists/*

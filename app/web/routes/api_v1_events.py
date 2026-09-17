@@ -174,7 +174,7 @@ async def export_events_api(
     source: str = "",
     since: str = "",
     until: str = "",
-    format: str = "csv",  # noqa: A002
+    format: str = "csv",
 ) -> Response:
     """Every matching event, oldest first, as CSV or JSON — no pagination
     (same tradeoff `app/web/routes/audit.py`'s export makes: fine for an

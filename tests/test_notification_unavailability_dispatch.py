@@ -126,7 +126,7 @@ async def test_sends_unavailable_notification_once_debounce_elapsed(
 
 async def test_does_not_send_before_debounce_elapses(db_session_factory, monkeypatch):
     monkeypatch.setattr("app.db.session.AsyncSessionLocal", db_session_factory)
-    honeypot_id, _rule_id = await _setup_honeypot_and_rule(
+    _honeypot_id, _rule_id = await _setup_honeypot_and_rule(
         db_session_factory,
         unreachable_since=datetime.now(UTC) - timedelta(minutes=2),
         unavailable_after_minutes=10,
@@ -280,7 +280,7 @@ async def test_no_recovered_notification_if_never_notified_unavailable(
     elapsed never had an "unavailable" notification sent — so there's
     nothing to report as "recovered" either."""
     monkeypatch.setattr("app.db.session.AsyncSessionLocal", db_session_factory)
-    honeypot_id, rule_id = await _setup_honeypot_and_rule(
+    _honeypot_id, _rule_id = await _setup_honeypot_and_rule(
         db_session_factory,
         unreachable_since=None,
         reachable_since=datetime.now(UTC) - timedelta(minutes=10),

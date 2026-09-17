@@ -8,8 +8,18 @@ x-app-image: &app-image
     # shown on the Settings page) — set GIT_COMMIT in the shell/`.env` before
     # building, e.g. `GIT_COMMIT=$(git rev-parse HEAD) docker compose build`;
     # scripts/upgrade.sh does this automatically. Defaults to "unknown".
+    #
+    # CACHE_BUST forces the Dockerfile's NetBird/wireguard-tools layers to
+    # actually re-fetch the latest release/package instead of reusing a
+    # stale cached layer forever — see the Dockerfile's own comment there
+    # for why those two specifically always track latest. Set it to
+    # anything that changes between builds (scripts/upgrade.sh uses the
+    # current date); a plain `docker compose build` with nothing passed
+    # just keeps Docker's normal caching for that layer, same as any
+    # other unpinned `RUN apt-get install` would.
     args:
       GIT_COMMIT: ${GIT_COMMIT:-unknown}
+      CACHE_BUST: ${CACHE_BUST:-unknown}
   image: honeypotshelf:local
   env_file:
     - .env

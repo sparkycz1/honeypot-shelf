@@ -15,6 +15,7 @@ this calls into.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import uuid
 from datetime import UTC, datetime, timedelta
 from urllib.parse import quote
@@ -1397,10 +1398,9 @@ async def push_own_ssh_keys(
     )
     for superadmin in superadmins.scalars().all():
         assert superadmin.ssh_public_keys is not None  # filtered by the query above
-        try:
+        # shouldn't happen — validated on save; never fatal to the push either way
+        with contextlib.suppress(InvalidSshPublicKeyError):
             keys.extend(parse_ssh_public_keys(superadmin.ssh_public_keys))
-        except InvalidSshPublicKeyError:
-            pass  # shouldn't happen — validated on save; never fatal to the push either way
 
     result = await db.execute(select(Honeypot).where(Honeypot.host_key_fingerprint.is_not(None)))
     honeypots = list(result.scalars().all())
@@ -1418,7 +1418,7 @@ async def push_own_ssh_keys(
             )
         except CeleryTimeoutError:
             return honeypot.name, "Timed out."
-        except Exception as exc:  # noqa: BLE001 - reported, not swallowed
+        except Exception as exc:
             return honeypot.name, str(exc)
         if isinstance(outcome, dict) and outcome.get("ok"):
             return honeypot.name, None

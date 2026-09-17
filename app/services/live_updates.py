@@ -99,7 +99,7 @@ async def _publish(channel: str, kind: Kind) -> None:
             await client.publish(channel, json.dumps({"kind": kind}))
         finally:
             await client.aclose()
-    except Exception:  # noqa: BLE001 - best-effort, see docstring
+    except Exception:
         logger.warning("live_updates: failed to publish %r on %s", kind, channel)
 
 

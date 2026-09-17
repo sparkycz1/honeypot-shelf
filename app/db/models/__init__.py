@@ -44,7 +44,6 @@ __all__ = [
     "GeoipDatabase",
     "Honeypot",
     "HoneypotEvent",
-    "honeypot_companies",
     "HoneypotMonitoringSample",
     "HoneypotPackage",
     "HoneypotReachabilitySample",
@@ -67,4 +66,5 @@ __all__ = [
     "User",
     "UserSession",
     "WebAuthnCredential",
+    "honeypot_companies",
 ]

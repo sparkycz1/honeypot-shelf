@@ -214,10 +214,7 @@ async def initialize_submit(
         errors.append("A password is required for password authentication.")
     if vpn_provider not in ("none", "netbird", "wireguard"):
         errors.append("Unknown VPN provider.")
-    if netbird_management_url and not (
-        netbird_management_url.startswith("http://")
-        or netbird_management_url.startswith("https://")
-    ):
+    if netbird_management_url and not netbird_management_url.startswith(("http://", "https://")):
         errors.append('NetBird management URL must start with "http://" or "https://".')
     if vpn_provider == "wireguard" and not wireguard_config:
         errors.append("A WireGuard config is required when WireGuard is selected.")

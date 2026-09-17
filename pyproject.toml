@@ -1,6 +1,6 @@
 [project]
 name = "honeypot-shelf"
-version = "0.42.7"
+version = "0.42.8"
 description = "Management and monitoring overview for a fleet of OpenCanary honeypots, across multiple companies"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -94,11 +94,37 @@ target-version = "py314"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "S", "ASYNC"]
+# Beyond the original set (E/F/I/UP/B/S/ASYNC, correctness/security/import
+# hygiene), these add code-quality signal without the framework-driven
+# false-positive rate of e.g. ARG (unused-argument — FastAPI/pytest
+# fixtures and SQLAlchemy hooks routinely have intentionally-unused
+# params) or T20 (no-print — scripts/ are CLI tools that print by design):
+#   N    pep8-naming
+#   C4   flake8-comprehensions
+#   SIM  flake8-simplify
+#   RET  flake8-return
+#   PIE  flake8-pie (misc anti-patterns)
+#   PERF perflint
+#   PTH  prefer pathlib over os.path (matches how the rest of the app
+#        already does file paths — see e.g. app.core.version._REPO_ROOT)
+#   RUF  ruff's own rules (mutable class defaults, unused noqa, ...)
+#   C90  mccabe complexity — see max-complexity below for why the
+#        threshold isn't the default 10.
+select = ["E", "F", "I", "UP", "B", "S", "ASYNC", "N", "C4", "SIM", "RET", "PIE", "PERF", "PTH", "RUF", "C90"]
 # S101: assert used (fine in tests).
 # B008: Depends()/Form() as a parameter default is the idiomatic, required
 # dependency-injection pattern in FastAPI, not a bug.
 ignore = ["S101", "B008"]
+
+[tool.ruff.lint.mccabe]
+# The default (10) already fails on a dozen existing route
+# handlers/parsers — real complexity, but refactoring each is its own
+# deliberate change, not a side effect of turning a linter rule on. 16
+# (the current worst offender) is the starting ceiling so this catches
+# any *new* function that gets worse than what's already here, without
+# demanding an immediate rewrite of working code; ratchet it back down
+# as those functions get simplified.
+max-complexity = 16
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101", "S105", "S106"]

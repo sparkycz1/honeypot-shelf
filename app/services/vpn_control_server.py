@@ -37,6 +37,7 @@ import json
 import logging
 import os
 import stat
+from pathlib import Path
 
 from app.core.config import get_settings
 
@@ -63,7 +64,11 @@ async def _wg_up(config: str) -> dict[str, object]:
         logger.warning("wg_up rejected: no config given")
         return {"ok": False, "output": "No WireGuard config given."}
 
-    os.makedirs("/etc/wireguard", exist_ok=True)
+    # Plain os.* here, not pathlib — pathlib's blocking file methods are
+    # flagged (ASYNC240) inside an `async def`; these are one-time,
+    # microsecond, local-filesystem calls at connect time, not worth a
+    # run_in_executor hop for.
+    os.makedirs("/etc/wireguard", exist_ok=True)  # noqa: PTH103
     # Idempotent — bring any previous session down first (ignored if it
     # was never up) so re-connecting with an edited config doesn't just
     # layer a second interface/route set on top of the old one.
@@ -118,30 +123,33 @@ async def _handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) ->
             response = await _wg_status()
         else:
             response = {"ok": False, "output": f"Unknown command {cmd!r}."}
-    except Exception as exc:  # noqa: BLE001 - reported to the client, not swallowed
+    except Exception as exc:
         logger.exception("vpn_control_server: request failed")
         response = {"ok": False, "output": f"Internal error: {exc}"}
     finally:
         try:
             writer.write((json.dumps(response) + "\n").encode("utf-8"))
             await writer.drain()
-        except Exception:  # noqa: BLE001 - the client may already be gone
+        except Exception:
             logger.debug("vpn_control_server: couldn't write response", exc_info=True)
         writer.close()
 
 
 async def serve(socket_path: str | None = None) -> None:
     socket_path = socket_path or get_settings().vpn_control_addr
-    os.makedirs(os.path.dirname(socket_path), exist_ok=True)
+    # Plain os.*, not pathlib — see _wg_up's own comment on ASYNC240;
+    # this whole function is async, but every call here is a one-time,
+    # startup-only, local-filesystem operation.
+    os.makedirs(os.path.dirname(socket_path), exist_ok=True)  # noqa: PTH103, PTH120
     with contextlib.suppress(FileNotFoundError):
-        os.remove(socket_path)
+        os.remove(socket_path)  # noqa: PTH107
     server = await asyncio.start_unix_server(_handle, path=socket_path)
     # World-writable: `web`/`worker` connect as their own unprivileged
     # `app` user, not root — this socket is the one deliberate exception,
     # same reasoning as any other narrow local-only control surface (it's
     # only ever reachable from inside this container's shared network/IPC
     # namespace set, never from the network).
-    os.chmod(socket_path, 0o777)  # noqa: S103 - see comment above
+    os.chmod(socket_path, 0o777)  # noqa: S103, PTH101 - see comment above
     logger.info("vpn_control_server listening on %s", socket_path)
     async with server:
         await server.serve_forever()
@@ -153,7 +161,7 @@ def _configure_logging() -> None:
     `app.services.wireguard.tail_log`. Plain `wireguard-tools` keeps no
     log of its own to expose this way, unlike NetBird's client log."""
     log_path = get_settings().wireguard_log_path
-    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    Path(log_path).parent.mkdir(parents=True, exist_ok=True)
     formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
     file_handler = logging.FileHandler(log_path)
     file_handler.setFormatter(formatter)

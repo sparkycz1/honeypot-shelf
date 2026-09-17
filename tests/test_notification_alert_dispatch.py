@@ -68,8 +68,13 @@ async def _setup(db_session_factory, *, smtp_enabled: bool = True):
         app_settings.smtp_host = "smtp.example.com"
 
         await db.commit()
+        # Not a redundant assignment (RET504) — `commit()`'s default
+        # expire_on_commit means `honeypot.id` needs the still-open
+        # session to refresh from, so it has to be captured *inside* this
+        # `with` block; the `return` itself is outside it, once the
+        # session (and any lazy-load chance) is already gone.
         honeypot_id = honeypot.id
-    return honeypot_id
+    return honeypot_id  # noqa: RET504
 
 
 async def test_new_alert_emails_only_subscribed_active_recipients(

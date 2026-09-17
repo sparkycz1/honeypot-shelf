@@ -73,8 +73,8 @@ async def test_companies_and_audit_panels_require_login(anonymous_client):
 
 def test_fleet_and_admin_channels_are_fixed_and_distinct():
     assert FLEET_CHANNEL != ADMIN_CHANNEL
-    assert FLEET_CHANNEL != channel_for("some-honeypot-id")
-    assert ADMIN_CHANNEL != channel_for("some-honeypot-id")
+    assert channel_for("some-honeypot-id") != FLEET_CHANNEL
+    assert channel_for("some-honeypot-id") != ADMIN_CHANNEL
 
 
 def test_notifications_channel_is_scoped_per_user():

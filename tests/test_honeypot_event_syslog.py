@@ -132,7 +132,7 @@ async def test_forward_fleet_wide_only_when_company_target_not_configured(
         sent.append(host)
 
     monkeypatch.setattr("app.services.honeypot_event_syslog.send_syslog", fake_send)
-    company, honeypot, event = _make_trio()  # company syslog left disabled
+    _company, honeypot, event = _make_trio()  # company syslog left disabled
 
     async with db_session_factory() as db:
         app_settings = await get_or_create_app_settings(db)

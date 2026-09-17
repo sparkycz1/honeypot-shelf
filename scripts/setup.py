@@ -47,7 +47,7 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from scripts.env_sync import sync_env  # noqa: E402 - needs the sys.path insert above
+from scripts.env_sync import sync_env
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ENV_PATH = REPO_ROOT / ".env"
@@ -167,6 +167,16 @@ def _git_commit() -> str:
         return "unknown"
 
 
+def _cache_bust() -> str:
+    """A value that's different on every run, passed as the Dockerfile's
+    CACHE_BUST build arg — forces its NetBird/wireguard-tools layers to
+    actually re-fetch the latest release/package on every build instead
+    of reusing a cached layer from whenever this ran last. See the
+    Dockerfile's own comment on CACHE_BUST for why those two specifically
+    always track latest rather than a pinned version."""
+    return time.strftime("%Y%m%d%H%M%S")
+
+
 def _read_env_value(path: Path, key: str) -> str | None:
     """The value of an uncommented `KEY=value` line in an existing `.env`,
     or `None` if it's absent or commented out — used only by the "keep my
@@ -273,7 +283,7 @@ def _sync_and_start(docker_path: str) -> None:
         compose_files += ["-f", "docker-compose.vpn.yml"]
 
     print("==> Starting the database and cache...")
-    build_env = {**os.environ, "GIT_COMMIT": _git_commit()}
+    build_env = {**os.environ, "GIT_COMMIT": _git_commit(), "CACHE_BUST": _cache_bust()}
     subprocess.run(  # noqa: S603 - fixed args, no user input
         [docker_path, "compose", *compose_files, "up", "-d", "db", "redis"],
         cwd=REPO_ROOT,
@@ -312,7 +322,7 @@ def _wait_until_healthy(port: str) -> bool:
     url = f"http://localhost:{port}/healthz"
     while time.monotonic() < deadline:
         try:
-            with urllib.request.urlopen(url, timeout=3) as response:  # noqa: S310
+            with urllib.request.urlopen(url, timeout=3) as response:
                 if response.status == 200:
                     return True
         except (urllib.error.URLError, OSError):
@@ -452,7 +462,7 @@ def main() -> None:
         check=False,
     )
 
-    build_env = {**os.environ, "GIT_COMMIT": _git_commit()}
+    build_env = {**os.environ, "GIT_COMMIT": _git_commit(), "CACHE_BUST": _cache_bust()}
 
     print("==> Starting the database and cache, and building the web image...")
     subprocess.run(  # noqa: S603 - fixed args, no user input

@@ -35,6 +35,7 @@ import asyncio
 import contextlib
 import logging
 import os
+from pathlib import Path
 
 from app.core.config import get_settings
 
@@ -214,7 +215,7 @@ def tail_log(lines: int = 200) -> str:
     error, just an empty/explanatory result."""
     settings = get_settings()
     try:
-        with open(settings.netbird_log_path, encoding="utf-8", errors="replace") as f:
+        with Path(settings.netbird_log_path).open(encoding="utf-8", errors="replace") as f:
             # Fine at this log's realistic size (a NetBird client log, not
             # an OpenCanary firehose) — read it whole rather than seeking
             # from the end, same tradeoff `app.ssh.logs`' file browser makes

@@ -533,7 +533,7 @@ async def push_ssh_key(request: Request, db: AsyncSession = Depends(get_db)) -> 
             outcome = await asyncio.to_thread(async_result.get, timeout=_PUSH_WAIT_SECONDS)  # type: ignore[attr-defined]
         except CeleryTimeoutError:
             return honeypot.name, "Timed out."
-        except Exception as exc:  # noqa: BLE001 - reported, not swallowed
+        except Exception as exc:
             return honeypot.name, str(exc)
         if isinstance(outcome, dict) and outcome.get("ok"):
             return honeypot.name, None
@@ -589,7 +589,7 @@ async def update_ldap_settings(
     errors: list[str] = []
 
     server_uri = ldap_server_uri.strip()
-    if server_uri and not (server_uri.startswith("ldap://") or server_uri.startswith("ldaps://")):
+    if server_uri and not server_uri.startswith(("ldap://", "ldaps://")):
         errors.append('Server URI must start with "ldap://" or "ldaps://".')
 
     try:
@@ -648,7 +648,7 @@ async def update_oidc_settings(
     errors: list[str] = []
 
     issuer_url = oidc_issuer_url.strip()
-    if issuer_url and not (issuer_url.startswith("http://") or issuer_url.startswith("https://")):
+    if issuer_url and not issuer_url.startswith(("http://", "https://")):
         errors.append('Issuer URL must start with "http://" or "https://".')
 
     claim = oidc_username_claim.strip() or DEFAULT_OIDC_USERNAME_CLAIM
@@ -881,7 +881,7 @@ async def refresh_geoip_now(request: Request, db: AsyncSession = Depends(get_db)
             request, db, ["Download timed out — it may still complete in the background."],
             tab="geoip",
         )
-    except Exception as exc:  # noqa: BLE001 - reported, not swallowed
+    except Exception as exc:
         return await _render_settings(request, db, [str(exc)], tab="geoip")
 
     if isinstance(outcome, dict) and outcome.get("ok"):
@@ -942,9 +942,7 @@ async def update_netbird_settings(
     errors: list[str] = []
 
     management_url = netbird_management_url.strip()
-    if management_url and not (
-        management_url.startswith("http://") or management_url.startswith("https://")
-    ):
+    if management_url and not management_url.startswith(("http://", "https://")):
         errors.append('Management URL must start with "http://" or "https://".')
 
     setup_key = netbird_setup_key.strip()

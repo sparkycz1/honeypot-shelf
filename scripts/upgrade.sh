@@ -18,7 +18,10 @@
 #      and rebuilds/restarts with the same compose file combination, so it
 #      doesn't get silently dropped.
 #   5. `docker compose build` (stamped with GIT_COMMIT so the Settings page
-#      can show exactly which commit is running — see app/core/version.py)
+#      can show exactly which commit is running — see app/core/version.py —
+#      and with a fresh CACHE_BUST so the image's NetBird/wireguard-tools
+#      layers actually re-fetch the latest release/package rather than
+#      reusing a stale cached layer — see the Dockerfile's own comment)
 #      then `docker compose up -d` — the `migrate` service runs
 #      automatically as part of the `web`/`worker` dependency chain (see
 #      docker-compose.yml) and must complete successfully before either of
@@ -103,6 +106,11 @@ fi
 
 echo "==> Building images..."
 export GIT_COMMIT="$(git rev-parse HEAD)"
+# Forces the Dockerfile's NetBird/wireguard-tools layers to actually
+# re-run on every upgrade instead of reusing a cached layer from months
+# ago — see the Dockerfile's own comment on CACHE_BUST for why those two
+# specifically always track latest rather than a pinned version.
+export CACHE_BUST="$(date +%Y%m%d%H%M%S)"
 docker compose "${compose_files[@]}" build
 
 echo "==> Applying migrations and restarting services..."
