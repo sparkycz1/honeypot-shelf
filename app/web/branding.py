@@ -20,29 +20,16 @@ Each setting is either:
 from __future__ import annotations
 
 from pathlib import Path
-from urllib.parse import quote
 
 from app.core.config import get_settings
 
 LOGO_ROUTE = "/branding/logo"
 FAVICON_ROUTE = "/branding/favicon"
 
-# The built-in honeycomb mark, standalone (no page CSS to inherit from —
-# this is a separate document the browser tab fetches on its own).
-# Outline-only in the brand's fixed amber: unlike a filled shape, a stroke
-# alone reads fine against both a light and a dark browser tab background,
-# so this needs no `prefers-color-scheme` trick the way a filled mark
-# would (see app/web/templates/partials/_brand_mark.html, the same shape
-# used inline in the app itself).
-_FAVICON_SVG = """\
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none"
-     stroke="#e0a761" stroke-width="6" stroke-linejoin="round" stroke-linecap="round">
-<polygon points="50,2 70.78,14 70.78,38 50,50 29.22,38 29.22,14"/>
-<polygon points="29.22,38 50,50 50,74 29.22,86 8.44,74 8.44,50"/>
-<polygon points="70.78,38 91.56,50 91.56,74 70.78,86 50,74 50,50"/>
-</svg>"""
-
-DEFAULT_FAVICON_DATA_URI = "data:image/svg+xml," + quote(_FAVICON_SVG)
+# The built-in honeycomb mark (from the brand sheet), served as a plain
+# static file same as any other asset under app/web/static/ — see
+# app/web/static/img/icon.png.
+DEFAULT_FAVICON_URL = "/static/img/icon.png"
 
 
 def _is_url(source: str) -> bool:
@@ -88,9 +75,9 @@ def logo_url() -> str | None:
 def favicon_url() -> str:
     """Unlike `logo_url()`, this never returns `None` — a `<link rel=
     icon>` needs *something*, so an unconfigured `FAVICON_SOURCE` falls
-    back to the built-in mark (`DEFAULT_FAVICON_DATA_URI`) rather than
+    back to the built-in mark (`DEFAULT_FAVICON_URL`) rather than
     leaving the caller to handle "no favicon" as a separate case."""
     return (
         resolve_branding_url(get_settings().favicon_source, served_route=FAVICON_ROUTE)
-        or DEFAULT_FAVICON_DATA_URI
+        or DEFAULT_FAVICON_URL
     )

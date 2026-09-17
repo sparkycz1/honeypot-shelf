@@ -19,9 +19,7 @@
            the image's own accessible name. #}
         <img class="brand-mark" src="{{ logo }}" alt="Honeypot Shelf">
       {% else %}
-        {% set mark_class = "brand-mark" %}
-        {% include "partials/_brand_mark.html" %}
-        <img class="brand-text-img" src="/static/img/logo_wordmark_text.png" alt="Honeypot Shelf">
+        <img class="brand-logo" src="/static/img/logo.png" alt="Honeypot Shelf">
       {% endif %}
     </a>
     <input type="checkbox" id="nav-toggle" class="nav-toggle">

@@ -9,7 +9,7 @@
    --color-* roles below) so a future palette tweak has one place to
    start from, and so anything that deliberately wants the brand color
    itself — not whatever role it happens to play in a given theme — has
-   something to reach for (see partials/_brand_mark.html's stroke).
+   something to reach for.
    --color-danger/--color-ok are always exactly --brand-coral/--brand-green
    in both themes on purpose — "this is broken/off/disconnected" vs. "this
    is fine/on/connected" is meant to read as the same two brand colors
@@ -106,13 +106,12 @@ html { -webkit-text-size-adjust: 100%; }
 
 body {
   margin: 0;
-  /* Brand sheet: "Arial" everywhere except the logo wordmark (see
-     .brand-text-img below — a pre-rendered image, not live text) —
-     kept as a real font stack rather than the literal single name,
-     since Arial itself isn't installed on every OS (Linux commonly
-     substitutes Liberation Sans via fontconfig, which is metric-
-     compatible; Helvetica covers macOS when Arial is unavailable there
-     for some reason). */
+  /* Brand sheet: "Arial" everywhere except the logo (see .brand-logo
+     below — a pre-rendered image, not live text) — kept as a real font
+     stack rather than the literal single name, since Arial itself isn't
+     installed on every OS (Linux commonly substitutes Liberation Sans
+     via fontconfig, which is metric-compatible; Helvetica covers macOS
+     when Arial is unavailable there for some reason). */
   font-family: Arial, "Liberation Sans", Helvetica, sans-serif;
   background: var(--color-bg);
   color: var(--color-text);
@@ -212,23 +211,16 @@ img.brand-mark { object-fit: contain; }
 }
 img.brand-mark-lg { object-fit: contain; }
 
-/* The built-in mark's own wordmark (see partials/_brand_mark.html) — not
-   shown alongside a custom LOGO_SOURCE image, which is assumed to already
-   carry its own visible branding.
-
-   A pre-rendered image (logo_wordmark_text.png), not live text: the
-   brand sheet's "Arial Rounded MT Bold" is a proprietary Monotype font
-   this project can't legally bundle/redistribute and it's rarely
-   installed outside Windows/Office, so requesting it live via
-   font-family would show the fallback font for most people — see the
-   identical reasoning (and the free substitute used instead, Nunito
-   ExtraBold) in README.md's own logo banner. Height is set in `em`
-   against each context's own font-size (.site-header .brand vs.
-   .auth-page .brand) so it scales the same way the text it replaced
-   did, rather than a fixed pixel size. */
-.brand-text-img {
+/* The built-in mark: one pre-rendered image (icon + "Honeypot Shelf"
+   wordmark, from the brand sheet — see app/web/static/img/logo.png) —
+   not shown alongside a custom LOGO_SOURCE image, which is assumed to
+   already carry its own visible branding. Height is set in `em` against
+   each context's own font-size (.site-header .brand vs. .auth-page
+   .brand) so it scales the same way in both places without a separate
+   "-lg" variant. */
+.brand-logo {
   display: inline-block;
-  height: 0.85em;
+  height: 1.9em;
   width: auto;
 }
 
