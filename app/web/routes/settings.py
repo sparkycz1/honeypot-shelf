@@ -931,6 +931,7 @@ async def update_netbird_settings(
     # every other stored secret in this app (LDAP bind password, a
     # honeypot's own password).
     netbird_setup_key: str = Form(""),
+    netbird_hostname: str = Form(""),
 ) -> Response:
     """Saves the setup key/management URL (if given) and connects — one
     action, not "save" then a separate "connect" click, since a setup key
@@ -953,7 +954,9 @@ async def update_netbird_settings(
     if errors:
         return await _render_settings(request, db, errors, tab="vpn")
 
+    hostname = netbird_hostname.strip()
     app_settings.netbird_management_url = management_url or None
+    app_settings.netbird_hostname = hostname or None
     if setup_key:
         app_settings.netbird_setup_key_encrypted = encrypt_secret(setup_key)
     else:
@@ -963,7 +966,9 @@ async def update_netbird_settings(
         setup_key = decrypt_secret(app_settings.netbird_setup_key_encrypted)
 
     try:
-        await netbird.connect(setup_key=setup_key, management_url=management_url or None)
+        await netbird.connect(
+            setup_key=setup_key, management_url=management_url or None, hostname=hostname or None
+        )
     except (netbird.NetbirdUnavailableError, netbird.NetbirdCommandError) as exc:
         await log_event(
             db,
@@ -1023,7 +1028,9 @@ async def restart_netbird(request: Request, db: AsyncSession = Depends(get_db)) 
 
     try:
         await netbird.restart(
-            setup_key=setup_key, management_url=app_settings.netbird_management_url
+            setup_key=setup_key,
+            management_url=app_settings.netbird_management_url,
+            hostname=app_settings.netbird_hostname,
         )
     except (netbird.NetbirdUnavailableError, netbird.NetbirdCommandError) as exc:
         await log_event(

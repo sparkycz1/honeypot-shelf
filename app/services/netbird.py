@@ -132,13 +132,28 @@ async def _run(*args: str) -> str:
     return output
 
 
-async def connect(*, setup_key: str, management_url: str | None) -> str:
+async def connect(
+    *, setup_key: str, management_url: str | None, hostname: str | None = None
+) -> str:
     """`netbird up --setup-key ...` — joins (or rejoins) the network.
     Idempotent: safe to call again to pick up a changed setup key/URL
-    without an explicit `disconnect()` first."""
+    without an explicit `disconnect()` first.
+
+    `hostname` (`netbird up --hostname ...`) is only ever read by the
+    management server at the moment *this* peer first registers —
+    without it, NetBird falls back to the container's own bare Docker
+    hostname (meaningless in its dashboard's peer list, and identical
+    across every deployment that never overrode it). Calling `connect()`
+    again against an **already-registered** peer does not retroactively
+    rename it there; to actually change an existing peer's name, remove
+    it from the NetBird dashboard first, then reconnect here — that
+    forces a fresh registration, which picks up whatever `hostname` is
+    set at that point."""
     args = ["up", "--setup-key", setup_key]
     if management_url:
         args += ["--management-url", management_url]
+    if hostname:
+        args += ["--hostname", hostname]
     return await _run(*args)
 
 
@@ -146,18 +161,24 @@ async def disconnect() -> str:
     return await _run("down")
 
 
-async def restart(*, setup_key: str, management_url: str | None) -> str:
+async def restart(
+    *, setup_key: str, management_url: str | None, hostname: str | None = None
+) -> str:
     """`disconnect()` then `connect()` — a clean reconnect rather than
     just re-running `up` on top of an already-live session, for the same
     reason "restart" means stop-then-start everywhere else in this app
-    (e.g. a honeypot's power actions)."""
+    (e.g. a honeypot's power actions). See `connect()`'s own docstring
+    for why `hostname` only actually takes effect for a peer that isn't
+    already registered."""
     with_errors: list[str] = []
     try:
         with_errors.append(await disconnect())
     except NetbirdCommandError as exc:
         # Not already connected is fine — proceed to connect anyway.
         with_errors.append(exc.output)
-    with_errors.append(await connect(setup_key=setup_key, management_url=management_url))
+    with_errors.append(
+        await connect(setup_key=setup_key, management_url=management_url, hostname=hostname)
+    )
     return "\n".join(part for part in with_errors if part)
 
 

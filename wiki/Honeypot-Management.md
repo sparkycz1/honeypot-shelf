@@ -50,7 +50,7 @@ connect to its tunnel address just works.
 | | NetBird | WireGuard |
 |---|---|---|
 | **Solves NAT on both ends?** | Yes — NetBird's own relay/coordination server does the hole-punching | **No** — needs a WireGuard server the operator already runs |
-| **What this app enters** | A setup key + management URL | A complete peer `.conf`, same as any other client gets |
+| **What this app enters** | A setup key + management URL + an optional hostname (so this peer shows up in NetBird's dashboard as something recognizable, not the container's bare Docker hostname — only takes effect on that peer's *first* registration; renaming later needs removing it from the dashboard first, then reconnecting) | A complete peer `.conf`, same as any other client gets |
 | **"Log"** | The NetBird daemon's own log, tailed | Thinner — `wg-quick`'s own output plus `wg show` |
 
 Both run inside an optional privileged `vpn` sidecar

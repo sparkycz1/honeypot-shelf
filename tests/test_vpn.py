@@ -111,6 +111,38 @@ async def test_connect_passes_setup_key_and_management_url(monkeypatch):
     assert "--management-url" in captured_args and "https://nb.example.com" in captured_args
 
 
+async def test_connect_passes_hostname_when_given(monkeypatch):
+    """`--hostname` — otherwise NetBird's dashboard shows this peer under
+    its bare Docker hostname, meaningless in a peer list. See
+    app.services.netbird.connect's own docstring for why this only ever
+    takes effect on a peer's first registration."""
+    captured_args: tuple[str, ...] = ()
+
+    async def _fake_exec(program, *args, **kwargs):
+        nonlocal captured_args
+        captured_args = args
+        return _FakeProcess(stdout=b"Connecting", returncode=0)
+
+    monkeypatch.setattr("asyncio.create_subprocess_exec", _fake_exec)
+    await netbird.connect(setup_key="my-key", management_url=None, hostname="honeypot-shelf")
+
+    assert "--hostname" in captured_args and "honeypot-shelf" in captured_args
+
+
+async def test_connect_omits_hostname_flag_when_not_given(monkeypatch):
+    captured_args: tuple[str, ...] = ()
+
+    async def _fake_exec(program, *args, **kwargs):
+        nonlocal captured_args
+        captured_args = args
+        return _FakeProcess(stdout=b"Connecting", returncode=0)
+
+    monkeypatch.setattr("asyncio.create_subprocess_exec", _fake_exec)
+    await netbird.connect(setup_key="my-key", management_url=None)
+
+    assert "--hostname" not in captured_args
+
+
 async def test_status_parses_connected(monkeypatch):
     async def _fake_exec(*args, **kwargs):
         return _FakeProcess(
@@ -241,7 +273,7 @@ async def test_connect_requires_a_setup_key_the_first_time(client):
 
 
 async def test_connect_succeeds_when_netbird_mocked(client, monkeypatch):
-    async def _fake_connect(*, setup_key, management_url):
+    async def _fake_connect(*, setup_key, management_url, hostname=None):
         assert setup_key == "test-setup-key"
         return "Connected"
 
@@ -261,11 +293,38 @@ async def test_connect_succeeds_when_netbird_mocked(client, monkeypatch):
     assert response.headers["location"] == "/settings?tab=vpn"
 
 
+async def test_hostname_field_is_saved_and_passed_to_connect(client, monkeypatch):
+    captured = {}
+
+    async def _fake_connect(*, setup_key, management_url, hostname=None):
+        captured["hostname"] = hostname
+        return "Connected"
+
+    monkeypatch.setattr("app.web.routes.settings.netbird.connect", _fake_connect)
+
+    form = await client.get("/settings", params={"tab": "vpn"})
+    response = await client.post(
+        "/settings/netbird",
+        data={
+            "netbird_setup_key": "test-setup-key",
+            "netbird_management_url": "",
+            "netbird_hostname": "honeypot-shelf",
+            "csrf_token": _csrf_from(form),
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert captured["hostname"] == "honeypot-shelf"
+
+    settings_page = await client.get("/settings", params={"tab": "vpn"})
+    assert "honeypot-shelf" in settings_page.text
+
+
 async def test_disconnect_and_restart_flow(client, monkeypatch):
     connect_calls = []
     disconnect_calls = []
 
-    async def _fake_connect(*, setup_key, management_url):
+    async def _fake_connect(*, setup_key, management_url, hostname=None):
         connect_calls.append(setup_key)
         return "Connected"
 
@@ -407,7 +466,7 @@ async def test_connecting_wireguard_disconnects_netbird(client, monkeypatch):
     NetBird was active disconnects NetBird first."""
     netbird_disconnect_calls = []
 
-    async def _fake_netbird_connect(*, setup_key, management_url):
+    async def _fake_netbird_connect(*, setup_key, management_url, hostname=None):
         return "Connected"
 
     async def _fake_netbird_disconnect():

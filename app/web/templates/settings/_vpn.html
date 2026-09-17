@@ -38,6 +38,12 @@
              placeholder="https://netbird.example.com:443"
              value="{{ app_settings.netbird_management_url or '' }}">
       <p class="hint">{{ t(request, "settings.netbird.management_url_hint") }}</p>
+
+      <label for="netbird_hostname">{{ t(request, "settings.netbird.hostname") }}</label>
+      <input type="text" id="netbird_hostname" name="netbird_hostname"
+             placeholder="{{ t(request, 'settings.netbird.hostname_placeholder') }}"
+             value="{{ app_settings.netbird_hostname or '' }}">
+      <p class="hint">{{ t(request, "settings.netbird.hostname_hint") }}</p>
     </form>
 
     {# Connect submits the config form above by id — Restart/Disconnect

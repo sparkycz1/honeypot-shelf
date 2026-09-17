@@ -249,6 +249,14 @@ class AppSettings(Base):
     )
     netbird_management_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     netbird_setup_key_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    # `netbird up --hostname ...` — otherwise NetBird registers this
+    # container under its bare Docker hostname (the container ID/name,
+    # meaningless in the NetBird dashboard's peer list). Only takes effect
+    # the moment this peer *first* registers with the management server;
+    # changing it later and reconnecting does not rename an
+    # already-registered peer — see app.services.netbird.connect's own
+    # docstring, and the hint next to this field on Settings -> VPN.
+    netbird_hostname: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # The whole pasted wg-quick `.conf` Honeypot Shelf itself is a peer with —
     # see wiki/Architecture.md's "VPN connectivity" section for why this is
     # one opaque encrypted blob rather than separate private-key/peer/
