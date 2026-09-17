@@ -1,6 +1,9 @@
 # ![Honeypot Shelf](app/web/static/img/logo.png)
 
 [![CI](https://github.com/sparkycz1/honeypot-shelf/actions/workflows/ci.yml/badge.svg)](https://github.com/sparkycz1/honeypot-shelf/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/sparkycz1/honeypot-shelf/actions/workflows/codeql.yml/badge.svg)](https://github.com/sparkycz1/honeypot-shelf/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/sparkycz1/honeypot-shelf/badge)](https://scorecard.dev/viewer/?uri=github.com/sparkycz1/honeypot-shelf)
+[![Secret scanning: enabled](https://img.shields.io/badge/secret%20scanning-enabled-brightgreen)](https://github.com/sparkycz1/honeypot-shelf/security)
 [![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue)](LICENSE)
 ![Python](https://img.shields.io/badge/python-3.14-blue?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/web-FastAPI-009688?logo=fastapi&logoColor=white)
