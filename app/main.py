@@ -127,17 +127,32 @@ async def _reconnect_vpn_if_configured() -> None:
     (the common case, since it's an optional overlay), and a failed
     reconnect just leaves the status badge showing disconnected/
     unavailable, same as any other integration that isn't currently
-    working."""
+    working.
+
+    For NetBird specifically: only re-runs `netbird up --setup-key ...` when
+    the daemon *isn't* already connected. The sidecar's own state
+    (`/etc/netbird`, a named volume — see `docker-compose.vpn.yml`) usually
+    survives a `web`/`worker` restart on its own and the daemon reconnects
+    the already-registered peer by itself; blindly resending the stored
+    setup key on every startup fails once that key (single-use on NetBird's
+    side) has already been consumed by the first successful registration —
+    seen in the wild as a `setup key is invalid` retry loop in the NetBird
+    log after a plain container restart that changed nothing else."""
     try:
         async with AsyncSessionLocal() as db:
             app_settings = await get_or_create_app_settings(db)
             provider = app_settings.vpn_provider
             if provider == VpnProvider.NETBIRD and app_settings.netbird_setup_key_encrypted:
-                await netbird.connect(
-                    setup_key=decrypt_secret(app_settings.netbird_setup_key_encrypted),
-                    management_url=app_settings.netbird_management_url,
-                )
-                logger.info("Reconnected to NetBird on startup.")
+                current_status = await netbird.status()
+                if current_status.connected:
+                    logger.info("NetBird already connected on startup — leaving it as is.")
+                else:
+                    await netbird.connect(
+                        setup_key=decrypt_secret(app_settings.netbird_setup_key_encrypted),
+                        management_url=app_settings.netbird_management_url,
+                        hostname=app_settings.netbird_hostname,
+                    )
+                    logger.info("Reconnected to NetBird on startup.")
             elif provider == VpnProvider.WIREGUARD and app_settings.wireguard_config_encrypted:
                 await wireguard.connect(
                     config=decrypt_secret(app_settings.wireguard_config_encrypted)

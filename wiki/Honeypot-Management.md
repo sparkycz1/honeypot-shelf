@@ -62,6 +62,15 @@ directly — connecting one best-effort disconnects the other. This is a
 that one joins the honeypot being provisioned; this one joins this
 app's own containers.
 
+On every `web` startup (`app.main._reconnect_vpn_if_configured`), the app
+re-connects whichever provider was last active — but for NetBird only
+when `netbird status` reports it's *not* already connected. The sidecar's
+own state (`/etc/netbird`, a named volume) usually survives a plain
+container restart on its own, so the daemon reconnects the
+already-registered peer by itself; blindly resending the stored setup
+key on every startup would fail once that key (single-use on NetBird's
+side) was already consumed by the first successful registration.
+
 ## 🔒 Honeypot Config: read-only root + the OpenCanary module editor
 
 Two independent live-SSH sections, neither persisted in this app's own

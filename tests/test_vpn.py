@@ -320,6 +320,85 @@ async def test_hostname_field_is_saved_and_passed_to_connect(client, monkeypatch
     assert "honeypot-shelf" in settings_page.text
 
 
+async def test_startup_reconnect_skips_netbird_connect_when_already_connected(
+    db_session_factory, monkeypatch
+):
+    """The real bug this guards against: after a plain container restart,
+    `app.main`'s startup hook used to always resend the stored NetBird
+    setup key — but that key is single-use, so on every restart *after*
+    the first successful registration it just fails with "setup key is
+    invalid" against a daemon that had already reconnected on its own
+    (its state persists in the `netbird_state` volume). Skipping the
+    resend when `netbird status` already reports connected is what fixes
+    that."""
+    from app.core.app_settings import get_or_create_app_settings
+    from app.core.security import encrypt_secret
+    from app.db.models.app_settings import VpnProvider
+    from app.main import _reconnect_vpn_if_configured
+
+    async with db_session_factory() as db:
+        app_settings = await get_or_create_app_settings(db)
+        app_settings.vpn_provider = VpnProvider.NETBIRD
+        app_settings.netbird_setup_key_encrypted = encrypt_secret("already-used-key")
+        await db.commit()
+
+    monkeypatch.setattr("app.main.AsyncSessionLocal", db_session_factory)
+
+    async def _fake_status():
+        return netbird.NetbirdStatus(connected=True, raw="Management: Connected")
+
+    connect_calls = []
+
+    async def _fake_connect(**kwargs):
+        connect_calls.append(kwargs)
+        return "unexpected"
+
+    monkeypatch.setattr("app.main.netbird.status", _fake_status)
+    monkeypatch.setattr("app.main.netbird.connect", _fake_connect)
+
+    await _reconnect_vpn_if_configured()
+
+    assert connect_calls == []
+
+
+async def test_startup_reconnect_calls_netbird_connect_when_not_connected(
+    db_session_factory, monkeypatch
+):
+    from app.core.app_settings import get_or_create_app_settings
+    from app.core.security import encrypt_secret
+    from app.db.models.app_settings import VpnProvider
+    from app.main import _reconnect_vpn_if_configured
+
+    async with db_session_factory() as db:
+        app_settings = await get_or_create_app_settings(db)
+        app_settings.vpn_provider = VpnProvider.NETBIRD
+        app_settings.netbird_setup_key_encrypted = encrypt_secret("first-use-key")
+        app_settings.netbird_management_url = "https://nb.example.com"
+        app_settings.netbird_hostname = "honeypot-shelf"
+        await db.commit()
+
+    monkeypatch.setattr("app.main.AsyncSessionLocal", db_session_factory)
+
+    async def _fake_status():
+        return netbird.NetbirdStatus(connected=False, raw="Management: Disconnected")
+
+    connect_calls = []
+
+    async def _fake_connect(**kwargs):
+        connect_calls.append(kwargs)
+        return "Connected"
+
+    monkeypatch.setattr("app.main.netbird.status", _fake_status)
+    monkeypatch.setattr("app.main.netbird.connect", _fake_connect)
+
+    await _reconnect_vpn_if_configured()
+
+    assert len(connect_calls) == 1
+    assert connect_calls[0]["setup_key"] == "first-use-key"
+    assert connect_calls[0]["management_url"] == "https://nb.example.com"
+    assert connect_calls[0]["hostname"] == "honeypot-shelf"
+
+
 async def test_disconnect_and_restart_flow(client, monkeypatch):
     connect_calls = []
     disconnect_calls = []
