@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="../app/web/static/img/logo.png" alt="Honeypot Shelf" height="90">
+  <img src="https://raw.githubusercontent.com/sparkycz1/honeypot-shelf/main/app/web/static/img/logo.png" alt="Honeypot Shelf" height="90">
 </p>
 
 <p align="center"><em>A fleet of decoys, watched from one browser tab — every fake login attempt lands here first.</em></p>
@@ -20,7 +20,7 @@ SSH management layer were all ported from) — plus this project's own
 addition: an SSH poll reads OpenCanary's own events straight off each
 honeypot, and the Dashboard sums them per company. Full "what was reused
 vs. what's different" story in
-[CLAUDE.md](../CLAUDE.md); this page is the map, not the territory.
+[CLAUDE.md](https://github.com/sparkycz1/honeypot-shelf/blob/main/CLAUDE.md); this page is the map, not the territory.
 
 ```mermaid
 flowchart LR

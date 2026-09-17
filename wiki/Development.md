@@ -25,7 +25,7 @@ uv run mypy app alembic tests        # type check (strict for app/, alembic/)
 **CI runs this same gate** on every push/PR
 (`.github/workflows/ci.yml`) — ruff, mypy, the full test suite, and the
 single-alembic-head check, plus a separate `pip-audit` pass over exactly
-what `uv.lock` would install. [Dependabot](../.github/dependabot.yml)
+what `uv.lock` would install. [Dependabot](https://github.com/sparkycz1/honeypot-shelf/blob/main/.github/dependabot.yml)
 watches for newer fixed versions of Python, Docker, and GitHub Actions
 dependencies on top of that. Nothing here needs a real Postgres/Redis —
 see `tests/conftest.py`.
@@ -46,8 +46,8 @@ uv run alembic heads     # must show exactly one head before committing
 ```
 
 Every new/changed model must also be imported in
-[`app/db/models/__init__.py`](../app/db/models/__init__.py) and
-[`alembic/env.py`](../alembic/env.py) — a model not imported there is
+[`app/db/models/__init__.py`](https://github.com/sparkycz1/honeypot-shelf/blob/main/app/db/models/__init__.py) and
+[`alembic/env.py`](https://github.com/sparkycz1/honeypot-shelf/blob/main/alembic/env.py) — a model not imported there is
 invisible to `--autogenerate`.
 
 ## Adding a company-scoped route

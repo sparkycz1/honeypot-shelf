@@ -25,6 +25,9 @@ Built on the same stack, project layout, and auth system as
 Debian fleet management) — see [CLAUDE.md](CLAUDE.md) for what was reused
 and what's different.
 
+This project was originally built for [Faster CZ](https://www.faster.cz/);
+most of it is vibecoded.
+
 **Full documentation lives in the [wiki](wiki/Home.md)** — feature status
 and open product questions ([Home](wiki/Home.md)), technology choices and
 the security/RBAC model ([Architecture](wiki/Architecture.md)), reverse

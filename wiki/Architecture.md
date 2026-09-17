@@ -36,7 +36,7 @@ a long single document doesn't get harder to search as this app grows:
 
 Carried over almost entirely — stack, layout, and most of the auth code
 — from [debcontrol](https://github.com/sparkycz1/debcontrol), a sister
-project for Debian fleets. See [CLAUDE.md](../CLAUDE.md) for the exact
+project for Debian fleets. See [CLAUDE.md](https://github.com/sparkycz1/honeypot-shelf/blob/main/CLAUDE.md) for the exact
 "what was reused vs. what's different" ledger.
 
 ```mermaid

@@ -2,37 +2,29 @@
 
 *The map of the maze, kept next to the maze.*
 
-This directory holds the project documentation, written to become the
-**GitHub wiki** once this repository is pushed to GitHub. It isn't a GitHub
-wiki yet — a wiki only exists once a repo is on GitHub with the feature
-enabled, and it lives in its own separate git repository
-(`<repo>.wiki.git`).
+This directory mirrors the project's **GitHub wiki** (already published:
+https://github.com/sparkycz1/honeypot-shelf/wiki, backed by its own
+separate git repository, `honeypot-shelf.wiki.git`). Keeping a copy here
+means the docs show up in code review/PR diffs like anything else,
+instead of changing silently in a repo `git log` on this one never sees.
 
-## 🚀 How to publish this as the actual GitHub wiki
+**The GitHub wiki is the one readers actually browse** — this folder is
+the editable source that gets synced there by hand:
 
-1. Push this repository to GitHub.
-2. Go to the repo's **Settings → Features** and make sure **Wikis** is
-   enabled.
-3. Open the **Wiki** tab once and create the initial "Home" page (GitHub
-   requires at least one page to exist before the wiki's git repo is
-   created).
-4. Clone the wiki repo locally:
-   ```bash
-   git clone https://github.com/<owner>/<repo>.wiki.git
-   ```
-5. Copy every `.md` file from this folder (except this `README.md`) into
-   the cloned wiki repo, then commit and push:
-   ```bash
-   cp wiki/*.md ../honeypot-shelf.wiki/
-   rm ../honeypot-shelf.wiki/README.md   # this file itself isn't a wiki page
-   cd ../honeypot-shelf.wiki
-   git add -A
-   git commit -m "Import wiki pages"
-   git push
-   ```
-6. From then on, treat `<repo>.wiki.git` as the source of truth and keep
-   this folder in sync by hand (or drop it once the wiki is live — your
-   call).
+```bash
+GH_TOKEN=$(gh auth token)
+git clone "https://x-access-token:${GH_TOKEN}@github.com/sparkycz1/honeypot-shelf.wiki.git" /tmp/honeypot-shelf.wiki
+cp wiki/*.md /tmp/honeypot-shelf.wiki/
+rm /tmp/honeypot-shelf.wiki/README.md   # this file itself isn't a wiki page
+cd /tmp/honeypot-shelf.wiki
+git add -A && git commit -m "Sync wiki" && git push
+```
+
+A link from a wiki page to something in the main repo (not another wiki
+page) needs a full `https://github.com/sparkycz1/honeypot-shelf/...` URL
+(`blob/main/...` for a file, `raw.githubusercontent.com/.../main/...` for
+an image) — a relative `../` path only resolves inside *this* repo, not
+once the same file is copied into the wiki's own separate one.
 
 ## 📑 Pages
 
