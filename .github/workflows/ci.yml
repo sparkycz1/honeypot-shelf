@@ -61,7 +61,7 @@ jobs:
           echo "$heads"
           count="$(grep -c '(head)' <<< "$heads")"
           if [ "$count" -ne 1 ]; then
-            echo "::error::Expected exactly one alembic head, found $count — see wiki/Development.md."
+            echo "::error::Expected exactly one alembic head, found $count — see https://github.com/sparkycz1/honeypot-shelf/wiki/Development."
             exit 1
           fi
 
@@ -89,3 +89,15 @@ jobs:
       # touches uv.lock or this project's own venv.
       - name: pip-audit (known CVEs in locked dependencies)
         run: uvx pip-audit --strict -r requirements-audit.txt
+
+  dependency-review:
+    # Only meaningful on a PR — it diffs the base branch against the PR's
+    # head to flag what a PR specifically *introduces* (a newly-added
+    # vulnerable version, or a dependency under a license this project
+    # can't use), which pip-audit's plain "scan uv.lock as it is right
+    # now" doesn't distinguish from something already there before.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/dependency-review-action@v4
