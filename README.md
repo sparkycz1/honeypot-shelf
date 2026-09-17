@@ -1,4 +1,12 @@
-# ![Honeypot Shelf](app/web/static/img/logo_wordmark.svg)
+<!-- logo_wordmark.png is a pre-rendered banner (icon + wordmark), not live
+     text: the brand sheet's "Arial Rounded MT Bold" is a proprietary
+     Monotype font, not something this project can legally bundle or
+     redistribute, and it's rarely installed outside Windows/Office. The
+     wordmark is rendered with Nunito ExtraBold (SIL OFL 1.1, freely
+     redistributable) instead — a close visual match, baked into a static
+     image once rather than requested live via CSS font-family, so it
+     looks the same for every viewer regardless of installed fonts. -->
+# ![Honeypot Shelf](app/web/static/img/logo_wordmark.png)
 
 [![CI](https://github.com/sparkycz1/honeypot-shelf/actions/workflows/ci.yml/badge.svg)](https://github.com/sparkycz1/honeypot-shelf/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue)](LICENSE)

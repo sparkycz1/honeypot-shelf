@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="../app/web/static/img/logo_wordmark.svg" alt="Honeypot Shelf" height="90">
+  <img src="../app/web/static/img/logo_wordmark.png" alt="Honeypot Shelf" height="90">
 </p>
 
 <p align="center"><em>A fleet of decoys, watched from one browser tab — every fake login attempt lands here first.</em></p>
