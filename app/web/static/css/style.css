@@ -107,11 +107,12 @@ html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
   /* Brand sheet: "Arial" everywhere except the logo wordmark (see
-     .brand-text below) — kept as a real font stack rather than the
-     literal single name, since Arial itself isn't installed on every
-     OS (Linux commonly substitutes Liberation Sans via fontconfig,
-     which is metric-compatible; Helvetica covers macOS when Arial is
-     unavailable there for some reason). */
+     .brand-text-img below — a pre-rendered image, not live text) —
+     kept as a real font stack rather than the literal single name,
+     since Arial itself isn't installed on every OS (Linux commonly
+     substitutes Liberation Sans via fontconfig, which is metric-
+     compatible; Helvetica covers macOS when Arial is unavailable there
+     for some reason). */
   font-family: Arial, "Liberation Sans", Helvetica, sans-serif;
   background: var(--color-bg);
   color: var(--color-text);
@@ -211,22 +212,25 @@ img.brand-mark { object-fit: contain; }
 }
 img.brand-mark-lg { object-fit: contain; }
 
-/* The built-in mark's own wordmark text (see partials/_brand_mark.html) —
-   not applied to a custom LOGO_SOURCE image, which is assumed to already
-   carry its own visible branding. */
-/* Brand sheet: the wordmark itself is the one deliberate exception to
-   the app-wide Arial stack (see body's own font-family) — "Arial
-   Rounded MT Bold" isn't installed everywhere either (it's a Monotype
-   font bundled with classic Microsoft Office/Windows), so this falls
-   back to the same rounded-adjacent system faces already used for the
-   OS's own UI chrome rather than plain Arial, which would read as a
-   visibly different (unstyled) wordmark on a machine without it. */
-.brand-text {
-  font-family: "Arial Rounded MT Bold", "Arial Rounded MT", Verdana, "Segoe UI", sans-serif;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+/* The built-in mark's own wordmark (see partials/_brand_mark.html) — not
+   shown alongside a custom LOGO_SOURCE image, which is assumed to already
+   carry its own visible branding.
+
+   A pre-rendered image (logo_wordmark_text.png), not live text: the
+   brand sheet's "Arial Rounded MT Bold" is a proprietary Monotype font
+   this project can't legally bundle/redistribute and it's rarely
+   installed outside Windows/Office, so requesting it live via
+   font-family would show the fallback font for most people — see the
+   identical reasoning (and the free substitute used instead, Nunito
+   ExtraBold) in README.md's own logo banner. Height is set in `em`
+   against each context's own font-size (.site-header .brand vs.
+   .auth-page .brand) so it scales the same way the text it replaced
+   did, rather than a fixed pixel size. */
+.brand-text-img {
+  display: inline-block;
+  height: 0.85em;
+  width: auto;
 }
-.auth-page .brand-text { line-height: 1.15; }
 
 /* Checkbox-driven mobile nav toggle — no JS needed, works with the CSP here.
    Visually hidden rather than display:none, so it stays keyboard-focusable
