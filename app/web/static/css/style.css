@@ -1096,6 +1096,18 @@ img.brand-mark-lg { object-fit: contain; }
 
 .form button, .form .button { margin-top: var(--space-4); align-self: flex-start; }
 
+/* `.page-header-actions` (e.g. the honeypot list's "With selected" bulk-
+   action bar) is a horizontal row, not a stacked form field — but it can
+   sit inside a `<form class="form">` (its buttons need to submit that
+   form), so the vertical-form rule above would otherwise stack a
+   top-margin onto its buttons and pin them to the row's top instead of
+   centering them next to the plain `.hint` text and `.inline-select`. */
+.form .page-header-actions button,
+.form .page-header-actions .button {
+  margin-top: 0;
+  align-self: center;
+}
+
 /* --- Detail lists / panels --- */
 
 .detail-list {
