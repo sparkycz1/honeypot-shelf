@@ -59,9 +59,7 @@ from app.services.honeypot_actions import (
 from app.services.honeypot_config import export_honeypot_config, import_honeypot_config
 from app.services.honeypot_status import as_aware_utc
 from app.services.honeypot_tags import (
-    add_tags_to_honeypots,
     parse_tag_names_from_text,
-    remove_tags_from_honeypots,
     set_honeypot_tags,
     sync_module_tags,
 )
@@ -1039,72 +1037,6 @@ async def bulk_power_action(
     if skipped:
         redirect_url += f"?power_skipped={skipped}"
     return RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
-
-
-@router.post("/bulk/tags/add", dependencies=[_manage, Depends(verify_csrf)])
-async def bulk_add_tags(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-    honeypot_ids: list[uuid.UUID] = Form(default=[]),
-    tags: str = Form(""),
-) -> Response:
-    """Add one or more tags to every honeypot in an ad-hoc selection from the
-    honeypot list, leaving each honeypot's other tags untouched — the bulk
-    equivalent of typing into one honeypot's own tags field on Settings."""
-    honeypots = await _get_honeypots_by_ids(honeypot_ids, db, current_user)
-    names = parse_tag_names_from_text(tags)
-    if not honeypots or not names:
-        return RedirectResponse(
-            url="/honeypots?bulk_error=Select+at+least+one+honeypot+and+tag.",
-            status_code=status.HTTP_303_SEE_OTHER,
-        )
-
-    await add_tags_to_honeypots(db, [m.id for m in honeypots], names)
-    await db.commit()
-    await log_event(
-        db,
-        request=request,
-        action="honeypots.bulk.tags.add",
-        summary=(
-            f'Added tag(s) {", ".join(names)} to {len(honeypots)} selected honeypot(s)'
-        ),
-        details={"tags": names, "honeypot_count": len(honeypots)},
-    )
-    return RedirectResponse(url="/honeypots", status_code=status.HTTP_303_SEE_OTHER)
-
-
-@router.post("/bulk/tags/remove", dependencies=[_manage, Depends(verify_csrf)])
-async def bulk_remove_tags(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-    honeypot_ids: list[uuid.UUID] = Form(default=[]),
-    tags: str = Form(""),
-) -> Response:
-    """Remove one or more tags from every honeypot in an ad-hoc selection —
-    a no-op for any honeypot that didn't have a given tag in the first
-    place, never an error."""
-    honeypots = await _get_honeypots_by_ids(honeypot_ids, db, current_user)
-    names = parse_tag_names_from_text(tags)
-    if not honeypots or not names:
-        return RedirectResponse(
-            url="/honeypots?bulk_error=Select+at+least+one+honeypot+and+tag.",
-            status_code=status.HTTP_303_SEE_OTHER,
-        )
-
-    await remove_tags_from_honeypots(db, [m.id for m in honeypots], names)
-    await db.commit()
-    await log_event(
-        db,
-        request=request,
-        action="honeypots.bulk.tags.remove",
-        summary=(
-            f'Removed tag(s) {", ".join(names)} from {len(honeypots)} selected honeypot(s)'
-        ),
-        details={"tags": names, "honeypot_count": len(honeypots)},
-    )
-    return RedirectResponse(url="/honeypots", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/bulk/delete", dependencies=[_manage, Depends(verify_csrf)])

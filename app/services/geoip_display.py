@@ -12,6 +12,22 @@ concern doesn't leak into the lookup/download service.
 from __future__ import annotations
 
 import math
+from pathlib import Path
+
+# A real world coastline outline for the Map page, projected the same way
+# `project()` below projects an event's own lat/lon — so the landmass
+# lines up with the dots plotted on top of it. Traced once, offline, from
+# Natural Earth's 1:110m "land" dataset (public domain, naturalearthdata.
+# com — no attribution required) via a small one-off script: each ring's
+# lon/lat pairs run through the exact same linear Plate Carrée formula as
+# `project()`, simplified with a pixel-space Douglas-Peucker pass (this
+# viewBox is only ever ~760x380, so the source data's full 110m-scale
+# node density is far more than a rendered pixel can show) then baked
+# into one flat SVG path string, checked in as a plain text file — not
+# meant to ever be regenerated at request time, and not a matter of
+# projecting live geometry via a runtime GIS dependency this app
+# otherwise has no use for.
+WORLD_LAND_PATH = (Path(__file__).parent / "_world_land_path.txt").read_text().strip()
 
 # Plate Carrée (equirectangular) projection — the same one every
 # `lat`/`lon` pair from GeoIP2's `location.latitude`/`longitude` is already

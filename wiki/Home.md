@@ -79,7 +79,7 @@ TLS terminator in front of it, always. Pick your fighter:
 |---|---|
 | 📊 **Dashboard** | Fleet counts (online/offline, needs-updates), a trend sparkline, and a fleet-wide "activity by alert type" breakdown |
 | 🍯 **Honeypots** | Facts, packages, live monitoring (with an **OpenCanary service** up/down graph), a browser SSH terminal, log browsing, an **Activity** tab reading OpenCanary's own log over SSH, a **Config** tab (read-only-root toggle + a full editor for every OpenCanary module), tags & saved views, bulk actions, JSON/CSV export, and **update rollback** if a `dist-upgrade` goes sideways |
-| 🗺️ **Map** | Where honeypot alerts actually come from — a world graticule with dots sized by event count, plus a top-countries table, company-scoped like the Dashboard. Needs Settings → GeoIP configured first |
+| 🗺️ **Map** | Where honeypot alerts actually come from — a real, pannable/zoomable world coastline with dots sized by event count, plus a top-countries table, company-scoped like the Dashboard. Needs Settings → GeoIP configured first |
 | 🌱 **Initialize** | Turns a blank Raspberry Pi OS/Debian/Ubuntu install into a working honeypot over SSH — auto-detected OS, packages, the OpenCanary service, NetBird, live streamed progress, a persisted run history |
 | ⏱️ **Scheduling** | Cron any action against a honeypot/company/fleet — updates, power, custom commands, on-demand "force a sweep now" debug buttons |
 | 🏢 **Companies** | Each company's own page (users + honeypots), a per-company syslog target for that company's own alerts, plus the "All honeypots" virtual company and its own fleet-wide alert target |
@@ -125,8 +125,9 @@ one sitting.
   country/city/lat-long once, at write time, from a MaxMind-DB-format
   database the app downloads itself (never bundled — see Settings →
   GeoIP) — only ever for a public IP, never a private/internal one. The
-  **Map** page plots it on a hand-rolled SVG world graticule (no real
-  coastlines yet — vendoring one was out of scope for a first cut) plus a
-  top-countries table, company-scoped like the Dashboard; the audit log
-  shows the same resolved country next to each entry's IP. See
+  **Map** page plots it on a real, pannable/zoomable world coastline
+  (traced from Natural Earth's public-domain land outline, no country
+  borders/labels) plus a top-countries table, company-scoped like the
+  Dashboard; the audit log shows the same resolved country next to each
+  entry's IP. See
   [Honeypot Management](Honeypot-Management.md#-geoip-and-the-map-page).

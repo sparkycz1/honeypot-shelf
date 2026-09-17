@@ -793,6 +793,21 @@ img.brand-mark-lg { object-fit: contain; }
   font-size: 0.95rem;
 }
 
+/* A bare <select> sitting inline among .button elements (e.g. the
+   honeypot list's bulk-action bar) — without this it keeps the browser's
+   native control chrome, which is taller than a .button and throws off
+   the row's vertical alignment even with align-items: center. */
+.inline-select {
+  display: inline-block;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  padding: 0.5rem 0.65rem;
+  font-family: inherit;
+  font-size: 0.95rem;
+}
+
 /* --- A small "More actions" dropdown (native <details>/<summary>, no JS)
    for a page-header's secondary actions, so the primary button doesn't
    drown in a wrapping row of 5-6 equally-weighted buttons. Overrides the
@@ -1027,9 +1042,41 @@ img.brand-mark-lg { object-fit: contain; }
 
 .form.form-wide { max-width: none; }
 
-.form label { margin-top: var(--space-3); font-size: 0.88rem; color: var(--color-muted); font-weight: 500; }
+/* `:not(.checkbox-row)` — a field's own label above it is meant to be
+   block/full-width, but .checkbox-row (a checkbox with its own inline
+   label text) already overrides `display` to `flex` for a normal
+   inline "[ ] some text" row; without this exclusion, the higher
+   specificity of this rule (two classes + a type vs. .checkbox-row's
+   one class) would silently win and stack the checkbox above its text
+   again — the exact bug this file's own .checkbox-row comment already
+   describes fixing once, for the same underlying rule. */
+.form label:not(.checkbox-row) {
+  display: block;
+  margin-top: var(--space-3);
+  font-size: 0.88rem;
+  color: var(--color-muted);
+  font-weight: 500;
+}
 
-.form input, .form select, .form textarea {
+/* `display: block; width: 100%` here (not just relying on `.form`'s own
+   flex-column stretching its *direct* children) matters once a field
+   sits one level deeper — inside a <details> block, say (the
+   Notifications rule form's per-event wording fields, or honeypots/
+   edit.html's .form-advanced section) — where a bare <label>/<input>/
+   <textarea> would otherwise flow inline instead of stacking, cramming
+   onto one line and (for a <textarea>) never growing past its native
+   tiny default width. Excluded: checkboxes/radios (meant to stay their
+   native small inline size), and `.inline-select`/`.inline-text-input`
+   (a control deliberately sized like the .button row it sits in, e.g.
+   the honeypot list's bulk-action bar — without this exclusion, this
+   rule's higher specificity would silently override that sizing back
+   to full-width the moment that bar's own <form> happens to carry
+   `.form` too, as it does here). */
+.form input:not([type="checkbox"]):not([type="radio"]):not(.inline-text-input),
+.form select:not(.inline-select),
+.form textarea {
+  display: block;
+  width: 100%;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
@@ -1504,20 +1551,34 @@ a.htmx-request, .link-button.htmx-request { opacity: 0.6; cursor: progress; }
   .htmx-settling { animation: none; }
 }
 
-/* Map page's hand-rolled SVG world outline — see
-   app/web/templates/map/index.html and app.services.geoip_display for why
-   this is a plain lat/long graticule, not a political map with real
-   coastlines. Colors read through the same --color-* tokens as
-   everything else (see this file's own header comment), so the map stays
-   readable in both themes without a separate dark/light SVG. */
-.world-map { display: block; }
+/* Map page's world outline — a real (if label-free) coastline traced
+   from Natural Earth data, see app.services.geoip_display.WORLD_LAND_
+   PATH — and its pan/zoom controls (app/web/static/js/map-zoom.js).
+   Colors read through the same --color-* tokens as everything else (see
+   this file's own header comment), so the map stays readable in both
+   themes without a separate dark/light SVG. */
+.world-map-viewport { position: relative; }
+.world-map { display: block; touch-action: none; cursor: grab; }
+.world-map-viewport-dragging .world-map { cursor: grabbing; }
 .world-map-ocean { fill: var(--color-surface-raised); }
-.world-map-graticule { stroke: var(--color-border); stroke-width: 1; }
-.world-map-equator { stroke: var(--color-border-strong); stroke-width: 1; }
+.world-map-land { fill: var(--color-border); stroke: var(--color-border-strong); stroke-width: 0.5; }
 .world-map-border { fill: none; stroke: var(--color-border-strong); stroke-width: 1; }
 .world-map-dot {
   fill: var(--color-accent);
   fill-opacity: 0.65;
   stroke: var(--color-accent);
   stroke-width: 1;
+}
+.world-map-controls {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.world-map-controls .button {
+  padding: 0.3rem 0.6rem;
+  line-height: 1;
+  min-width: 2rem;
 }

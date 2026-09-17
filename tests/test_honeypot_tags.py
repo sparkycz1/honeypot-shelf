@@ -74,3 +74,24 @@ async def test_plain_search_box_also_matches_a_tag_name(client, db_session_facto
 
     assert "tagged-prod" in response.text
     assert "untagged" not in response.text
+
+
+async def test_plain_search_box_also_matches_a_company_name(client, db_session_factory):
+    """The same one search field also matches the honeypot's own
+    company — searching by company, IP, name, tag, or hostname is all
+    folded into this single box, no separate company picker."""
+    acme = await create_company(db_session_factory, name="Acme Corp")
+    globex = await create_company(db_session_factory, name="Globex Inc")
+    new_form = await client.get("/honeypots/new")
+    csrf_token = _csrf_from(new_form)
+    await _create_honeypot(
+        client, csrf_token, acme.id, name="acme-honey", ip_address="10.0.0.7"
+    )
+    await _create_honeypot(
+        client, csrf_token, globex.id, name="globex-honey", ip_address="10.0.0.8"
+    )
+
+    response = await client.get("/honeypots", params={"q": "Acme"})
+
+    assert "acme-honey" in response.text
+    assert "globex-honey" not in response.text

@@ -291,7 +291,7 @@
         <button type="submit" formaction="/honeypots/bulk/check-updates" class="button button-secondary">
           {{ t(request, 'honeypots.bulk.check_updates') }}
         </button>
-        <select name="strategy" aria-label="{{ t(request, 'honeypots.list.bulk_strategy_aria') }}">
+        <select name="strategy" class="inline-select" aria-label="{{ t(request, 'honeypots.list.bulk_strategy_aria') }}">
           <option value="dist_upgrade">dist-upgrade</option>
           <option value="full_upgrade">full-upgrade</option>
         </select>
@@ -301,14 +301,6 @@
         </button>
         <button type="submit" formaction="/honeypots/bulk/power-confirm/shutdown" class="button button-danger">
           {{ t(request, 'honeypots.bulk.shutdown') }}
-        </button>
-        <input type="text" name="tags" class="inline-text-input" placeholder="{{ t(request, 'honeypots.bulk.tags_placeholder') }}"
-               aria-label="{{ t(request, 'honeypots.list.bulk_tags_aria') }}">
-        <button type="submit" formaction="/honeypots/bulk/tags/add" class="button button-secondary">
-          {{ t(request, 'honeypots.bulk.add_tags') }}
-        </button>
-        <button type="submit" formaction="/honeypots/bulk/tags/remove" class="button button-secondary">
-          {{ t(request, 'honeypots.bulk.remove_tags') }}
         </button>
         <button type="submit" formaction="/honeypots/bulk/delete" class="button button-danger"
                 data-confirm="{{ t(request, 'honeypots.bulk.confirm_delete') }}">

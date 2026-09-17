@@ -15,28 +15,31 @@
 
 {% if geoip_ready %}
   <section class="panel">
-    <svg viewBox="0 0 {{ map_width }} {{ map_height }}" width="100%" height="auto"
-         role="img" aria-label="{{ t(request, 'map.svg_aria') }}" class="world-map">
-      <rect x="0" y="0" width="{{ map_width }}" height="{{ map_height }}" class="world-map-ocean"></rect>
-      {% for lon in range(-150, 151, 30) %}
-        <line x1="{{ (lon + 180) / 360 * map_width }}" y1="0"
-              x2="{{ (lon + 180) / 360 * map_width }}" y2="{{ map_height }}"
-              class="world-map-graticule"></line>
-      {% endfor %}
-      {% for lat in [-60, -30, 0, 30, 60] %}
-        <line x1="0" y1="{{ (90 - lat) / 180 * map_height }}"
-              x2="{{ map_width }}" y2="{{ (90 - lat) / 180 * map_height }}"
-              class="{{ 'world-map-equator' if lat == 0 else 'world-map-graticule' }}"></line>
-      {% endfor %}
-      <rect x="0.5" y="0.5" width="{{ map_width - 1 }}" height="{{ map_height - 1 }}"
-            class="world-map-border"></rect>
-      {% for dot in dots %}
-        <circle cx="{{ dot.x | round(1) }}" cy="{{ dot.y | round(1) }}" r="{{ dot.radius | round(1) }}"
-                class="world-map-dot">
-          <title>{{ dot.label }}</title>
-        </circle>
-      {% endfor %}
-    </svg>
+    <div class="world-map-viewport" data-map-viewport>
+      <svg viewBox="0 0 {{ map_width }} {{ map_height }}" width="100%" height="auto"
+           role="img" aria-label="{{ t(request, 'map.svg_aria') }}" class="world-map"
+           data-map-svg data-base-viewbox="0 0 {{ map_width }} {{ map_height }}">
+        <rect x="0" y="0" width="{{ map_width }}" height="{{ map_height }}" class="world-map-ocean"></rect>
+        <path d="{{ world_land_path }}" class="world-map-land"></path>
+        <rect x="0.5" y="0.5" width="{{ map_width - 1 }}" height="{{ map_height - 1 }}"
+              class="world-map-border"></rect>
+        {% for dot in dots %}
+          <circle cx="{{ dot.x | round(1) }}" cy="{{ dot.y | round(1) }}" r="{{ dot.radius | round(1) }}"
+                  class="world-map-dot">
+            <title>{{ dot.label }}</title>
+          </circle>
+        {% endfor %}
+      </svg>
+      <div class="world-map-controls">
+        <button type="button" class="button button-secondary" data-map-zoom-in
+                aria-label="{{ t(request, 'map.zoom_in') }}">+</button>
+        <button type="button" class="button button-secondary" data-map-zoom-out
+                aria-label="{{ t(request, 'map.zoom_out') }}">&minus;</button>
+        <button type="button" class="button button-secondary" data-map-zoom-reset
+                aria-label="{{ t(request, 'map.zoom_reset') }}">{{ t(request, 'map.zoom_reset_label') }}</button>
+      </div>
+    </div>
+    <p class="hint">{{ t(request, "map.zoom_hint") }}</p>
     {% if not dots %}
       <p class="hint">{{ t(request, "map.no_events_yet") }}</p>
     {% endif %}

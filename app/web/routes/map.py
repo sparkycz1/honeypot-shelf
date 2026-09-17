@@ -14,12 +14,18 @@ rows are simply excluded here, not shown as "unknown location" dots; a
 company's own internal scanning/testing traffic hitting its own honeypot
 from inside its LAN has no real-world location to plot.
 
-**No literal coastlines** — this SVG world "map" is a plain Plate Carrée
-graticule (latitude/longitude grid lines), not a political map: building
-or vendoring an actual coastline outline was out of scope for a first cut
-(see `app.services.geoip_display`'s projection docstring). Dots still land
-at the geographically correct position; there's just no landmass silhouette
-drawn under them yet.
+**Real coastlines, no country borders/labels** — the landmass silhouette
+under the dots is traced from Natural Earth's public-domain 1:110m land
+outline, projected with the exact same Plate Carrée formula as every
+`src_latitude`/`src_longitude` dot on top of it (see
+`app.services.geoip_display.WORLD_LAND_PATH`'s own docstring for how
+that's built). No country borders or place labels — just enough
+geography to tell at a glance where a cluster of dots actually is,
+without turning this into a full political map. The page itself is
+pannable/zoomable (`app/web/static/js/map-zoom.js` — wheel, drag,
+pinch, or the +/−/reset buttons), for the same reason: a screenful of
+dots at world scale hides exactly the clustering a company with lots of
+regional traffic most wants to see.
 """
 
 from __future__ import annotations
@@ -39,7 +45,7 @@ from app.db.models.honeypot import Honeypot
 from app.db.models.honeypot_event import HoneypotEvent
 from app.db.models.user import User
 from app.db.session import get_db
-from app.services.geoip_display import country_flag, dot_radius, project
+from app.services.geoip_display import WORLD_LAND_PATH, country_flag, dot_radius, project
 from app.web.templating import templates
 
 router = APIRouter()
@@ -146,6 +152,7 @@ async def _build_map_context(db: AsyncSession, user: User) -> dict[str, object]:
         "top_countries": top_countries,
         "map_width": _MAP_WIDTH,
         "map_height": _MAP_HEIGHT,
+        "world_land_path": WORLD_LAND_PATH,
         "geoip_ready": geoip_ready,
         "total_events": total_events,
         "located_events": located_events,

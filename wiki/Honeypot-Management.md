@@ -214,12 +214,15 @@ downloaded database taking up to an hour to be picked up by an
 already-running `web`/`worker` process.
 
 **The Map page** (company-scoped exactly like the Dashboard) plots
-every located event on a hand-rolled SVG — a plain latitude/longitude
-graticule, **not** a political map: vendoring a real coastline outline
-was out of scope for a first cut, so dots land at the geographically
-correct position with no landmass silhouette drawn under them yet (see
-`app.services.geoip_display`). A top-countries table (flag emoji + name
-+ count) sits below it either way. The audit log shows the same
+every located event on a real (if label-free) world coastline — traced
+once, offline, from Natural Earth's public-domain land outline, not a
+full political map with borders/place names (see
+`app.services.geoip_display.WORLD_LAND_PATH`). Pannable/zoomable —
+wheel, drag, pinch, or the +/−/reset buttons
+(`app/web/static/js/map-zoom.js`) — since a screenful of dots at world
+scale hides exactly the regional clustering a company with a lot of
+traffic from one area most wants to see. A top-countries table (flag
+emoji + name + count) sits below it either way. The audit log shows the same
 resolved country next to each entry's IP, deliberately **excluded**
 from the hash chain (`AuditLogEntry.entry_hash`) — it's a display
 enrichment, not part of the tamper-evident record of what actually
