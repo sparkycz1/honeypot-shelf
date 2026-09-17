@@ -22,8 +22,8 @@ Include, if known:
 
 This is a self-hosted overview/monitoring tool for a fleet of honeypots across multiple companies — the threat model and existing safeguards are documented in the wiki:
 
-- [Architecture → Security model](../wiki/Architecture.md#-security-model) — CSRF, headers, secrets at rest, FIPS alignment.
-- [Authentication & RBAC](../wiki/Authentication-RBAC.md) — logins, sessions, company scoping, Impersonate.
-- [Audit Log](../wiki/Audit-Log.md) — the hash-chained audit trail.
+- [Architecture → Security model](https://github.com/sparkycz1/honeypot-shelf/wiki/Architecture#-security-model) — CSRF, headers, secrets at rest, FIPS alignment.
+- [Authentication & RBAC](https://github.com/sparkycz1/honeypot-shelf/wiki/Authentication-RBAC) — logins, sessions, company scoping, Impersonate.
+- [Audit Log](https://github.com/sparkycz1/honeypot-shelf/wiki/Audit-Log) — the hash-chained audit trail.
 
 Dependency vulnerabilities are tracked automatically via [Dependabot](dependabot.yml) (alerts and security updates are enabled on this repository).

@@ -27,7 +27,7 @@ this was ported from.
 honeypot's own log, no forwarder/push endpoint (`app/db/models/
 honeypot_event.py`, `app.services.honeypot_events`) — and the
 company-scoped Dashboard on top of it — see
-[wiki/Architecture.md](wiki/Architecture.md).
+[wiki/Architecture](https://github.com/sparkycz1/honeypot-shelf/wiki/Architecture).
 
 ## RBAC: the one thing genuinely different from debcontrol
 
@@ -62,7 +62,7 @@ enforcement (`require_write` = "can write at all, on any company",
 `can_write_company` = "which company/companies"). **Out-of-scope reads
 404, never 403** — a 403 would itself leak that the company/honeypot
 exists. Companies, Users, Settings, and the Audit log are
-**superadmin-only** end to end — see [wiki/Home.md](wiki/Home.md).
+**superadmin-only** end to end — see [wiki/Home](https://github.com/sparkycz1/honeypot-shelf/wiki/Home).
 
 ## Commands
 
@@ -78,7 +78,7 @@ uv run alembic heads             # must show exactly one head before committing 
 ```
 
 No supported way to run the app outside Docker: `docker compose up -d
---build`. See [wiki/Installation.md](wiki/Installation.md).
+--build`. See [wiki/Installation](https://github.com/sparkycz1/honeypot-shelf/wiki/Installation).
 
 **Before committing**, run the gate: `ruff check .`, `mypy app alembic
 tests`, `pytest`, `alembic heads` (single head) — all clean. CI
@@ -92,22 +92,22 @@ a feature, major only if explicitly asked) — then `uv lock` and commit
 
 ## Current state
 
-Everything in [wiki/Home.md](wiki/Home.md)'s highlights table is real and
+Everything in [wiki/Home](https://github.com/sparkycz1/honeypot-shelf/wiki/Home)'s highlights table is real and
 verified end-to-end against real Postgres, not just "imports without
 error": the full domain model and auth stack, company scoping, event
 ingestion, the Dashboard, full Honeypot CRUD (terminal, facts/packages/
 services, updates with rollback, power, the read-only-root + OpenCanary
 module-editor Config tab), Company CRUD, Scheduling, the REST API,
 Initialize (provisions a bare Pi into a working honeypot over SSH — see
-[wiki/Honeypot-Initialize.md](wiki/Honeypot-Initialize.md)), VPN
+[wiki/Honeypot-Initialize](https://github.com/sparkycz1/honeypot-shelf/wiki/Honeypot-Initialize)), VPN
 connectivity (NetBird/WireGuard, see
-[wiki/Architecture.md](wiki/Architecture.md)), complete English+Czech
+[wiki/Architecture](https://github.com/sparkycz1/honeypot-shelf/wiki/Architecture)), complete English+Czech
 i18n, and CI. Check `uv run pytest` for the current test count rather
 than trusting a number in prose. Settled product decisions (only a
 superadmin creates companies/honeypots/users, self-service per-user
 Notifications rather than admin-authored rules, audit log/Settings
 superadmin-only, ...) live in
-[wiki/Home.md](wiki/Home.md) — don't relitigate those without asking.
+[wiki/Home](https://github.com/sparkycz1/honeypot-shelf/wiki/Home) — don't relitigate those without asking.
 
 Periodically synced against upstream debcontrol for fixes that apply to
 both (proxy-header support, FIPS-aligned crypto defaults, backup/restore
@@ -129,7 +129,7 @@ something here works a certain way.
   there by hand. Use `getent passwd` for a home directory, never `~` —
   scripts often run wrapped under one `sudo`, where `~` resolves to the
   escalated account's home, not the target's.
-  See [wiki/Honeypot-Management.md#superadmin-personal-ssh-keys](wiki/Honeypot-Management.md#superadmin-personal-ssh-keys).
+  See [wiki/Honeypot-Management#superadmin-personal-ssh-keys](https://github.com/sparkycz1/honeypot-shelf/wiki/Honeypot-Management#superadmin-personal-ssh-keys).
 - **A `POST` used as a testing/debugging tool without a pty (e.g. `gpg
   --dearmor`) can silently prompt on `/dev/tty` and fail with a cryptic
   error instead of just doing the thing** — prefer `--batch --yes`-style
@@ -140,7 +140,7 @@ something here works a certain way.
   not just whether a nav link is hidden.
 - **FIPS-aligned crypto is a deliberate, ongoing constraint** (AES-256-GCM
   at rest, SHA-256 signed tickets, a restricted SSH KEX/cipher/MAC set) —
-  see [wiki/Architecture.md#fips-alignment](wiki/Architecture.md#fips-alignment).
+  see [wiki/Architecture#fips-alignment](https://github.com/sparkycz1/honeypot-shelf/wiki/Architecture#fips-alignment).
   The one intentional exception is Argon2id for password hashing (not
   FIPS-approved, kept anyway — meaningfully more GPU/ASIC-resistant than
   PBKDF2). Don't "fix" that without asking.
@@ -199,9 +199,22 @@ something here works a certain way.
    `company_id`/`honeypot_id` from the client without checking it against
    the current user, and never reuse a `write=True` scope check for a
    read-only listing.
-2. **Wiki parity.** Update the relevant `wiki/*.md` page(s) in the same
-   change — `wiki/Home.md`'s highlights table, `wiki/Architecture.md` for
-   *why*/how it works.
+2. **Wiki parity.** The wiki is **only** the live GitHub wiki now
+   (https://github.com/sparkycz1/honeypot-shelf/wiki) — its own separate
+   git repo (`honeypot-shelf.wiki.git`), not a folder in this one. Update
+   the relevant page(s) in the same round of work — [Home](https://github.com/sparkycz1/honeypot-shelf/wiki/Home)'s
+   highlights table, [Architecture](https://github.com/sparkycz1/honeypot-shelf/wiki/Architecture) for *why*/how it works — by cloning
+   that repo (`git clone https://github.com/sparkycz1/honeypot-shelf.wiki.git`),
+   editing, committing, and pushing directly; there's nothing to sync
+   back into *this* repo. A link from a wiki page to another wiki page
+   must **not** end in `.md` (e.g. `(Architecture)`, not
+   `(Architecture.md)`) — GitHub's wiki renderer treats a `.md`-suffixed
+   internal link as a raw-file path rather than a page reference, so it
+   opens the raw source instead of the rendered page. A link from a wiki
+   page to something in *this* repo (not another wiki page) does need a
+   real URL — `blob/main/...` for a file, `raw.githubusercontent.com/
+   .../main/...` for an image — since a relative path only resolves
+   inside whichever repo the file is actually sitting in.
 3. **i18n parity.** Any new/changed user-facing string goes through
    `t(request, "...")` and gets a key in `app/i18n/locales/en.json` *and*
    `cs.json`.
