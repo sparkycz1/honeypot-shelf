@@ -19,9 +19,12 @@
 #      doesn't get silently dropped.
 #   5. `docker compose build` (stamped with GIT_COMMIT so the Settings page
 #      can show exactly which commit is running — see app/core/version.py —
-#      and with a fresh CACHE_BUST so the image's NetBird/wireguard-tools
-#      layers actually re-fetch the latest release/package rather than
-#      reusing a stale cached layer — see the Dockerfile's own comment)
+#      and with a fresh CACHE_BUST so the image's wireguard-tools layer
+#      actually re-fetches the latest package rather than reusing a stale
+#      cached layer — see the Dockerfile's own comment. NetBird itself is
+#      pinned to an exact version there, NOT cache-busted — bump
+#      NETBIRD_VERSION by hand instead, deliberately, same as a Postgres/
+#      Redis/Caddy version bump)
 #      then `docker compose up -d` — the `migrate` service runs
 #      automatically as part of the `web`/`worker` dependency chain (see
 #      docker-compose.yml) and must complete successfully before either of
@@ -106,10 +109,15 @@ fi
 
 echo "==> Building images..."
 export GIT_COMMIT="$(git rev-parse HEAD)"
-# Forces the Dockerfile's NetBird/wireguard-tools layers to actually
-# re-run on every upgrade instead of reusing a cached layer from months
-# ago — see the Dockerfile's own comment on CACHE_BUST for why those two
-# specifically always track latest rather than a pinned version.
+# Forces the Dockerfile's wireguard-tools layer to actually re-run on
+# every upgrade instead of reusing a cached layer from months ago — see
+# the Dockerfile's own comment on CACHE_BUST. Deliberately does NOT
+# affect the NetBird install layer any more (that one's pinned via
+# NETBIRD_VERSION instead) — see that ARG's own comment for why letting
+# NetBird's version drift on every upgrade was actively harmful, not just
+# unnecessary: it can invalidate this peer's already-registered identity,
+# turning a routine upgrade into a fresh "setup key is invalid" registration
+# failure.
 export CACHE_BUST="$(date +%Y%m%d%H%M%S)"
 docker compose "${compose_files[@]}" build
 

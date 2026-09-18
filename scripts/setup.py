@@ -169,11 +169,13 @@ def _git_commit() -> str:
 
 def _cache_bust() -> str:
     """A value that's different on every run, passed as the Dockerfile's
-    CACHE_BUST build arg — forces its NetBird/wireguard-tools layers to
-    actually re-fetch the latest release/package on every build instead
-    of reusing a cached layer from whenever this ran last. See the
-    Dockerfile's own comment on CACHE_BUST for why those two specifically
-    always track latest rather than a pinned version."""
+    CACHE_BUST build arg — forces its wireguard-tools layer to actually
+    re-fetch the latest Debian package on every build instead of reusing
+    a cached layer from whenever this ran last. Deliberately does NOT
+    affect the NetBird install (pinned via NETBIRD_VERSION instead) — see
+    that ARG's own comment in the Dockerfile for why letting NetBird's
+    version drift on every build is actively harmful, not just
+    unnecessary."""
     return time.strftime("%Y%m%d%H%M%S")
 
 

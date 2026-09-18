@@ -30,52 +30,61 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # --- Stage 2: minimal runtime image ------------------------------------------
 FROM python:3.14.7-slim@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6 AS runtime
 
-# Both VPN clients below are fetched fresh (latest NetBird release,
-# latest Debian-packaged wireguard-tools) on every image build rather
-# than pinned to a version this Dockerfile hardcodes — a stale VPN client
-# is a real security/compatibility liability (NetBird's management
-# protocol and WireGuard's kernel module both move), and unlike the
-# app's own Python dependencies (deliberately pinned in uv.lock, bumped
-# deliberately via Dependabot) there's no equivalent lockfile/PR-review
-# story for either of these, so "always latest at build time" is the
-# simpler, safer default here.
-#
-# CACHE_BUST alone (an ARG whose *value* changes) is what actually forces
-# Docker to re-run both RUN layers below instead of reusing a
-# months-old cached one — `docker compose build` on an unchanged
-# Dockerfile would otherwise happily keep serving whatever NetBird/
-# wireguard-tools version was cached from the very first build forever.
-# `docker-compose.yml` sets this from a `CACHE_BUST` shell variable;
-# `scripts/upgrade.sh` exports a fresh one (the current date) before
-# every build, same mechanism as `GIT_COMMIT` below. Defaults to
-# "unknown" for a plain `docker build` with nothing passed — cache reuse
-# in that case is the same tradeoff a bare `docker build` already makes
-# for every other layer.
-ARG CACHE_BUST=unknown
+# The netbird CLI/daemon binary — pinned to an exact version (same
+# reasoning as Postgres/Redis/Caddy/uv above: bumped deliberately, not
+# silently picked up on every rebuild). This one specifically is NOT
+# "always latest at build time" like wireguard-tools below, and that's
+# deliberate, learned the hard way: NetBird persists this peer's identity
+# (private key, registration) in `/etc/netbird` across restarts/upgrades,
+# and a newer client version can change that local state's format enough
+# that the new binary can't read the old peer's identity back — from the
+# NetBird management server's point of view that's indistinguishable from
+# a *brand new device*, which needs a fresh (unused) setup key to
+# register, not the one already spent on the original registration
+# months ago. `scripts/upgrade.sh` used to force a fresh NetBird binary
+# on every single upgrade (via CACHE_BUST below) specifically to always
+# track the latest release — which is exactly what caused that "setup key
+# is invalid" loop on nearly every upgrade in practice. Bump
+# `NETBIRD_VERSION` by hand, in the same round of work as any other
+# pinned-dependency bump, and expect that (like a Postgres/Redis major
+# version bump) it may need re-registering with a fresh setup key once,
+# deliberately — not on every unrelated upgrade.
+ARG NETBIRD_VERSION=0.78.2
 
-# The netbird CLI/daemon binary only — installed straight from its latest
-# GitHub release tarball, not the `.deb` (whose postinst script tries to
-# install and start a SysV init service — nothing this image ever has,
-# since it only ever runs a single foreground process, so that install
-# would fail the build for no benefit; nothing here needs the systemd
-# unit the `.deb` would set up either). Never run inside `web`/`worker`
-# themselves (that needs CAP_NET_ADMIN/`/dev/net/tun`, which this image's
-# containers deliberately don't have; see app/services/netbird.py's
-# module docstring) — this lets `web` issue `netbird up/down/status`
-# against the optional `docker-compose.vpn.yml` sidecar's daemon over a
-# shared socket volume instead. Harmless to have installed even when
-# that overlay isn't used — the CLI just fails with a clear "can't reach
-# the daemon" error, same as any other optional integration (LDAP/OIDC/
-# syslog) left unconfigured.
+# Installed straight from its GitHub release tarball, not the `.deb`
+# (whose postinst script tries to install and start a SysV init service —
+# nothing this image ever has, since it only ever runs a single
+# foreground process, so that install would fail the build for no
+# benefit; nothing here needs the systemd unit the `.deb` would set up
+# either). Never run inside `web`/`worker` themselves (that needs
+# CAP_NET_ADMIN/`/dev/net/tun`, which this image's containers deliberately
+# don't have; see app/services/netbird.py's module docstring) — this lets
+# `web` issue `netbird up/down/status` against the optional
+# `docker-compose.vpn.yml` sidecar's daemon over a shared socket volume
+# instead. Harmless to have installed even when that overlay isn't used —
+# the CLI just fails with a clear "can't reach the daemon" error, same as
+# any other optional integration (LDAP/OIDC/syslog) left unconfigured.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl ca-certificates \
-    && netbird_latest_url="$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/netbirdio/netbird/releases/latest)" \
-    && netbird_version="${netbird_latest_url##*/v}" \
     && curl -fsSL \
-        "https://github.com/netbirdio/netbird/releases/download/v${netbird_version}/netbird_${netbird_version}_linux_amd64.tar.gz" \
+        "https://github.com/netbirdio/netbird/releases/download/v${NETBIRD_VERSION}/netbird_${NETBIRD_VERSION}_linux_amd64.tar.gz" \
         | tar xz -C /usr/local/bin netbird \
     && chmod +x /usr/local/bin/netbird \
     && rm -rf /var/lib/apt/lists/*
+
+# CACHE_BUST alone (an ARG whose *value* changes) is what actually forces
+# Docker to re-run the layer below instead of reusing a months-old cached
+# one — `docker compose build` on an unchanged Dockerfile would otherwise
+# happily keep serving whatever wireguard-tools version was cached from
+# the very first build forever. `docker-compose.yml` sets this from a
+# `CACHE_BUST` shell variable; `scripts/upgrade.sh` exports a fresh one
+# (the current date) before every build, same mechanism as `GIT_COMMIT`
+# below. Defaults to "unknown" for a plain `docker build` with nothing
+# passed — cache reuse in that case is the same tradeoff a bare
+# `docker build` already makes for every other layer. Deliberately NOT
+# applied to the NetBird install above any more — see NETBIRD_VERSION's
+# own comment for why that one is pinned instead.
+ARG CACHE_BUST=unknown
 
 # `wg`/`wg-quick` (plus `iproute2`'s `ip` command, which `wg-quick` shells
 # out to for the interface/route setup `python:3.14-slim` doesn't ship by
@@ -86,7 +95,13 @@ RUN apt-get update \
 # reasoning as the NetBird CLI above. Both ship in Debian's own repos,
 # unlike NetBird — no extra apt source needed, and `apt-get update`
 # immediately before `install` (rather than relying on a cached package
-# index) is what actually gets the latest version Debian currently ships.
+# index) is what actually gets the latest version Debian currently
+# ships. Fetched fresh (latest Debian-packaged wireguard-tools) on every
+# image build rather than pinned, unlike NetBird above — wireguard-tools
+# carries no equivalent per-device persisted identity for a version bump
+# to invalidate, so there's no matching risk to pin against, and a stale
+# WireGuard userspace tool is still a real security/compatibility
+# liability worth tracking automatically.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends wireguard-tools iproute2 \
     && rm -rf /var/lib/apt/lists/*
