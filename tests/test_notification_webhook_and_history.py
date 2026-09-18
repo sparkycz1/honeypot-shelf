@@ -172,6 +172,54 @@ async def test_send_test_notification_logs_a_test_entry(client, db_session_facto
         assert entry.channel == NotificationChannel.EMAIL
 
 
+async def test_send_test_notification_body_matches_the_rule_owners_language(
+    client, db_session_factory, monkeypatch
+):
+    """Regression test: the fixed "this is a test notification" sentence
+    used to be hardcoded in English regardless of the rule owner's own
+    language, so a Czech-speaking user's test send came back part Czech
+    (the rendered alert template) and part English (this sentence)."""
+    honeypot_id = await _make_honeypot(db_session_factory)
+
+    sent_bodies: list[str] = []
+
+    def fake_send_email(app_settings, *, to_address, subject, body):
+        sent_bodies.append(body)
+
+    monkeypatch.setattr("app.services.notifications.send_email", fake_send_email)
+
+    async with db_session_factory() as db:
+        user = (await db.execute(select(User))).scalars().first()
+        assert user is not None
+        user.email = "me@example.com"
+        user.locale = "cs"
+        honeypot = await db.get(Honeypot, honeypot_id)
+        assert honeypot is not None
+        rule = NotificationRule(
+            user_id=user.id,
+            name="Test me in Czech",
+            scope=NotificationScope.HONEYPOT,
+            honeypots=[honeypot],
+            delivery_channel=NotificationChannel.EMAIL,
+            notify_on_alert=True,
+        )
+        db.add(rule)
+        await db.commit()
+        rule_id = rule.id
+
+    form = await client.get("/account/notifications")
+    csrf_token = _csrf_from(form)
+    response = await client.post(
+        f"/account/notifications/{rule_id}/test",
+        data={"csrf_token": csrf_token},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert sent_bodies, "expected send_email to have been called"
+    assert "This is a test notification" not in sent_bodies[0]
+    assert "Toto je testovací notifikace" in sent_bodies[0]
+
+
 async def test_send_test_for_company_scoped_rule_uses_a_real_honeypot_in_scope(
     client, db_session_factory, monkeypatch
 ):

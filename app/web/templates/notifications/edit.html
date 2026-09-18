@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% from "partials/_notification_rule_fields.html" import rule_fields %}
+
+{% block title %}{{ t(request, "notifications.edit.title", name=rule.name) }} — Honeypot Shelf{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>{{ t(request, "notifications.edit.title", name=rule.name) }}</h1>
+    <div class="page-header-actions">
+      <a href="/account/notifications">{{ t(request, "notifications.edit.back") }}</a>
+    </div>
+  </div>
+
+  {% if errors %}
+    <div class="alert alert-error">
+      {% for error in errors %}<p>{{ error }}</p>{% endfor %}
+    </div>
+  {% endif %}
+
+  <section class="panel">
+    <form method="post" action="/account/notifications/{{ rule.id }}/edit" class="form form-wide"
+          autocomplete="off" data-rule-form>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {{ rule_fields(request, "edit", companies, honeypots, template_defaults, min_minutes, max_minutes, user, rule=rule) }}
+      <button type="submit" class="button">{{ t(request, "common.save") }}</button>
+    </form>
+  </section>
+{% endblock %}

@@ -1286,6 +1286,8 @@
     "notifications.rule.delete": "Smazat",
     "notifications.rule.confirm_delete": "Smazat notifikaci „{name}“?",
     "notifications.rule.add_button": "Přidat notifikaci",
+    "notifications.edit.title": "Upravit notifikaci: {name}",
+    "notifications.edit.back": "Zpět na Notifikace",
     "notifications.test.button": "Poslat test",
     "notifications.test.sent": "Testovací notifikace odeslána.",
     "notifications.test.failed": "Testovací notifikace se nezdařila: {error}",

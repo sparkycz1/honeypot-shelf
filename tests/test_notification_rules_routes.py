@@ -374,6 +374,96 @@ async def test_edit_and_delete_own_rule(client, login_as, db_session_factory):
         assert await db.get(NotificationRule, rule_id) is None
 
 
+async def test_edit_rule_is_its_own_full_page(client, login_as, db_session_factory):
+    """Editing a rule navigates to a standalone page using the same
+    full-width layout as "Add rule" on the list page — not an inline
+    expansion squeezed into that rule's own table row."""
+    company = await create_company(db_session_factory)
+    user = await login_as(client, company_id=company.id, access_level=AccessLevel.READ)
+    async with db_session_factory() as db:
+        rule = NotificationRule(
+            user_id=user.id,
+            name="Edit page rule",
+            scope=NotificationScope.COMPANY,
+            companies=[await db.get(Company, company.id)],
+            notify_on_alert=True,
+        )
+        db.add(rule)
+        await db.commit()
+        rule_id = rule.id
+
+    response = await client.get(f"/account/notifications/{rule_id}/edit")
+    assert response.status_code == 200
+    assert "Edit page rule" in response.text
+    assert "Applies to" in response.text
+    # Not the list page's own rule table.
+    assert "Your notification rules" not in response.text
+
+
+async def test_edit_rule_page_404s_for_another_users_rule(client, login_as, db_session_factory):
+    company = await create_company(db_session_factory)
+    from tests.conftest import _create_user
+
+    owner, _ = await _create_user(db_session_factory, username="rule-owner-edit-page")
+    async with db_session_factory() as db:
+        rule = NotificationRule(
+            user_id=owner.id,
+            name="Not yours",
+            scope=NotificationScope.COMPANY,
+            companies=[await db.get(Company, company.id)],
+            notify_on_alert=True,
+        )
+        db.add(rule)
+        await db.commit()
+        rule_id = rule.id
+
+    await login_as(client, company_id=company.id, access_level=AccessLevel.READ)
+    response = await client.get(f"/account/notifications/{rule_id}/edit")
+    assert response.status_code == 404
+
+
+async def test_edit_rule_validation_error_redisplays_the_edit_page(
+    client, login_as, db_session_factory
+):
+    """A rejected edit (e.g. deselecting every event) stays on the rule's
+    own edit page with the errors shown — it must not silently bounce
+    back to the list page, which would drop the in-progress edit."""
+    company = await create_company(db_session_factory)
+    user = await login_as(client, company_id=company.id, access_level=AccessLevel.READ)
+    async with db_session_factory() as db:
+        rule = NotificationRule(
+            user_id=user.id,
+            name="Will fail to save",
+            scope=NotificationScope.COMPANY,
+            companies=[await db.get(Company, company.id)],
+            notify_on_alert=True,
+        )
+        db.add(rule)
+        await db.commit()
+        rule_id = rule.id
+
+    form = await client.get(f"/account/notifications/{rule_id}/edit")
+    response = await client.post(
+        f"/account/notifications/{rule_id}/edit",
+        data={
+            "csrf_token": _csrf_from(form),
+            "name": "Will fail to save",
+            "scope": "company",
+            "company_ids": str(company.id),
+            "delivery_channel": "email",
+            # No notify_on_* checkbox at all — must fail validation.
+        },
+    )
+    assert response.status_code == 200
+    assert "Pick at least one event" in response.text
+    assert "Will fail to save" in response.text
+
+    async with db_session_factory() as db:
+        unchanged = await db.get(NotificationRule, rule_id)
+        assert unchanged is not None
+        assert unchanged.notify_on_alert is True
+
+
 async def test_cannot_edit_or_delete_another_users_rule(client, login_as, db_session_factory):
     company = await create_company(db_session_factory)
     from tests.conftest import _create_user

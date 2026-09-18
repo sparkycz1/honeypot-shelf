@@ -1,138 +1,7 @@
 {% extends "base.html" %}
+{% from "partials/_notification_rule_fields.html" import rule_fields %}
 
 {% block title %}{{ t(request, "notifications.title") }} — Honeypot Shelf{% endblock %}
-
-{% macro rule_fields(request, prefix, companies, honeypots, template_defaults, min_minutes, max_minutes, user, rule=none) %}
-  <label for="{{ prefix }}-name">{{ t(request, "notifications.rule.name_label") }}</label>
-  <input type="text" id="{{ prefix }}-name" name="name" maxlength="255" required
-         value="{{ rule.name if rule else '' }}"
-         placeholder="{{ t(request, 'notifications.rule.name_placeholder') }}">
-
-  {# --- Co: any number of companies, or any number of honeypots --- #}
-  <label for="{{ prefix }}-scope">{{ t(request, "notifications.rule.scope_label") }}</label>
-  <select id="{{ prefix }}-scope" name="scope"
-          data-toggle-hidden-map='{"company": "{{ prefix }}-company-field", "honeypot": "{{ prefix }}-honeypot-field"}'>
-    <option value="company" {% if not rule or rule.scope.value == 'company' %}selected{% endif %}>{{ t(request, "notifications.rule.scope_company") }}</option>
-    <option value="honeypot" {% if rule and rule.scope.value == 'honeypot' %}selected{% endif %}>{{ t(request, "notifications.rule.scope_honeypot") }}</option>
-  </select>
-
-  <fieldset id="{{ prefix }}-company-field" {{ 'hidden' if rule and rule.scope.value == 'honeypot' else '' }}>
-    <legend>{{ t(request, "notifications.rule.company_label") }}</legend>
-    {% for company in companies %}
-      <label class="checkbox-row">
-        <input type="checkbox" name="company_ids" value="{{ company.id }}"
-               {% if rule and company.id in rule.companies | map(attribute="id") | list %}checked{% endif %}>
-        {{ company.name }}
-      </label>
-    {% else %}
-      <p class="hint">{{ t(request, "notifications.rule.company_placeholder") }}</p>
-    {% endfor %}
-  </fieldset>
-  <fieldset id="{{ prefix }}-honeypot-field" {{ '' if rule and rule.scope.value == 'honeypot' else 'hidden' }}>
-    <legend>{{ t(request, "notifications.rule.honeypot_label") }}</legend>
-    {% for honeypot in honeypots %}
-      <label class="checkbox-row">
-        <input type="checkbox" name="honeypot_ids" value="{{ honeypot.id }}"
-               {% if rule and honeypot.id in rule.honeypots | map(attribute="id") | list %}checked{% endif %}>
-        {{ honeypot.name }}
-      </label>
-    {% else %}
-      <p class="hint">{{ t(request, "notifications.rule.honeypot_placeholder") }}</p>
-    {% endfor %}
-  </fieldset>
-  <p class="hint">{{ t(request, "notifications.rule.scope_hint") }}</p>
-
-  {# --- Why: which events --- #}
-  <fieldset>
-    <legend>{{ t(request, "notifications.rule.events_legend") }}</legend>
-
-    <label class="checkbox-row">
-      <input type="checkbox" name="notify_on_alert" {% if not rule or rule.notify_on_alert %}checked{% endif %}>
-      {{ t(request, "notifications.rule.event_alert") }}
-    </label>
-
-    <label class="checkbox-row">
-      <input type="checkbox" name="notify_on_unavailable" {% if not rule or rule.notify_on_unavailable %}checked{% endif %}>
-      {{ t(request, "notifications.rule.event_unavailable") }}
-    </label>
-    <label for="{{ prefix }}-unavailable-minutes">{{ t(request, "notifications.rule.unavailable_after_label") }}</label>
-    <input type="number" id="{{ prefix }}-unavailable-minutes" name="unavailable_after_minutes"
-           min="{{ min_minutes }}" max="{{ max_minutes }}" style="width: 6rem;"
-           value="{{ rule.unavailable_after_minutes if rule else 10 }}">
-
-    <label class="checkbox-row">
-      <input type="checkbox" name="notify_on_recovered" {% if not rule or rule.notify_on_recovered %}checked{% endif %}>
-      {{ t(request, "notifications.rule.event_recovered") }}
-    </label>
-    <label for="{{ prefix }}-recovered-minutes">{{ t(request, "notifications.rule.recovered_after_label") }}</label>
-    <input type="number" id="{{ prefix }}-recovered-minutes" name="recovered_after_minutes"
-           min="{{ min_minutes }}" max="{{ max_minutes }}" style="width: 6rem;"
-           value="{{ rule.recovered_after_minutes if rule else 5 }}">
-  </fieldset>
-
-  {# --- How: email or webhook --- #}
-  <label for="{{ prefix }}-channel">{{ t(request, "notifications.rule.channel_label") }}</label>
-  <select id="{{ prefix }}-channel" name="delivery_channel"
-          data-toggle-hidden-map='{"email": "{{ prefix }}-email-field", "webhook": "{{ prefix }}-webhook-field"}'>
-    <option value="email" {% if not rule or rule.delivery_channel.value == 'email' %}selected{% endif %}>{{ t(request, "notifications.subscriptions.channel_email") }}</option>
-    <option value="webhook" {% if rule and rule.delivery_channel.value == 'webhook' %}selected{% endif %}>{{ t(request, "notifications.subscriptions.channel_webhook") }}</option>
-  </select>
-
-  {# --- Kam: the address or URL --- #}
-  <div id="{{ prefix }}-email-field" {{ 'hidden' if rule and rule.delivery_channel.value == 'webhook' else '' }}>
-    <label for="{{ prefix }}-target-email">{{ t(request, "notifications.rule.target_email_label") }}</label>
-    <input type="email" id="{{ prefix }}-target-email" name="target_email" maxlength="255"
-           value="{{ rule.target_email if rule and rule.target_email else '' }}"
-           placeholder="{{ user.email or t(request, 'notifications.email.placeholder') }}">
-    <p class="hint">{{ t(request, "notifications.rule.target_email_hint") }}</p>
-  </div>
-  <div id="{{ prefix }}-webhook-field" {{ '' if rule and rule.delivery_channel.value == 'webhook' else 'hidden' }}>
-    <label for="{{ prefix }}-webhook-url">{{ t(request, "notifications.rule.webhook_url_label") }}</label>
-    <input type="url" id="{{ prefix }}-webhook-url" name="webhook_url" maxlength="1000"
-           value="{{ rule.webhook_url if rule and rule.webhook_url else '' }}"
-           placeholder="https://example.com/hook">
-    <p class="hint">{{ t(request, "notifications.subscriptions.webhook_hint") }}</p>
-  </div>
-
-  {# --- Na konec: the actual wording, prefilled per the viewer's own
-         language, editable per event kind. --- #}
-  <details>
-    <summary>{{ t(request, "notifications.rule.wording_summary") }}</summary>
-    <p class="hint">{{ t(request, "notifications.rule.wording_hint") }}</p>
-
-    <h3>{{ t(request, "notifications.rule.event_alert") }}</h3>
-    <label for="{{ prefix }}-alert-subject">{{ t(request, "notifications.rule.subject_label") }}</label>
-    <input type="text" id="{{ prefix }}-alert-subject" name="alert_subject" maxlength="255"
-           value="{{ rule.alert_subject if rule and rule.alert_subject else '' }}"
-           placeholder="{{ template_defaults.alert[0] }}">
-    <label for="{{ prefix }}-alert-body">{{ t(request, "notifications.rule.body_label") }}</label>
-    <textarea id="{{ prefix }}-alert-body" name="alert_body" rows="3"
-              placeholder="{{ template_defaults.alert[1] }}">{{ rule.alert_body if rule and rule.alert_body else '' }}</textarea>
-    <p class="hint">{{ t(request, "notifications.rule.alert_placeholders") }}</p>
-
-    <h3>{{ t(request, "notifications.rule.event_unavailable") }}</h3>
-    <label for="{{ prefix }}-unavailable-subject">{{ t(request, "notifications.rule.subject_label") }}</label>
-    <input type="text" id="{{ prefix }}-unavailable-subject" name="unavailable_subject" maxlength="255"
-           value="{{ rule.unavailable_subject if rule and rule.unavailable_subject else '' }}"
-           placeholder="{{ template_defaults.unavailable[0] }}">
-    <label for="{{ prefix }}-unavailable-body">{{ t(request, "notifications.rule.body_label") }}</label>
-    <textarea id="{{ prefix }}-unavailable-body" name="unavailable_body" rows="3"
-              placeholder="{{ template_defaults.unavailable[1] }}">{{ rule.unavailable_body if rule and rule.unavailable_body else '' }}</textarea>
-    <p class="hint">{{ t(request, "notifications.rule.unavailable_placeholders") }}</p>
-
-    <h3>{{ t(request, "notifications.rule.event_recovered") }}</h3>
-    <label for="{{ prefix }}-recovered-subject">{{ t(request, "notifications.rule.subject_label") }}</label>
-    <input type="text" id="{{ prefix }}-recovered-subject" name="recovered_subject" maxlength="255"
-           value="{{ rule.recovered_subject if rule and rule.recovered_subject else '' }}"
-           placeholder="{{ template_defaults.recovered[0] }}">
-    <label for="{{ prefix }}-recovered-body">{{ t(request, "notifications.rule.body_label") }}</label>
-    <textarea id="{{ prefix }}-recovered-body" name="recovered_body" rows="3"
-              placeholder="{{ template_defaults.recovered[1] }}">{{ rule.recovered_body if rule and rule.recovered_body else '' }}</textarea>
-    <p class="hint">{{ t(request, "notifications.rule.recovered_placeholders") }}</p>
-
-    <p class="hint">{{ t(request, "notifications.rule.wording_blank_hint") }}</p>
-  </details>
-{% endmacro %}
 
 {% block content %}
   <div class="page-header">
@@ -203,14 +72,7 @@
                 {{ t(request, "notifications.subscriptions.channel_" + rule.delivery_channel.value) }}
               </td>
               <td>
-                <details>
-                  <summary>{{ t(request, "notifications.rule.edit") }}</summary>
-                  <form method="post" action="/account/notifications/{{ rule.id }}/edit" class="form" autocomplete="off" data-rule-form>
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                    {{ rule_fields(request, "edit-" ~ rule.id, companies, honeypots, template_defaults, min_minutes, max_minutes, user, rule=rule) }}
-                    <button type="submit" class="button">{{ t(request, "common.save") }}</button>
-                  </form>
-                </details>
+                <a href="/account/notifications/{{ rule.id }}/edit">{{ t(request, "notifications.rule.edit") }}</a>
                 <form method="post" action="/account/notifications/{{ rule.id }}/test" class="inline-form">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                   <button type="submit" class="link-button">{{ t(request, "notifications.test.button") }}</button>

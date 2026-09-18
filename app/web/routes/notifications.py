@@ -140,6 +140,57 @@ async def _render_list(
     return response
 
 
+async def _render_edit(
+    request: Request,
+    db: AsyncSession,
+    user: User,
+    rule: NotificationRule,
+    *,
+    errors: list[str] | None = None,
+) -> Response:
+    """A rule's own full-page edit form — same layout as "Add rule" on the
+    list page (they share `partials/_notification_rule_fields.html`),
+    rather than squeezed into that rule's own table row."""
+    companies = await _visible_companies(db, user)
+    honeypots = await _visible_honeypots(db, user)
+    csrf_token, new_cookie = get_or_create_csrf_token(request)
+    template_defaults = {
+        kind: default_template(kind, request.state.locale.code)
+        for kind in ("alert", "unavailable", "recovered")
+    }
+    response = templates.TemplateResponse(
+        request,
+        "notifications/edit.html",
+        {
+            "user": user,
+            "rule": rule,
+            "companies": companies,
+            "honeypots": honeypots,
+            "template_defaults": template_defaults,
+            "min_minutes": MIN_DEBOUNCE_MINUTES,
+            "max_minutes": MAX_DEBOUNCE_MINUTES,
+            "csrf_token": csrf_token,
+            "errors": errors or [],
+        },
+    )
+    if new_cookie:
+        set_csrf_cookie(response, new_cookie)
+    return response
+
+
+@router.get("/{rule_id}/edit")
+async def edit_notification_rule_form(
+    request: Request,
+    rule_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    user = await db.get(User, current_user.id)
+    assert user is not None
+    rule = await _get_own_rule(db, user, rule_id)
+    return await _render_edit(request, db, user, rule)
+
+
 @router.get("")
 async def list_notification_rules(
     request: Request,
@@ -367,7 +418,7 @@ async def update_notification_rule(
         companies, honeypots, errors = await _authorize_scope(db, user, company_ids, honeypot_ids)
 
     if errors:
-        return await _render_list(request, db, user, errors=errors)
+        return await _render_edit(request, db, user, rule, errors=errors)
 
     for key, value in values.items():
         setattr(rule, key, value)

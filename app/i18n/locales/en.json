@@ -1286,6 +1286,8 @@
     "notifications.rule.delete": "Delete",
     "notifications.rule.confirm_delete": "Delete the notification rule \"{name}\"?",
     "notifications.rule.add_button": "Add rule",
+    "notifications.edit.title": "Edit rule: {name}",
+    "notifications.edit.back": "Back to Notifications",
     "notifications.test.button": "Send test",
     "notifications.test.sent": "Test notification sent.",
     "notifications.test.failed": "Test notification failed: {error}",

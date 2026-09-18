@@ -18,8 +18,7 @@
 // honeypot), use `data-toggle-hidden-map='{"value1":"id1","value2":"id2"}'`
 // instead — every listed target is hidden except the one whose key matches
 // the current value.
-document.addEventListener("change", (event) => {
-  const input = event.target;
+function applyToggle(input) {
   if (!input || !input.dataset) return;
 
   if (input.tagName === "SELECT" && input.dataset.toggleHiddenMap) {
@@ -57,4 +56,37 @@ document.addEventListener("change", (event) => {
   }
 
   target.hidden = input.checked;
-});
+}
+
+document.addEventListener("change", (event) => applyToggle(event.target));
+
+// A `<select>`'s server-rendered `selected` option only decides its
+// *initial* value the very first time the page is ever loaded — on a
+// plain reload (no form resubmission involved) every mainstream browser
+// restores whatever the visitor had last picked, without firing a
+// `change` event for it. Without this, a target left `hidden` by the
+// server's own initial render (because the server-rendered option didn't
+// match) stays hidden forever after a reload, even though the select
+// itself visibly shows the browser-restored value — e.g. Notifications'
+// "Applies to" picker showing "Honeypot" while the still-visible field
+// below is "Companies". Re-run every toggle once for its *current* value
+// as soon as the page (or an htmx-swapped fragment containing one) is
+// ready, same as the "change" handler above but without needing a user
+// interaction first.
+function syncAllToggles(root) {
+  const seenRadioGroups = new Set();
+  for (const input of root.querySelectorAll(
+    "[data-toggle-hidden], [data-toggle-hidden-map]"
+  )) {
+    if (input.type === "radio") {
+      if (!input.checked || seenRadioGroups.has(input.name)) continue;
+      seenRadioGroups.add(input.name);
+    }
+    applyToggle(input);
+  }
+}
+
+document.addEventListener("DOMContentLoaded", () => syncAllToggles(document));
+// htmx swaps a fragment in without a full page (re)load — re-sync
+// whatever that fragment just brought in too.
+document.body.addEventListener("htmx:afterSettle", (event) => syncAllToggles(event.target));

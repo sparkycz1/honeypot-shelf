@@ -105,6 +105,18 @@ _DEFAULT_TEMPLATES: dict[str, dict[str, tuple[str, str]]] = {
     },
 }
 
+# The `{details}` placeholder text "Send test" fills in on its synthetic
+# alert (real alerts leave `details` blank — see `notify_alert`) — kept
+# separate from `_DEFAULT_TEMPLATES` since it's not part of a rule's own
+# overridable wording, just a fixed sentence explaining the email/webhook
+# itself is a test. Keyed and looked up the same way (rule owner's own
+# locale, falling back to the instance's `default_language`) so this
+# doesn't end up English-only inside an otherwise-localized test send.
+_TEST_DETAILS_TEXT: dict[str, str] = {
+    "en": "This is a test notification sent from Honeypot Shelf.",
+    "cs": "Toto je testovací notifikace odeslaná z Honeypot Shelf.",
+}
+
 
 class _SafeDict(dict[str, str]):
     """Used with `str.format_map` so a placeholder a user-edited template
@@ -418,12 +430,13 @@ async def send_test_notification(
     target too — if SMTP isn't configured at all, `send_email` itself
     raises `SmtpNotConfiguredError`, which is exactly the useful "no, it
     isn't set up" result this button exists to surface."""
+    locale = rule.user.locale or get_settings().default_language
     context = {
         "honeypot_name": honeypot.name,
         "event_type": "test",
         "src_ip": "203.0.113.1",
         "timestamp": datetime.now(UTC).isoformat(),
-        "details": "This is a test notification sent from Honeypot Shelf.",
+        "details": _TEST_DETAILS_TEXT.get(locale, _TEST_DETAILS_TEXT[DEFAULT_LOCALE_CODE]),
     }
     subject, body = render_template("alert", rule, context)
     webhook_payload = {
