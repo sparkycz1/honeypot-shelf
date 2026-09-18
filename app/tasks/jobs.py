@@ -966,13 +966,15 @@ async def _matching_notification_rules(
     session: AsyncSession, honeypots: list[Honeypot], event_column: Any
 ) -> dict[uuid.UUID, list[NotificationRule]]:
     """Every active-user `NotificationRule` that applies to each of
-    `honeypots` — directly (`scope=honeypot`), or via any company it
-    belongs to (`scope=company`) — with `event_column` (e.g.
-    `NotificationRule.notify_on_alert`) true. `honeypots` must already
-    have `.companies` loaded (selectinload) — a company-scoped rule is
-    resolved against that, not a fresh query, so adding a honeypot to a
-    company picks up its rules on the very next sweep with no rule edit
-    needed. Returns a dict keyed by honeypot id, `{}` if none match."""
+    `honeypots` — directly (any of `rule.honeypots`, for a
+    `scope=honeypot` rule), or via any company it belongs to (any of
+    `rule.companies`, for a `scope=company` rule) — with `event_column`
+    (e.g. `NotificationRule.notify_on_alert`) true. `honeypots` must
+    already have `.companies` loaded (selectinload) — a company-scoped
+    rule is resolved against that, not a fresh query, so adding a
+    honeypot to a company picks up its rules on the very next sweep with
+    no rule edit needed. Returns a dict keyed by honeypot id, `{}` if none
+    match."""
     by_honeypot: dict[uuid.UUID, list[NotificationRule]] = {h.id: [] for h in honeypots}
     honeypot_ids = list(by_honeypot)
     if not honeypot_ids:
@@ -980,9 +982,9 @@ async def _matching_notification_rules(
     company_ids_by_honeypot = {h.id: {c.id for c in h.companies} for h in honeypots}
     all_company_ids = {cid for cids in company_ids_by_honeypot.values() for cid in cids}
 
-    conditions = [NotificationRule.honeypot_id.in_(honeypot_ids)]
+    conditions = [NotificationRule.honeypots.any(Honeypot.id.in_(honeypot_ids))]
     if all_company_ids:
-        conditions.append(NotificationRule.company_id.in_(all_company_ids))
+        conditions.append(NotificationRule.companies.any(Company.id.in_(all_company_ids)))
     result = await session.execute(
         select(NotificationRule)
         .options(selectinload(NotificationRule.user))
@@ -992,11 +994,13 @@ async def _matching_notification_rules(
         if not rule.user.is_active:
             continue
         if rule.scope == NotificationScope.HONEYPOT:
-            if rule.honeypot_id in by_honeypot:
-                by_honeypot[rule.honeypot_id].append(rule)
+            for honeypot in rule.honeypots:
+                if honeypot.id in by_honeypot:
+                    by_honeypot[honeypot.id].append(rule)
         else:
+            rule_company_ids = {company.id for company in rule.companies}
             for honeypot_id, company_ids in company_ids_by_honeypot.items():
-                if rule.company_id in company_ids:
+                if rule_company_ids & company_ids:
                     by_honeypot[honeypot_id].append(rule)
     return by_honeypot
 

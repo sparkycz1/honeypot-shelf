@@ -13,9 +13,30 @@
 // show the target only when that exact option is selected (e.g. Users
 // edit: the "switch to local" password field only matters while
 // "auth_provider" is being set to "local").
+// For a `<select>` with more than two options that each need their own
+// target shown/hidden (e.g. Notifications: "Applies to" company vs.
+// honeypot), use `data-toggle-hidden-map='{"value1":"id1","value2":"id2"}'`
+// instead — every listed target is hidden except the one whose key matches
+// the current value.
 document.addEventListener("change", (event) => {
   const input = event.target;
-  if (!input || !input.dataset || !input.dataset.toggleHidden) return;
+  if (!input || !input.dataset) return;
+
+  if (input.tagName === "SELECT" && input.dataset.toggleHiddenMap) {
+    let map;
+    try {
+      map = JSON.parse(input.dataset.toggleHiddenMap);
+    } catch {
+      return;
+    }
+    for (const [value, id] of Object.entries(map)) {
+      const target = document.getElementById(id);
+      if (target) target.hidden = value !== input.value;
+    }
+    return;
+  }
+
+  if (!input.dataset.toggleHidden) return;
 
   if (input.type === "radio") {
     for (const sibling of document.getElementsByName(input.name)) {

@@ -103,7 +103,7 @@ async def test_create_company_scoped_rule(client, login_as, db_session_factory):
             "csrf_token": _csrf_from(form),
             "name": "Company-wide alerts",
             "scope": "company",
-            "company_id": str(company.id),
+            "company_ids": str(company.id),
             "delivery_channel": "email",
             "notify_on_alert": "on",
             "notify_on_unavailable": "on",
@@ -121,7 +121,7 @@ async def test_create_company_scoped_rule(client, login_as, db_session_factory):
         ).scalar_one()
         assert rule.name == "Company-wide alerts"
         assert rule.scope == NotificationScope.COMPANY
-        assert rule.company_id == company.id
+        assert [c.id for c in rule.companies] == [company.id]
         assert rule.unavailable_after_minutes == 15
 
 
@@ -141,7 +141,7 @@ async def test_create_honeypot_scoped_rule(client, login_as, db_session_factory)
             "csrf_token": _csrf_from(form),
             "name": "Just this honeypot",
             "scope": "honeypot",
-            "honeypot_id": str(honeypot_id),
+            "honeypot_ids": str(honeypot_id),
             "delivery_channel": "email",
             "notify_on_alert": "on",
         },
@@ -154,7 +154,67 @@ async def test_create_honeypot_scoped_rule(client, login_as, db_session_factory)
             await db.execute(select(NotificationRule).where(NotificationRule.user_id == user.id))
         ).scalar_one()
         assert rule.scope == NotificationScope.HONEYPOT
-        assert rule.honeypot_id == honeypot_id
+        assert [h.id for h in rule.honeypots] == [honeypot_id]
+
+
+async def test_create_rule_scoped_to_multiple_companies(client, db_session_factory):
+    """A rule can cover any number of companies at once, not just one —
+    each submitted as its own `company_ids` form value (a multi-select
+    posts one entry per selection)."""
+    alpha = await create_company(db_session_factory, name="Alpha Co")
+    beta = await create_company(db_session_factory, name="Beta Co")
+
+    form = await client.get("/account/notifications")  # default client is superadmin
+    response = await client.post(
+        "/account/notifications",
+        data={
+            "csrf_token": _csrf_from(form),
+            "name": "Two companies",
+            "scope": "company",
+            "company_ids": [str(alpha.id), str(beta.id)],
+            "delivery_channel": "email",
+            "notify_on_alert": "on",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    async with db_session_factory() as db:
+        rule = (await db.execute(select(NotificationRule))).scalar_one()
+        assert rule.scope == NotificationScope.COMPANY
+        assert {c.id for c in rule.companies} == {alpha.id, beta.id}
+
+
+async def test_create_rule_scoped_to_multiple_honeypots(client, db_session_factory):
+    """Same as above, for honeypot scope."""
+    company = await create_company(db_session_factory)
+    async with db_session_factory() as db:
+        c = await db.get(Company, company.id)
+        hp1 = Honeypot(companies=[c], name="honey-one")
+        hp2 = Honeypot(companies=[c], name="honey-two")
+        db.add_all([hp1, hp2])
+        await db.commit()
+        hp1_id, hp2_id = hp1.id, hp2.id
+
+    form = await client.get("/account/notifications")  # default client is superadmin
+    response = await client.post(
+        "/account/notifications",
+        data={
+            "csrf_token": _csrf_from(form),
+            "name": "Two honeypots",
+            "scope": "honeypot",
+            "honeypot_ids": [str(hp1_id), str(hp2_id)],
+            "delivery_channel": "email",
+            "notify_on_alert": "on",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    async with db_session_factory() as db:
+        rule = (await db.execute(select(NotificationRule))).scalar_one()
+        assert rule.scope == NotificationScope.HONEYPOT
+        assert {h.id for h in rule.honeypots} == {hp1_id, hp2_id}
 
 
 async def test_create_rule_with_custom_wording_persists_the_override(
@@ -170,7 +230,7 @@ async def test_create_rule_with_custom_wording_persists_the_override(
             "csrf_token": _csrf_from(form),
             "name": "Custom wording",
             "scope": "company",
-            "company_id": str(company.id),
+            "company_ids": str(company.id),
             "delivery_channel": "email",
             "notify_on_alert": "on",
             "alert_subject": "Heads up: {honeypot_name}",
@@ -205,7 +265,7 @@ async def test_create_rule_without_custom_wording_leaves_it_unset(
             "csrf_token": _csrf_from(form),
             "name": "Defaults only",
             "scope": "company",
-            "company_id": str(company.id),
+            "company_ids": str(company.id),
             "delivery_channel": "email",
             "notify_on_alert": "on",
         },
@@ -235,7 +295,7 @@ async def test_cannot_create_rule_scoped_to_a_company_not_visible(
             "csrf_token": _csrf_from(form),
             "name": "Sneaky rule",
             "scope": "company",
-            "company_id": str(other_company.id),
+            "company_ids": str(other_company.id),
             "delivery_channel": "email",
             "notify_on_alert": "on",
         },
@@ -258,7 +318,7 @@ async def test_webhook_rule_rejects_unsafe_url(client, login_as, db_session_fact
             "csrf_token": _csrf_from(form),
             "name": "Bad webhook",
             "scope": "company",
-            "company_id": str(company.id),
+            "company_ids": str(company.id),
             "delivery_channel": "webhook",
             "webhook_url": "http://127.0.0.1/hook",
             "notify_on_alert": "on",
@@ -276,7 +336,7 @@ async def test_edit_and_delete_own_rule(client, login_as, db_session_factory):
             user_id=user.id,
             name="Original name",
             scope=NotificationScope.COMPANY,
-            company_id=company.id,
+            companies=[await db.get(Company, company.id)],
             notify_on_alert=True,
         )
         db.add(rule)
@@ -290,7 +350,7 @@ async def test_edit_and_delete_own_rule(client, login_as, db_session_factory):
             "csrf_token": _csrf_from(form),
             "name": "Renamed",
             "scope": "company",
-            "company_id": str(company.id),
+            "company_ids": str(company.id),
             "delivery_channel": "email",
             "notify_on_alert": "on",
         },
@@ -324,7 +384,7 @@ async def test_cannot_edit_or_delete_another_users_rule(client, login_as, db_ses
             user_id=owner.id,
             name="Not yours",
             scope=NotificationScope.COMPANY,
-            company_id=company.id,
+            companies=[await db.get(Company, company.id)],
             notify_on_alert=True,
         )
         db.add(rule)
@@ -375,7 +435,7 @@ async def test_resolve_target_falls_back_to_account_email(db_session_factory):
             user_id=user.id,
             name="r",
             scope=NotificationScope.COMPANY,
-            company_id=company.id,
+            companies=[await db.get(Company, company.id)],
             notify_on_alert=True,
         )
         db.add(rule)

@@ -8,32 +8,38 @@
          value="{{ rule.name if rule else '' }}"
          placeholder="{{ t(request, 'notifications.rule.name_placeholder') }}">
 
-  {# --- Co: company, or a single honeypot --- #}
+  {# --- Co: any number of companies, or any number of honeypots --- #}
   <label for="{{ prefix }}-scope">{{ t(request, "notifications.rule.scope_label") }}</label>
   <select id="{{ prefix }}-scope" name="scope"
-          data-toggle-hidden="{{ prefix }}-company-field" data-toggle-hidden-unless-value="honeypot">
+          data-toggle-hidden-map='{"company": "{{ prefix }}-company-field", "honeypot": "{{ prefix }}-honeypot-field"}'>
     <option value="company" {% if not rule or rule.scope.value == 'company' %}selected{% endif %}>{{ t(request, "notifications.rule.scope_company") }}</option>
     <option value="honeypot" {% if rule and rule.scope.value == 'honeypot' %}selected{% endif %}>{{ t(request, "notifications.rule.scope_honeypot") }}</option>
   </select>
 
-  <div id="{{ prefix }}-company-field" {{ 'hidden' if rule and rule.scope.value == 'honeypot' else '' }}>
-    <label for="{{ prefix }}-company-id">{{ t(request, "notifications.rule.company_label") }}</label>
-    <select id="{{ prefix }}-company-id" name="company_id">
-      <option value="">{{ t(request, "notifications.rule.company_placeholder") }}</option>
-      {% for company in companies %}
-        <option value="{{ company.id }}" {% if rule and rule.company_id == company.id %}selected{% endif %}>{{ company.name }}</option>
-      {% endfor %}
-    </select>
-  </div>
-  <div id="{{ prefix }}-honeypot-field" {{ '' if rule and rule.scope.value == 'honeypot' else 'hidden' }}>
-    <label for="{{ prefix }}-honeypot-id">{{ t(request, "notifications.rule.honeypot_label") }}</label>
-    <select id="{{ prefix }}-honeypot-id" name="honeypot_id">
-      <option value="">{{ t(request, "notifications.rule.honeypot_placeholder") }}</option>
-      {% for honeypot in honeypots %}
-        <option value="{{ honeypot.id }}" {% if rule and rule.honeypot_id == honeypot.id %}selected{% endif %}>{{ honeypot.name }}</option>
-      {% endfor %}
-    </select>
-  </div>
+  <fieldset id="{{ prefix }}-company-field" {{ 'hidden' if rule and rule.scope.value == 'honeypot' else '' }}>
+    <legend>{{ t(request, "notifications.rule.company_label") }}</legend>
+    {% for company in companies %}
+      <label class="checkbox-row">
+        <input type="checkbox" name="company_ids" value="{{ company.id }}"
+               {% if rule and company.id in rule.companies | map(attribute="id") | list %}checked{% endif %}>
+        {{ company.name }}
+      </label>
+    {% else %}
+      <p class="hint">{{ t(request, "notifications.rule.company_placeholder") }}</p>
+    {% endfor %}
+  </fieldset>
+  <fieldset id="{{ prefix }}-honeypot-field" {{ '' if rule and rule.scope.value == 'honeypot' else 'hidden' }}>
+    <legend>{{ t(request, "notifications.rule.honeypot_label") }}</legend>
+    {% for honeypot in honeypots %}
+      <label class="checkbox-row">
+        <input type="checkbox" name="honeypot_ids" value="{{ honeypot.id }}"
+               {% if rule and honeypot.id in rule.honeypots | map(attribute="id") | list %}checked{% endif %}>
+        {{ honeypot.name }}
+      </label>
+    {% else %}
+      <p class="hint">{{ t(request, "notifications.rule.honeypot_placeholder") }}</p>
+    {% endfor %}
+  </fieldset>
   <p class="hint">{{ t(request, "notifications.rule.scope_hint") }}</p>
 
   {# --- Why: which events --- #}
@@ -67,7 +73,7 @@
   {# --- How: email or webhook --- #}
   <label for="{{ prefix }}-channel">{{ t(request, "notifications.rule.channel_label") }}</label>
   <select id="{{ prefix }}-channel" name="delivery_channel"
-          data-toggle-hidden="{{ prefix }}-email-field" data-toggle-hidden-unless-value="webhook">
+          data-toggle-hidden-map='{"email": "{{ prefix }}-email-field", "webhook": "{{ prefix }}-webhook-field"}'>
     <option value="email" {% if not rule or rule.delivery_channel.value == 'email' %}selected{% endif %}>{{ t(request, "notifications.subscriptions.channel_email") }}</option>
     <option value="webhook" {% if rule and rule.delivery_channel.value == 'webhook' %}selected{% endif %}>{{ t(request, "notifications.subscriptions.channel_webhook") }}</option>
   </select>
@@ -183,9 +189,9 @@
               <td>{{ rule.name }}</td>
               <td>
                 {% if rule.scope.value == 'company' %}
-                  {{ t(request, "notifications.rule.scope_company") }}: {{ rule.company.name if rule.company else '—' }}
+                  {{ t(request, "notifications.rule.scope_company") }}: {{ rule.companies | map(attribute="name") | join(", ") if rule.companies else '—' }}
                 {% else %}
-                  {{ t(request, "notifications.rule.scope_honeypot") }}: {{ rule.honeypot.name if rule.honeypot else '—' }}
+                  {{ t(request, "notifications.rule.scope_honeypot") }}: {{ rule.honeypots | map(attribute="name") | join(", ") if rule.honeypots else '—' }}
                 {% endif %}
               </td>
               <td>

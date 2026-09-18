@@ -63,7 +63,7 @@ async def _setup_honeypot_and_rule(
             user_id=user.id,
             name="Availability watch",
             scope=NotificationScope.HONEYPOT,
-            honeypot_id=honeypot.id,
+            honeypots=[honeypot],
             notify_on_alert=False,
             notify_on_unavailable=True,
             unavailable_after_minutes=unavailable_after_minutes,

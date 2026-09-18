@@ -83,7 +83,7 @@ async def test_creating_a_webhook_rule_persists_channel_and_url(client, db_sessi
             "csrf_token": csrf_token,
             "name": "Webhook rule",
             "scope": "honeypot",
-            "honeypot_id": str(honeypot_id),
+            "honeypot_ids": str(honeypot_id),
             "delivery_channel": "webhook",
             "webhook_url": "https://93.184.216.34/hook",
             "notify_on_alert": "on",
@@ -109,7 +109,7 @@ async def test_creating_a_webhook_rule_with_an_unsafe_url_is_rejected(client, db
             "csrf_token": csrf_token,
             "name": "Bad webhook rule",
             "scope": "honeypot",
-            "honeypot_id": str(honeypot_id),
+            "honeypot_ids": str(honeypot_id),
             "delivery_channel": "webhook",
             "webhook_url": "http://127.0.0.1/hook",
             "notify_on_alert": "on",
@@ -140,11 +140,13 @@ async def test_send_test_notification_logs_a_test_entry(client, db_session_facto
         user = (await db.execute(select(User))).scalars().first()
         assert user is not None
         user.email = "me@example.com"
+        honeypot = await db.get(Honeypot, honeypot_id)
+        assert honeypot is not None
         rule = NotificationRule(
             user_id=user.id,
             name="Test me",
             scope=NotificationScope.HONEYPOT,
-            honeypot_id=honeypot_id,
+            honeypots=[honeypot],
             delivery_channel=NotificationChannel.EMAIL,
             notify_on_alert=True,
         )
@@ -188,7 +190,7 @@ async def test_send_test_for_company_scoped_rule_uses_a_real_honeypot_in_scope(
             user_id=user.id,
             name="Company test",
             scope=NotificationScope.COMPANY,
-            company_id=company.id,
+            companies=[c],
             delivery_channel=NotificationChannel.EMAIL,
             notify_on_alert=True,
         )
@@ -222,7 +224,7 @@ async def test_send_test_for_another_users_rule_404s(client, login_as, db_sessio
             user_id=owner.id,
             name="Not yours",
             scope=NotificationScope.COMPANY,
-            company_id=company.id,
+            companies=[await db.get(Company, company.id)],
             notify_on_alert=True,
         )
         db.add(rule)

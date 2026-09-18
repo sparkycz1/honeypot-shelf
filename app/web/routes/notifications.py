@@ -55,9 +55,10 @@ async def _visible_honeypots(db: AsyncSession, user: User) -> list[Honeypot]:
 
 
 async def _own_rules(db: AsyncSession, user_id: uuid.UUID) -> list[NotificationRule]:
+    # `companies`/`honeypots` are `lazy="selectin"` on the model itself, so
+    # no explicit `.options()` is needed to avoid N+1 here.
     result = await db.execute(
         select(NotificationRule)
-        .options(selectinload(NotificationRule.company), selectinload(NotificationRule.honeypot))
         .where(NotificationRule.user_id == user_id)
         .order_by(NotificationRule.name)
     )
@@ -80,15 +81,18 @@ async def _get_own_rule(
 
 
 async def _representative_honeypot(db: AsyncSession, rule: NotificationRule) -> Honeypot | None:
-    """A real `Honeypot` to render a "Send test" preview against —
-    `rule.honeypot` itself for a honeypot-scoped rule, or the
-    alphabetically-first honeypot currently in `rule.company_id` for a
-    company-scoped one (`None` if that company has no honeypot yet)."""
+    """A real `Honeypot` to render a "Send test" preview against — the
+    alphabetically-first of `rule.honeypots` for a honeypot-scoped rule, or
+    the alphabetically-first honeypot currently in any of `rule.companies`
+    for a company-scoped one (`None` if none of them has a honeypot yet)."""
     if rule.scope == NotificationScope.HONEYPOT:
-        return await db.get(Honeypot, rule.honeypot_id)
+        return rule.honeypots[0] if rule.honeypots else None
+    company_ids = [company.id for company in rule.companies]
+    if not company_ids:
+        return None
     result = await db.execute(
         select(Honeypot)
-        .where(Honeypot.companies.any(Company.id == rule.company_id))
+        .where(Honeypot.companies.any(Company.id.in_(company_ids)))
         .order_by(Honeypot.name)
         .limit(1)
     )
@@ -157,9 +161,31 @@ async def list_notification_rules(
     )
 
 
-def _parse_rule_form(form: FormData) -> tuple[dict[str, object], list[str]]:
+def _parse_ids(form: FormData, field: str) -> tuple[list[uuid.UUID], bool]:
+    """Every value submitted under `field` (a multi-select posts one
+    form entry per selected `<option>`), parsed as a UUID — `(ids,
+    all_valid)`, where `all_valid` is `False` if any submitted value
+    wasn't a valid UUID (a stale form, or a tampered request)."""
+    ids: list[uuid.UUID] = []
+    all_valid = True
+    for raw in form.getlist(field):
+        raw = str(raw).strip()
+        if not raw:
+            continue
+        try:
+            ids.append(uuid.UUID(raw))
+        except ValueError:
+            all_valid = False
+    return ids, all_valid
+
+
+def _parse_rule_form(
+    form: FormData,
+) -> tuple[dict[str, object], list[uuid.UUID], list[uuid.UUID], list[str]]:
     """Shared parse/validate for both create and edit — returns a dict of
-    column values ready to assign onto a `NotificationRule`, plus a list
+    plain column values ready to assign onto a `NotificationRule`, the
+    submitted company/honeypot ids (kept separate since they're
+    relationships, not plain columns — see `_authorize_scope`), and a list
     of human-readable errors (empty means valid)."""
     errors: list[str] = []
     get = form.get
@@ -170,26 +196,20 @@ def _parse_rule_form(form: FormData) -> tuple[dict[str, object], list[str]]:
 
     raw_scope = str(get("scope") or "").strip().lower()
     scope = NotificationScope.COMPANY if raw_scope == "company" else NotificationScope.HONEYPOT
-    company_id_raw = str(get("company_id") or "").strip()
-    honeypot_id_raw = str(get("honeypot_id") or "").strip()
-    company_id: uuid.UUID | None = None
-    honeypot_id: uuid.UUID | None = None
+    company_ids, companies_valid = _parse_ids(form, "company_ids")
+    honeypot_ids, honeypots_valid = _parse_ids(form, "honeypot_ids")
     if scope == NotificationScope.COMPANY:
-        if not company_id_raw:
-            errors.append("Choose a company.")
-        else:
-            try:
-                company_id = uuid.UUID(company_id_raw)
-            except ValueError:
-                errors.append("Invalid company.")
+        if not companies_valid:
+            errors.append("Invalid company.")
+        elif not company_ids:
+            errors.append("Choose at least one company.")
+        honeypot_ids = []
     else:
-        if not honeypot_id_raw:
-            errors.append("Choose a honeypot.")
-        else:
-            try:
-                honeypot_id = uuid.UUID(honeypot_id_raw)
-            except ValueError:
-                errors.append("Invalid honeypot.")
+        if not honeypots_valid:
+            errors.append("Invalid honeypot.")
+        elif not honeypot_ids:
+            errors.append("Choose at least one honeypot.")
+        company_ids = []
 
     raw_channel = str(get("delivery_channel") or "").strip().lower()
     channel = (
@@ -234,8 +254,6 @@ def _parse_rule_form(form: FormData) -> tuple[dict[str, object], list[str]]:
     values: dict[str, object] = {
         "name": name,
         "scope": scope,
-        "company_id": company_id,
-        "honeypot_id": honeypot_id,
         "delivery_channel": channel,
         "target_email": target_email,
         "webhook_url": webhook_url,
@@ -251,32 +269,49 @@ def _parse_rule_form(form: FormData) -> tuple[dict[str, object], list[str]]:
         "recovered_subject": _text_override("recovered_subject"),
         "recovered_body": _text_override("recovered_body"),
     }
-    return values, errors
+    return values, company_ids, honeypot_ids, errors
 
 
-async def _authorize_scope(db: AsyncSession, user: User, values: dict[str, object]) -> list[str]:
-    """Re-checks the submitted company/honeypot against `user`'s own
+async def _authorize_scope(
+    db: AsyncSession, user: User, company_ids: list[uuid.UUID], honeypot_ids: list[uuid.UUID]
+) -> tuple[list[Company], list[Honeypot], list[str]]:
+    """Re-checks every submitted company/honeypot id against `user`'s own
     scope server-side — the picker options in the form are already
     filtered to what they can see, but a client can submit any id, so this
-    is the actual enforcement, not just UX."""
+    is the actual enforcement, not just UX. Returns the resolved
+    `Company`/`Honeypot` rows (ready to assign onto the rule's
+    relationships) alongside any errors — a submitted id that doesn't
+    exist, or isn't visible to `user`, is a plain error, not a silent
+    drop."""
     errors: list[str] = []
-    scope_company_id = values.get("company_id")
-    if scope_company_id is not None:
-        assert isinstance(scope_company_id, uuid.UUID)
-        if not (user.is_superadmin or scope_company_id in user.company_ids()):
-            errors.append("You don't have access to that company.")
-    scope_honeypot_id = values.get("honeypot_id")
-    if scope_honeypot_id is not None:
-        assert isinstance(scope_honeypot_id, uuid.UUID)
-        result = await db.execute(
+
+    companies: list[Company] = []
+    if company_ids:
+        result = await db.execute(select(Company).where(Company.id.in_(company_ids)))
+        found = {company.id: company for company in result.scalars().all()}
+        for company_id in company_ids:
+            company = found.get(company_id)
+            if company is None or not (user.is_superadmin or company_id in user.company_ids()):
+                errors.append("You don't have access to that company.")
+            else:
+                companies.append(company)
+
+    honeypots: list[Honeypot] = []
+    if honeypot_ids:
+        hp_result = await db.execute(
             select(Honeypot)
             .options(selectinload(Honeypot.companies))
-            .where(Honeypot.id == scope_honeypot_id)
+            .where(Honeypot.id.in_(honeypot_ids))
         )
-        honeypot = result.scalar_one_or_none()
-        if honeypot is None or not can_see_honeypot(user, honeypot):
-            errors.append("You don't have access to that honeypot.")
-    return errors
+        found_hp = {honeypot.id: honeypot for honeypot in hp_result.scalars().all()}
+        for honeypot_id in honeypot_ids:
+            honeypot = found_hp.get(honeypot_id)
+            if honeypot is None or not can_see_honeypot(user, honeypot):
+                errors.append("You don't have access to that honeypot.")
+            else:
+                honeypots.append(honeypot)
+
+    return companies, honeypots, errors
 
 
 @router.post("", dependencies=[Depends(verify_csrf)])
@@ -288,14 +323,16 @@ async def create_notification_rule(
     user = await db.get(User, current_user.id)
     assert user is not None
     form = await request.form()
-    values, errors = _parse_rule_form(form)
+    values, company_ids, honeypot_ids, errors = _parse_rule_form(form)
+    companies: list[Company] = []
+    honeypots: list[Honeypot] = []
     if not errors:
-        errors = await _authorize_scope(db, user, values)
+        companies, honeypots, errors = await _authorize_scope(db, user, company_ids, honeypot_ids)
 
     if errors:
         return await _render_list(request, db, user, errors=errors)
 
-    rule = NotificationRule(user_id=user.id, **values)
+    rule = NotificationRule(user_id=user.id, companies=companies, honeypots=honeypots, **values)
     db.add(rule)
     await db.commit()
     await log_event(
@@ -323,15 +360,19 @@ async def update_notification_rule(
     assert user is not None
     rule = await _get_own_rule(db, user, rule_id)
     form = await request.form()
-    values, errors = _parse_rule_form(form)
+    values, company_ids, honeypot_ids, errors = _parse_rule_form(form)
+    companies: list[Company] = []
+    honeypots: list[Honeypot] = []
     if not errors:
-        errors = await _authorize_scope(db, user, values)
+        companies, honeypots, errors = await _authorize_scope(db, user, company_ids, honeypot_ids)
 
     if errors:
         return await _render_list(request, db, user, errors=errors)
 
     for key, value in values.items():
         setattr(rule, key, value)
+    rule.companies = companies
+    rule.honeypots = honeypots
     await db.commit()
     await log_event(
         db,

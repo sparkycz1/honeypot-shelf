@@ -49,7 +49,7 @@ async def _setup(db_session_factory, *, smtp_enabled: bool = True):
                 user_id=subscribed_user.id,
                 name="Alerts",
                 scope=NotificationScope.HONEYPOT,
-                honeypot_id=honeypot.id,
+                honeypots=[honeypot],
                 notify_on_alert=True,
             )
         )
@@ -58,7 +58,7 @@ async def _setup(db_session_factory, *, smtp_enabled: bool = True):
                 user_id=unsubscribed_user.id,
                 name="No alerts",
                 scope=NotificationScope.HONEYPOT,
-                honeypot_id=honeypot.id,
+                honeypots=[honeypot],
                 notify_on_alert=False,
             )
         )
@@ -192,7 +192,7 @@ async def test_company_scoped_rule_matches_a_honeypot_in_that_company(
                 user_id=user.id,
                 name="Company watch",
                 scope=NotificationScope.COMPANY,
-                company_id=company.id,
+                companies=[await db.get(Company, company.id)],
                 notify_on_alert=True,
             )
         )
@@ -221,3 +221,65 @@ async def test_company_scoped_rule_matches_a_honeypot_in_that_company(
     await _poll_honeypot_canary_log(str(honeypot_id))
 
     assert sent_to == ["company-watcher"]
+
+
+async def test_honeypot_scoped_rule_covering_multiple_honeypots_matches_either(
+    db_session_factory, monkeypatch
+):
+    """A honeypot-scoped rule can now list more than one honeypot — it
+    should fire for an event on any of them, not just the first."""
+    monkeypatch.setattr("app.db.session.AsyncSessionLocal", db_session_factory)
+    company = await create_company(db_session_factory)
+    async with db_session_factory() as db:
+        c = await db.get(Company, company.id)
+        honeypot_a = Honeypot(
+            companies=[c], name="acme-honey-a", host_key_fingerprint="SHA256:fakefingerprint"
+        )
+        honeypot_b = Honeypot(
+            companies=[c], name="acme-honey-b", host_key_fingerprint="SHA256:fakefingerprint"
+        )
+        db.add_all([honeypot_a, honeypot_b])
+        user = User(
+            username="multi-honeypot-watcher",
+            auth_provider=AuthProvider.LOCAL,
+            is_active=True,
+            email="watcher2@example.com",
+        )
+        db.add(user)
+        await db.flush()
+        db.add(
+            NotificationRule(
+                user_id=user.id,
+                name="Two honeypots",
+                scope=NotificationScope.HONEYPOT,
+                honeypots=[honeypot_a, honeypot_b],
+                notify_on_alert=True,
+            )
+        )
+        app_settings = await get_or_create_app_settings(db)
+        app_settings.smtp_enabled = True
+        app_settings.smtp_host = "smtp.example.com"
+        await db.commit()
+        honeypot_b_id = honeypot_b.id
+
+    fake_result = LogPollResult(
+        events=[{"logtype": 4002, "local_time": "2026-01-01 12:00:00.000000"}], new_offset=1
+    )
+
+    async def fake_poll_log(honeypot, secret, timeout_seconds, *, path=""):
+        return fake_result
+
+    monkeypatch.setattr("app.tasks.jobs.poll_log", fake_poll_log)
+
+    sent_to: list[str] = []
+
+    async def fake_notify_alert(app_settings, *, rules, honeypot, **kwargs):
+        sent_to.extend(rule.user.username for rule in rules)
+
+    monkeypatch.setattr("app.tasks.jobs.notify_alert", fake_notify_alert)
+
+    # Only the *second* honeypot in the rule gets the event — the rule
+    # should still match, since it isn't scoped to just the first one.
+    await _poll_honeypot_canary_log(str(honeypot_b_id))
+
+    assert sent_to == ["multi-honeypot-watcher"]

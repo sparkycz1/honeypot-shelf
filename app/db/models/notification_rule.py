@@ -1,18 +1,21 @@
 """`NotificationRule` — a named, self-service alert a user sets up for
-either an entire `Company` they can see, or a single `Honeypot`. Open to
-**any** logged-in user regardless of access level, same as the feature it
+any number of `Company`/`Honeypot` rows they can see. Open to **any**
+logged-in user regardless of access level, same as the feature it
 replaces (`HoneypotNotificationSubscription`) — see
 `app.web.routes.notifications`'s module docstring.
 
-**Scope**: exactly one of `company_id`/`honeypot_id` is set (`scope` says
-which), never both, never neither — a superadmin can scope to any company/
-honeypot, anyone else only to one they already have access to (see
-`app.auth.scope`). A company-scoped rule applies to every honeypot
-currently in that company (re-resolved on every sweep — adding a honeypot
-to the company covers it automatically, no rule edit needed) plus, unlike
-a plain per-honeypot subscription, needs its own **per-honeypot** debounce
-state, since a company can hold many honeypots that each go up/down
-independently — see `NotificationRuleState`.
+**Scope**: `scope` says which *kind* of target this rule holds — every
+row in `companies` (a `COMPANY`-scoped rule) or every row in `honeypots`
+(a `HONEYPOT`-scoped rule), never a mix of both, never zero (see
+`app.db.models.notification_rule_scope` for the two plain link tables
+this is built on) — a superadmin can add any company/honeypot, anyone
+else only ones they already have access to (see `app.auth.scope`). Each
+company-scoped target applies to every honeypot currently in that company
+(re-resolved on every sweep — adding a honeypot to the company covers it
+automatically, no rule edit needed) plus, unlike a plain per-honeypot
+subscription, needs its own **per-honeypot** debounce state, since a
+company can hold many honeypots that each go up/down independently — see
+`NotificationRuleState`.
 
 **Delivery**: `delivery_channel` picks email (default) or a webhook POST
 (`app.services.webhook`, SSRF-guarded — see that module's docstring, since
@@ -52,6 +55,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.db.models.notification_log import NotificationChannel
+from app.db.models.notification_rule_scope import (
+    notification_rule_companies,
+    notification_rule_honeypots,
+)
 from app.db.pg_enum import pg_enum
 
 if TYPE_CHECKING:
@@ -87,12 +94,6 @@ class NotificationRule(Base):
     scope: Mapped[NotificationScope] = mapped_column(
         pg_enum(NotificationScope, name="notification_scope"), nullable=False
     )
-    company_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("companies.id", ondelete="CASCADE"), nullable=True, index=True
-    )
-    honeypot_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("honeypots.id", ondelete="CASCADE"), nullable=True, index=True
-    )
 
     delivery_channel: Mapped[NotificationChannel] = mapped_column(
         pg_enum(NotificationChannel, name="notification_channel"),
@@ -126,8 +127,12 @@ class NotificationRule(Base):
     )
 
     user: Mapped[User] = relationship(back_populates="notification_rules")
-    company: Mapped[Company | None] = relationship()
-    honeypot: Mapped[Honeypot | None] = relationship()
+    companies: Mapped[list[Company]] = relationship(
+        secondary=notification_rule_companies, order_by="Company.name", lazy="selectin"
+    )
+    honeypots: Mapped[list[Honeypot]] = relationship(
+        secondary=notification_rule_honeypots, order_by="Honeypot.name", lazy="selectin"
+    )
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid only
         return f"NotificationRule(id={self.id!r}, name={self.name!r}, scope={self.scope!r})"

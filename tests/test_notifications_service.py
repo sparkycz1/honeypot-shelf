@@ -65,6 +65,31 @@ def test_render_template_uses_the_rules_own_locale_for_the_default():
     assert subject == cs_default_subject.format(honeypot_name="x")
 
 
+def test_render_template_falls_back_to_the_instance_default_language(monkeypatch):
+    """A user who never explicitly picked a UI language (`User.locale` is
+    `None`) still gets their email in whatever language the instance is
+    actually configured to show them by default — not hardcoded English —
+    same fallback `request.state.locale` uses for their page views
+    (`app.auth.middleware`). Regression test: this used to fall back to
+    the hardcoded `DEFAULT_LOCALE_CODE` ("en") instead, so an instance
+    configured with `DEFAULT_LANGUAGE=cs` sent still-uncustomized rules'
+    emails in English even to a user who only ever saw the Czech UI."""
+    from app.core.config import get_settings
+
+    class _FakeSettings:
+        default_language = "cs"
+
+    monkeypatch.setattr(
+        "app.services.notifications.get_settings", lambda: _FakeSettings()
+    )
+    assert get_settings().default_language != "cs"  # sanity: the real default is unchanged
+
+    rule = _rule(user=User(username="no-locale-set", auth_provider=AuthProvider.LOCAL))
+    subject, _body = render_template("alert", rule, {"honeypot_name": "x"})
+    cs_default_subject, _ = default_template("alert", "cs")
+    assert subject == cs_default_subject.format(honeypot_name="x")
+
+
 def test_render_template_uses_rule_override_when_set():
     rule = _rule(alert_subject="Custom: {honeypot_name}", alert_body="Body for {honeypot_name}")
     subject, body = render_template("alert", rule, {"honeypot_name": "acme-honey1"})

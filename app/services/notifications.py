@@ -49,6 +49,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.db.models.app_settings import AppSettings
 from app.db.models.honeypot import Honeypot
 from app.db.models.notification_log import NotificationChannel, NotificationKind, NotificationLog
@@ -130,13 +131,20 @@ def render_template(kind: str, rule: NotificationRule, context: dict[str, Any]) 
     otherwise the built-in default, rendered in the rule *owner's*
     current `User.locale` (`rule.user` must already be loaded) — so a
     still-uncustomized rule's wording follows its owner's UI language,
-    not whatever was active when the rule was created. Missing
-    placeholders are left as literal text rather than raising."""
+    not whatever was active when the rule was created. A `None`
+    `User.locale` (never explicitly set) falls back to the instance's own
+    `default_language` setting, same as `request.state.locale` does for
+    that user's actual page views (`app.auth.middleware`) — falling back
+    to the hardcoded `DEFAULT_LOCALE_CODE` (English) here instead would
+    silently ignore a non-English `default_language` and send every
+    still-uncustomized rule's email in English regardless of the
+    instance's configured language. Missing placeholders are left as
+    literal text rather than raising."""
     subject_tpl = getattr(rule, f"{kind}_subject", None)
     body_tpl = getattr(rule, f"{kind}_body", None)
     if subject_tpl is None or body_tpl is None:
         default_subject, default_body = default_template(
-            kind, rule.user.locale or DEFAULT_LOCALE_CODE
+            kind, rule.user.locale or get_settings().default_language
         )
         subject_tpl = subject_tpl or default_subject
         body_tpl = body_tpl or default_body
