@@ -49,6 +49,12 @@ _NETBIRD_BIN = "netbird"
 # has been part of every NetBird release's `status` command).
 _MANAGEMENT_CONNECTED_MARKER = "Management: Connected"
 
+# Substring of the error NetBird's client prints when `up` is run with no
+# `--setup-key` and this peer has never actually registered — the one
+# case `ensure_connected()` below falls back to sending a setup key for.
+# Confirmed against a real NetBird client log.
+_NO_PERSISTED_PEER_MARKER = "no peer auth method provided"
+
 
 class NetbirdUnavailableError(Exception):
     """The `netbird` CLI isn't installed, or its daemon socket isn't
@@ -158,19 +164,60 @@ async def connect(
     return await _run(*args)
 
 
+async def reconnect() -> str:
+    """`netbird up` with **no** `--setup-key` — reconnects using this
+    peer's own already-persisted registration (`/etc/netbird/config.json`,
+    in the `netbird_state` volume) rather than re-registering. This is
+    what an ordinary restart should do: the stored setup key is single-use
+    on NetBird's side, already consumed by the very first successful
+    `connect()` — resending it here would just fail with "setup key is
+    invalid" against an already-registered peer. Raises
+    `NetbirdCommandError` (its `output` containing
+    `_NO_PERSISTED_PEER_MARKER`) if this peer genuinely has no persisted
+    registration to fall back on — see `ensure_connected()`, which is
+    what every caller other than the initial Settings -> VPN "Connect"
+    form should actually use."""
+    return await _run("up")
+
+
 async def disconnect() -> str:
     return await _run("down")
+
+
+async def ensure_connected(
+    *, setup_key: str, management_url: str | None, hostname: str | None = None
+) -> str:
+    """The safe way to (re)connect once NetBird has been set up at least
+    once: tries `reconnect()` (this peer's own persisted registration,
+    no key spent) first, and only falls back to `connect()` — actually
+    sending `setup_key` — when NetBird itself reports this peer has no
+    persisted registration at all (a fresh peer, or one removed from the
+    NetBird dashboard). Any other failure (timeout, unreachable
+    management server, ...) propagates as-is rather than masking it with
+    a doomed-to-fail retry against an already-consumed key — see
+    `app.main._reconnect_vpn_if_configured` and Settings -> VPN's
+    "Restart" button, the two places this used to resend the stored key
+    unconditionally and produce exactly that "setup key is invalid" retry
+    loop on every ordinary restart."""
+    try:
+        return await reconnect()
+    except NetbirdCommandError as exc:
+        if _NO_PERSISTED_PEER_MARKER not in exc.output:
+            raise
+        return await connect(setup_key=setup_key, management_url=management_url, hostname=hostname)
 
 
 async def restart(
     *, setup_key: str, management_url: str | None, hostname: str | None = None
 ) -> str:
-    """`disconnect()` then `connect()` — a clean reconnect rather than
-    just re-running `up` on top of an already-live session, for the same
-    reason "restart" means stop-then-start everywhere else in this app
-    (e.g. a honeypot's power actions). See `connect()`'s own docstring
-    for why `hostname` only actually takes effect for a peer that isn't
-    already registered."""
+    """`disconnect()` then `ensure_connected()` — a clean reconnect rather
+    than just re-running `up` on top of an already-live session, for the
+    same reason "restart" means stop-then-start everywhere else in this
+    app (e.g. a honeypot's power actions). `netbird down` tears down the
+    tunnel but does not erase this peer's persisted registration, so
+    `ensure_connected()` reconnects from that the same way a plain restart
+    would. See `connect()`'s own docstring for why `hostname` only
+    actually takes effect for a peer that isn't already registered."""
     with_errors: list[str] = []
     try:
         with_errors.append(await disconnect())
@@ -178,7 +225,9 @@ async def restart(
         # Not already connected is fine — proceed to connect anyway.
         with_errors.append(exc.output)
     with_errors.append(
-        await connect(setup_key=setup_key, management_url=management_url, hostname=hostname)
+        await ensure_connected(
+            setup_key=setup_key, management_url=management_url, hostname=hostname
+        )
     )
     return "\n".join(part for part in with_errors if part)
 

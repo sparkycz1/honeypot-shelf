@@ -129,15 +129,16 @@ async def _reconnect_vpn_if_configured() -> None:
     unavailable, same as any other integration that isn't currently
     working.
 
-    For NetBird specifically: only re-runs `netbird up --setup-key ...` when
-    the daemon *isn't* already connected. The sidecar's own state
-    (`/etc/netbird`, a named volume — see `docker-compose.vpn.yml`) usually
-    survives a `web`/`worker` restart on its own and the daemon reconnects
-    the already-registered peer by itself; blindly resending the stored
-    setup key on every startup fails once that key (single-use on NetBird's
-    side) has already been consumed by the first successful registration —
-    seen in the wild as a `setup key is invalid` retry loop in the NetBird
-    log after a plain container restart that changed nothing else."""
+    For NetBird specifically: only re-runs `netbird up` when the daemon
+    *isn't* already connected, and even then via `netbird.ensure_connected`
+    — this peer's own persisted registration first (`/etc/netbird`, a
+    named volume — see `docker-compose.vpn.yml`), never blindly resending
+    the stored setup key. That key is single-use on NetBird's side,
+    already consumed by the very first successful registration — sending
+    it again on every startup used to fail outright once that first
+    registration had gone through, seen in the wild as a `setup key is
+    invalid` retry loop in the NetBird log after a plain restart/upgrade
+    that changed nothing about the VPN config itself."""
     try:
         async with AsyncSessionLocal() as db:
             app_settings = await get_or_create_app_settings(db)
@@ -147,7 +148,7 @@ async def _reconnect_vpn_if_configured() -> None:
                 if current_status.connected:
                     logger.info("NetBird already connected on startup — leaving it as is.")
                 else:
-                    await netbird.connect(
+                    await netbird.ensure_connected(
                         setup_key=decrypt_secret(app_settings.netbird_setup_key_encrypted),
                         management_url=app_settings.netbird_management_url,
                         hostname=app_settings.netbird_hostname,

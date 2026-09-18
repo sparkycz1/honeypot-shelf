@@ -143,6 +143,108 @@ async def test_connect_omits_hostname_flag_when_not_given(monkeypatch):
     assert "--hostname" not in captured_args
 
 
+async def test_reconnect_sends_no_setup_key(monkeypatch):
+    """`reconnect()` is the "restart, don't re-register" primitive — it
+    must never send `--setup-key`, since that value is single-use on
+    NetBird's side and would already be spent by this peer's first
+    successful registration."""
+    captured_args: tuple[str, ...] = ()
+
+    async def _fake_exec(program, *args, **kwargs):
+        nonlocal captured_args
+        captured_args = args
+        return _FakeProcess(stdout=b"Connecting", returncode=0)
+
+    monkeypatch.setattr("asyncio.create_subprocess_exec", _fake_exec)
+    await netbird.reconnect()
+
+    assert "up" in captured_args
+    assert "--setup-key" not in captured_args
+
+
+async def test_ensure_connected_prefers_reconnect_over_spending_the_setup_key(monkeypatch):
+    """The regression this whole module exists to prevent: a NetBird
+    setup key is single-use, so once a peer is registered,
+    `ensure_connected()` must reconnect from its own persisted state
+    (plain `netbird up`, no key) rather than resending the stored key and
+    hitting "setup key is invalid" on every ordinary restart/upgrade."""
+    calls: list[tuple[str, ...]] = []
+
+    async def _fake_exec(program, *args, **kwargs):
+        calls.append(args)
+        return _FakeProcess(stdout=b"Connected", returncode=0)
+
+    monkeypatch.setattr("asyncio.create_subprocess_exec", _fake_exec)
+    await netbird.ensure_connected(setup_key="my-key", management_url=None)
+
+    assert len(calls) == 1
+    assert "--setup-key" not in calls[0]
+
+
+async def test_ensure_connected_falls_back_to_setup_key_for_a_genuinely_unregistered_peer(
+    monkeypatch,
+):
+    """A fresh peer (or one removed from the NetBird dashboard) has no
+    persisted registration to reconnect from — NetBird's own client
+    reports exactly this with "no peer auth method provided", the one
+    case `ensure_connected()` should actually spend the stored key for."""
+    calls: list[tuple[str, ...]] = []
+
+    async def _fake_exec(program, *args, **kwargs):
+        calls.append(args)
+        if "--setup-key" not in args:
+            return _FakeProcess(
+                stdout=b"no peer auth method provided, please use a setup key or interactive "
+                b"SSO login",
+                returncode=1,
+            )
+        return _FakeProcess(stdout=b"Connected", returncode=0)
+
+    monkeypatch.setattr("asyncio.create_subprocess_exec", _fake_exec)
+    result = await netbird.ensure_connected(setup_key="my-key", management_url=None)
+
+    assert result == "Connected"
+    assert len(calls) == 2
+    assert "--setup-key" not in calls[0]
+    assert "--setup-key" in calls[1] and "my-key" in calls[1]
+
+
+async def test_ensure_connected_does_not_mask_unrelated_reconnect_failures(monkeypatch):
+    """A transient failure (daemon busy, management server unreachable,
+    ...) must propagate as-is rather than triggering a fallback attempt
+    that would spend an otherwise-still-valid setup key on a problem a
+    key can't fix."""
+    calls: list[tuple[str, ...]] = []
+
+    async def _fake_exec(program, *args, **kwargs):
+        calls.append(args)
+        return _FakeProcess(stdout=b"context deadline exceeded", returncode=1)
+
+    monkeypatch.setattr("asyncio.create_subprocess_exec", _fake_exec)
+    with pytest.raises(netbird.NetbirdCommandError):
+        await netbird.ensure_connected(setup_key="my-key", management_url=None)
+
+    assert len(calls) == 1
+
+
+async def test_restart_reconnects_without_spending_the_setup_key(monkeypatch):
+    """`restart()` (Settings -> VPN's "Restart" button) used to always
+    resend the stored setup key on its own reconnect step — same
+    regression as `ensure_connected()`, just reached from a different
+    caller."""
+    calls: list[tuple[str, ...]] = []
+
+    async def _fake_exec(program, *args, **kwargs):
+        calls.append(args)
+        return _FakeProcess(stdout=b"ok", returncode=0)
+
+    monkeypatch.setattr("asyncio.create_subprocess_exec", _fake_exec)
+    await netbird.restart(setup_key="my-key", management_url=None)
+
+    assert calls[0][0] == "down"
+    assert "--setup-key" not in calls[1]
+
+
 async def test_status_parses_connected(monkeypatch):
     async def _fake_exec(*args, **kwargs):
         return _FakeProcess(
@@ -361,9 +463,13 @@ async def test_startup_reconnect_skips_netbird_connect_when_already_connected(
     assert connect_calls == []
 
 
-async def test_startup_reconnect_calls_netbird_connect_when_not_connected(
+async def test_startup_reconnect_prefers_persisted_state_over_the_setup_key(
     db_session_factory, monkeypatch
 ):
+    """The startup reconnect path goes through `ensure_connected()` —
+    when this peer's own persisted registration is enough to reconnect,
+    the stored setup key must never even be looked at (it's already been
+    consumed by the very first successful registration)."""
     from app.core.app_settings import get_or_create_app_settings
     from app.core.security import encrypt_secret
     from app.db.models.app_settings import VpnProvider
@@ -382,6 +488,56 @@ async def test_startup_reconnect_calls_netbird_connect_when_not_connected(
     async def _fake_status():
         return netbird.NetbirdStatus(connected=False, raw="Management: Disconnected")
 
+    reconnect_calls = []
+    connect_calls = []
+
+    async def _fake_reconnect():
+        reconnect_calls.append(True)
+        return "Connected"
+
+    async def _fake_connect(**kwargs):
+        connect_calls.append(kwargs)
+        return "Connected"
+
+    monkeypatch.setattr("app.main.netbird.status", _fake_status)
+    monkeypatch.setattr("app.main.netbird.reconnect", _fake_reconnect)
+    monkeypatch.setattr("app.main.netbird.connect", _fake_connect)
+
+    await _reconnect_vpn_if_configured()
+
+    assert reconnect_calls == [True]
+    assert connect_calls == []
+
+
+async def test_startup_reconnect_falls_back_to_the_setup_key_for_a_fresh_peer(
+    db_session_factory, monkeypatch
+):
+    """Only when NetBird itself reports this peer has no persisted
+    registration at all does the startup path fall back to spending the
+    stored setup key."""
+    from app.core.app_settings import get_or_create_app_settings
+    from app.core.security import encrypt_secret
+    from app.db.models.app_settings import VpnProvider
+    from app.main import _reconnect_vpn_if_configured
+
+    async with db_session_factory() as db:
+        app_settings = await get_or_create_app_settings(db)
+        app_settings.vpn_provider = VpnProvider.NETBIRD
+        app_settings.netbird_setup_key_encrypted = encrypt_secret("first-use-key")
+        app_settings.netbird_management_url = "https://nb.example.com"
+        app_settings.netbird_hostname = "honeypot-shelf"
+        await db.commit()
+
+    monkeypatch.setattr("app.main.AsyncSessionLocal", db_session_factory)
+
+    async def _fake_status():
+        return netbird.NetbirdStatus(connected=False, raw="Management: Disconnected")
+
+    async def _fake_reconnect():
+        raise netbird.NetbirdCommandError(
+            "netbird exited 1.", output="no peer auth method provided"
+        )
+
     connect_calls = []
 
     async def _fake_connect(**kwargs):
@@ -389,6 +545,7 @@ async def test_startup_reconnect_calls_netbird_connect_when_not_connected(
         return "Connected"
 
     monkeypatch.setattr("app.main.netbird.status", _fake_status)
+    monkeypatch.setattr("app.main.netbird.reconnect", _fake_reconnect)
     monkeypatch.setattr("app.main.netbird.connect", _fake_connect)
 
     await _reconnect_vpn_if_configured()
@@ -400,11 +557,21 @@ async def test_startup_reconnect_calls_netbird_connect_when_not_connected(
 
 
 async def test_disconnect_and_restart_flow(client, monkeypatch):
+    """`restart()` reconnects through `ensure_connected()` — this peer's
+    own persisted state, not by resending the stored setup key (see
+    `test_ensure_connected_prefers_reconnect_over_spending_the_setup_key`
+    for that behavior in isolation; this just confirms the Settings route
+    is actually wired through it)."""
     connect_calls = []
+    reconnect_calls = []
     disconnect_calls = []
 
     async def _fake_connect(*, setup_key, management_url, hostname=None):
         connect_calls.append(setup_key)
+        return "Connected"
+
+    async def _fake_reconnect():
+        reconnect_calls.append(True)
         return "Connected"
 
     async def _fake_disconnect():
@@ -412,6 +579,7 @@ async def test_disconnect_and_restart_flow(client, monkeypatch):
         return "Disconnected"
 
     monkeypatch.setattr("app.web.routes.settings.netbird.connect", _fake_connect)
+    monkeypatch.setattr("app.web.routes.settings.netbird.reconnect", _fake_reconnect)
     monkeypatch.setattr("app.web.routes.settings.netbird.disconnect", _fake_disconnect)
 
     form = await client.get("/settings", params={"tab": "vpn"})
@@ -439,9 +607,11 @@ async def test_disconnect_and_restart_flow(client, monkeypatch):
         follow_redirects=False,
     )
     assert restart_response.status_code == 303
-    # restart() = disconnect() then connect() again, reusing the stored key.
+    # restart() = disconnect() then ensure_connected() — reconnects from
+    # this peer's own persisted state, never resending the stored key.
     assert disconnect_calls == [True, True]
-    assert connect_calls == ["test-setup-key", "test-setup-key"]
+    assert reconnect_calls == [True]
+    assert connect_calls == ["test-setup-key"]
 
 
 # --- app.services.wireguard (mocked Unix-socket control server) ----------
