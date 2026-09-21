@@ -33,10 +33,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import grp
 import json
 import logging
 import os
+import pwd
 import stat
 from pathlib import Path
 
@@ -147,30 +147,31 @@ async def serve(socket_path: str | None = None) -> None:
     server = await asyncio.start_unix_server(_handle, path=socket_path)
     # `web`/`worker` connect as their own unprivileged `app` user (this
     # process itself runs as root — see docker-compose.vpn.yml — so it can
-    # `chown` to any group already in the shared image's /etc/group,
-    # `app` included, without needing to *be* that user). Owner-and-group
-    # read/write, nothing for "other": narrower than the world-writable
-    # 0o777/0o666 this used to be, which is what a CodeQL scan flags
-    # regardless of the fact that this socket is only ever reachable from
-    # inside this container's shared network/IPC namespace set, never
-    # from the network — restricting to the one group that actually needs
-    # it resolves that for real rather than arguing with the scanner.
+    # `chown` to any user/group already in the shared image's /etc/passwd
+    # /etc/group, `app` included, without needing to *be* that user).
+    # Making `app` the socket's own *owner* (not just its group) is what
+    # actually lets this be owner-only 0o600 — narrower than a group- or
+    # world-writable mode, which a CodeQL scan flags regardless of who's
+    # in that group, since it can't know the group is scoped to exactly
+    # the one process that needs it. 0o600 owned by `app` resolves that
+    # for real: nobody but the `app` user (root, or `app` itself) can open
+    # this socket at all.
     try:
-        app_gid = grp.getgrnam("app").gr_gid
+        app_pw = pwd.getpwnam("app")
     except KeyError:
         # Shouldn't happen — `vpn` reuses the exact same image as
-        # `web`/`worker`, which is what creates this group — but falling
+        # `web`/`worker`, which is what creates this user — but falling
         # back to the old world-writable mode keeps the control socket
         # actually usable (loudly) rather than silently unreachable from
         # `web`/`worker` if this image ever stops matching that
         # assumption.
         logger.error(
-            "No 'app' group found in this image — leaving the control socket world-writable."
+            "No 'app' user found in this image — leaving the control socket world-writable."
         )
         os.chmod(socket_path, 0o666)  # noqa: S103, PTH101 - see comment above
     else:
-        os.chown(socket_path, -1, app_gid)
-        os.chmod(socket_path, 0o660)  # noqa: PTH101 - see comment above
+        os.chown(socket_path, app_pw.pw_uid, app_pw.pw_gid)
+        os.chmod(socket_path, 0o600)  # noqa: PTH101 - see comment above
     logger.info("vpn_control_server listening on %s", socket_path)
     async with server:
         await server.serve_forever()

@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import grp
 import os
+import pwd
 import re
 import stat
 
@@ -660,14 +660,16 @@ async def _run_serve_briefly(tmp_path, monkeypatch):
     return socket_path, mode
 
 
-async def test_serve_restricts_the_socket_to_the_app_group(tmp_path, monkeypatch):
+async def test_serve_restricts_the_socket_to_the_app_user(tmp_path, monkeypatch):
     """Regression test for a CodeQL "overly permissive file permissions"
     finding: the control socket used to be world-writable (0o777, then
-    0o666) so `web`/`worker`'s own unprivileged `app` user could reach it
-    — this asserts it's now owner-and-group only (0o660), with the group
-    actually set to `app`, not left world-writable to get there."""
-    fake_group = grp.struct_group(("app", "x", 4242, []))
-    monkeypatch.setattr(grp, "getgrnam", lambda name: fake_group)
+    0o666, then a still-flagged 0o660) — this asserts it's now
+    owner-only (0o600), with ownership (both uid and gid) actually
+    transferred to `app`, since `web`/`worker` connect as that user and
+    a Unix socket's owner is exempt from its own "not group/world
+    writable" mode bits."""
+    fake_pw = pwd.struct_passwd(("app", "x", 4242, 4242, "", "/app", "/usr/sbin/nologin"))
+    monkeypatch.setattr(pwd, "getpwnam", lambda name: fake_pw)
 
     chown_calls: list[tuple[str, int, int]] = []
     monkeypatch.setattr(
@@ -676,11 +678,11 @@ async def test_serve_restricts_the_socket_to_the_app_group(tmp_path, monkeypatch
 
     socket_path, mode = await _run_serve_briefly(tmp_path, monkeypatch)
 
-    assert chown_calls == [(socket_path, -1, 4242)]
-    assert mode == 0o660
+    assert chown_calls == [(socket_path, 4242, 4242)]
+    assert mode == 0o600
 
 
-async def test_serve_falls_back_to_world_writable_if_the_app_group_is_missing(
+async def test_serve_falls_back_to_world_writable_if_the_app_user_is_missing(
     tmp_path, monkeypatch, caplog
 ):
     """Shouldn't happen in the real image (see serve()'s own comment), but
@@ -690,7 +692,7 @@ async def test_serve_falls_back_to_world_writable_if_the_app_group_is_missing(
     def _raise(name: str) -> None:
         raise KeyError(name)
 
-    monkeypatch.setattr(grp, "getgrnam", _raise)
+    monkeypatch.setattr(pwd, "getpwnam", _raise)
 
     with caplog.at_level("ERROR"):
         _socket_path, mode = await _run_serve_briefly(tmp_path, monkeypatch)
