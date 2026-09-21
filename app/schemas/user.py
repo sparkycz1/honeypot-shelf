@@ -20,9 +20,19 @@ MIN_PASSWORD_LENGTH = 12
 # Users edit form (app/web/routes/users.py).
 _EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
+# RFC 5321's own cap on a full email address (local part + "@" + domain).
+# `[^\s@]+` on both sides of the literal "." can each also match "."
+# characters, so a pathological input with no "@" (or one crafted with
+# many candidate split points) makes the regex engine try increasingly
+# many ways to divide it between the two groups before failing —
+# polynomial in the input length. A real address is always far under this
+# bound, so capping the length first (cheap, no backtracking) keeps that
+# blowup bounded regardless of what a caller passes in.
+_MAX_EMAIL_LENGTH = 254
+
 
 def looks_like_email(value: str) -> bool:
-    return bool(_EMAIL_PATTERN.match(value))
+    return len(value) <= _MAX_EMAIL_LENGTH and bool(_EMAIL_PATTERN.match(value))
 
 
 class MembershipInput(BaseModel):

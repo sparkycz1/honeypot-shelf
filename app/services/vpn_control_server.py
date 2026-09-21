@@ -144,12 +144,14 @@ async def serve(socket_path: str | None = None) -> None:
     with contextlib.suppress(FileNotFoundError):
         os.remove(socket_path)  # noqa: PTH107
     server = await asyncio.start_unix_server(_handle, path=socket_path)
-    # World-writable: `web`/`worker` connect as their own unprivileged
-    # `app` user, not root — this socket is the one deliberate exception,
-    # same reasoning as any other narrow local-only control surface (it's
-    # only ever reachable from inside this container's shared network/IPC
-    # namespace set, never from the network).
-    os.chmod(socket_path, 0o777)  # noqa: S103, PTH101 - see comment above
+    # World-read/writable (but not executable — meaningless for a socket
+    # anyway, so 0o666 rather than 0o777): `web`/`worker` connect as their
+    # own unprivileged `app` user, not root — this socket is the one
+    # deliberate exception, same reasoning as any other narrow local-only
+    # control surface (it's only ever reachable from inside this
+    # container's shared network/IPC namespace set, never from the
+    # network).
+    os.chmod(socket_path, 0o666)  # noqa: S103, PTH101 - see comment above
     logger.info("vpn_control_server listening on %s", socket_path)
     async with server:
         await server.serve_forever()

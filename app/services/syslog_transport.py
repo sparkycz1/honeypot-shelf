@@ -66,6 +66,13 @@ def send_syslog_sync(host: str, port: int, protocol: SyslogProtocol, message: st
     with socket.create_connection((host, port), timeout=_SOCKET_TIMEOUT_SECONDS) as sock:
         if protocol == SyslogProtocol.TLS:
             context = ssl.create_default_context()
+            # `create_default_context()` already excludes SSLv2/SSLv3/TLS
+            # 1.0/1.1 on any current OpenSSL, but only implicitly — same
+            # FIPS-aligned "no weak protocol versions" stance the SSH layer
+            # takes explicitly (see wiki/Architecture.md's "FIPS alignment"
+            # section) made explicit here too, rather than relying on
+            # whatever a given OpenSSL build's own default happens to be.
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
             with context.wrap_socket(sock, server_hostname=host) as tls_sock:
                 tls_sock.sendall(framed)
         else:

@@ -11,7 +11,8 @@ secret (`SECRET_KEY`, `ENCRYPTION_KEY`, `POSTGRES_PASSWORD`,
 random values, asks a handful of questions (timezone, whether to use the
 bundled Caddy reverse proxy and its domain/email if so, whether the app's
 own port should only accept local connections, the background-check
-intervals, the superadmin account's password — or auto-generates one — and
+intervals, the superadmin account's password (typed twice, masked — no
+auto-generate option, so it's never echoed or printed anywhere) and
 the host port to publish), writes `.env`, brings the stack up with `docker
 compose`, waits for the app to become healthy, generates and applies the
 first Alembic migration if none exists yet, and creates the first
@@ -34,6 +35,7 @@ manual alternative if you'd rather configure everything by hand instead.
 from __future__ import annotations
 
 import base64
+import getpass
 import json
 import os
 import re
@@ -98,6 +100,35 @@ def _prompt_yes_no(question: str, *, default: bool) -> bool:
     if not answer:
         return default
     return answer in ("y", "yes")
+
+
+# Same bound as `app.schemas.user.MIN_PASSWORD_LENGTH` — duplicated rather
+# than imported since this script runs on the host, outside the app's own
+# venv/container (same reasoning `scripts/create_admin.py` already has for
+# its own local copy of this constant).
+_MIN_PASSWORD_LENGTH = 12
+
+
+def _prompt_admin_password() -> str:
+    """Always asks for the password by hand (masked, `getpass` — never
+    echoed to the terminal or a shell history), typed twice to catch a
+    typo, same flow `scripts/create_admin.py`'s own interactive path
+    already uses. No auto-generate option any more: a password this
+    script prints to stdout (or, worse, could be scrolled back to in a
+    terminal's scrollback/session log) means the first credential to this
+    superadmin account was, briefly, in clear text somewhere outside the
+    operator's own head — a real fix for the CodeQL "clear-text logging
+    of sensitive information" finding this used to trigger, not just a
+    suppression."""
+    while True:
+        password = getpass.getpass("Superadmin account password: ")
+        if len(password) < _MIN_PASSWORD_LENGTH:
+            print(f"  (must be at least {_MIN_PASSWORD_LENGTH} characters)")
+            continue
+        if getpass.getpass("Confirm password: ") != password:
+            print("  (passwords didn't match — try again)")
+            continue
+        return password
 
 
 def _fernet_key() -> str:
@@ -421,13 +452,7 @@ def main() -> None:
     lines = _set_env_line(lines, "DEFAULT_LANGUAGE", default_language)
 
     print()
-    admin_password = input(
-        "Superadmin account password (leave empty to auto-generate one): "
-    ).strip()
-    generated_password: str | None = None
-    if not admin_password:
-        generated_password = secrets.token_urlsafe(18)
-        admin_password = generated_password
+    admin_password = _prompt_admin_password()
 
     print()
     port = _prompt("Host port to publish the app on", default="8080")
@@ -533,10 +558,7 @@ def main() -> None:
     else:
         print(f"URL:      http://<this-host>:{port}")
     print("Username: admin")
-    if generated_password:
-        print(f"Password: {generated_password}   (shown once — save it now)")
-    else:
-        print("Password: the one you entered")
+    print("Password: the one you entered")
     print("You'll be asked to change it on first login.")
     print()
     print("You'll also need at least one Company and one Honeypot before")
