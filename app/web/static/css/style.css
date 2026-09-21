@@ -193,21 +193,29 @@ p { margin: 0 0 var(--space-3); }
   white-space: nowrap;
 }
 
+/* A custom logo (LOGO_SOURCE) is an arbitrary image, not necessarily
+   square like the built-in mark — a wordmark/horizontal logo (the
+   common case) squeezed into a small square box via `object-fit:
+   contain` ends up tiny, most of the box empty, since the box's
+   *narrower* dimension (width, for a wide logo) is what actually
+   constrains it. Sized by height instead, same as `.brand-logo` (the
+   built-in wordmark image) already is — width follows the image's own
+   aspect ratio, capped by `max-width` so a very wide logo can't overflow
+   the header row/auth card. */
 .brand-mark {
   display: inline-flex;
-  width: 1.75rem;
-  height: 1.75rem;
+  height: 1.9em;
+  width: auto;
+  max-width: 8rem;
   flex-shrink: 0;
 }
-/* A custom logo (LOGO_SOURCE) is an arbitrary image, not necessarily
-   square/transparent like the built-in mark — contain it instead of
-   letting it stretch or overflow the header row. */
 img.brand-mark { object-fit: contain; }
 
 .brand-mark-lg {
   display: inline-flex;
-  width: 4rem;
   height: 4rem;
+  width: auto;
+  max-width: 16rem;
 }
 img.brand-mark-lg { object-fit: contain; }
 
