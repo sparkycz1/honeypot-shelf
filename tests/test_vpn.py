@@ -7,7 +7,12 @@ built on top of both."""
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import grp
+import os
 import re
+import stat
 
 import pytest
 
@@ -612,6 +617,86 @@ async def test_disconnect_and_restart_flow(client, monkeypatch):
     assert disconnect_calls == [True, True]
     assert reconnect_calls == [True]
     assert connect_calls == ["test-setup-key"]
+
+
+# --- app.services.vpn_control_server.serve (the socket's own permissions) --
+
+
+async def _run_serve_briefly(tmp_path, monkeypatch):
+    """`serve()` runs forever (`await server.serve_forever()`) — this lets
+    it get as far as chmod-ing the socket (the real `os.chmod`, wrapped to
+    also signal an event — the reliable "serve() got that far" marker,
+    since the socket *file* itself can already exist earlier, mid-await,
+    inside `asyncio.start_unix_server`, which raced the polling this
+    used to do instead), then cancels it, same shape every test below
+    needs."""
+    from app.services import vpn_control_server
+
+    real_chmod = os.chmod
+    reached_chmod = asyncio.Event()
+
+    def _chmod_then_signal(path: str, mode: int) -> None:
+        real_chmod(path, mode)
+        reached_chmod.set()
+
+    monkeypatch.setattr(os, "chmod", _chmod_then_signal)
+
+    socket_path = str(tmp_path / "control.sock")
+    task = asyncio.ensure_future(vpn_control_server.serve(socket_path))
+    try:
+        await asyncio.wait_for(reached_chmod.wait(), timeout=5)
+        # Grabbed here, not after cancelling below — closing the server
+        # (part of its own `async with server:` cleanup) unlinks the
+        # socket file, so it's gone by the time a caller could stat() it.
+        mode = stat.S_IMODE(os.stat(socket_path).st_mode)  # noqa: PTH116
+    finally:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+        if task.done() and not task.cancelled():
+            task_exc = task.exception()
+            if task_exc is not None:
+                raise task_exc
+    return socket_path, mode
+
+
+async def test_serve_restricts_the_socket_to_the_app_group(tmp_path, monkeypatch):
+    """Regression test for a CodeQL "overly permissive file permissions"
+    finding: the control socket used to be world-writable (0o777, then
+    0o666) so `web`/`worker`'s own unprivileged `app` user could reach it
+    — this asserts it's now owner-and-group only (0o660), with the group
+    actually set to `app`, not left world-writable to get there."""
+    fake_group = grp.struct_group(("app", "x", 4242, []))
+    monkeypatch.setattr(grp, "getgrnam", lambda name: fake_group)
+
+    chown_calls: list[tuple[str, int, int]] = []
+    monkeypatch.setattr(
+        os, "chown", lambda path, uid, gid: chown_calls.append((path, uid, gid))
+    )
+
+    socket_path, mode = await _run_serve_briefly(tmp_path, monkeypatch)
+
+    assert chown_calls == [(socket_path, -1, 4242)]
+    assert mode == 0o660
+
+
+async def test_serve_falls_back_to_world_writable_if_the_app_group_is_missing(
+    tmp_path, monkeypatch, caplog
+):
+    """Shouldn't happen in the real image (see serve()'s own comment), but
+    if it ever does, the socket must stay usable (loudly) rather than
+    silently unreachable from `web`/`worker`."""
+
+    def _raise(name: str) -> None:
+        raise KeyError(name)
+
+    monkeypatch.setattr(grp, "getgrnam", _raise)
+
+    with caplog.at_level("ERROR"):
+        _socket_path, mode = await _run_serve_briefly(tmp_path, monkeypatch)
+
+    assert "leaving the control socket world-writable" in caplog.text
+    assert mode == 0o666
 
 
 # --- app.services.wireguard (mocked Unix-socket control server) ----------

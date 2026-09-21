@@ -18,21 +18,21 @@ MIN_PASSWORD_LENGTH = 12
 # `User.email` (app/web/routes/auth.py), a notification rule's own
 # `target_email` (app/web/routes/notifications.py), and the admin-side
 # Users edit form (app/web/routes/users.py).
-_EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
-
-# RFC 5321's own cap on a full email address (local part + "@" + domain).
-# `[^\s@]+` on both sides of the literal "." can each also match "."
-# characters, so a pathological input with no "@" (or one crafted with
-# many candidate split points) makes the regex engine try increasingly
-# many ways to divide it between the two groups before failing —
-# polynomial in the input length. A real address is always far under this
-# bound, so capping the length first (cheap, no backtracking) keeps that
-# blowup bounded regardless of what a caller passes in.
-_MAX_EMAIL_LENGTH = 254
+#
+# The domain side is a dot-separated run of labels, each of which
+# excludes "." itself (`[^\s@.]+`) rather than the earlier, looser
+# `[^\s@]+\.[^\s@]+` — that version let the local part's own `[^\s@]+`
+# also match "." characters, so a long "@"-less input gave the regex
+# engine many different ways to divide it between the two groups before
+# failing: polynomial in the input length (CodeQL's py/polynomial-redos).
+# Excluding "." from each label removes the ambiguity — every character
+# now belongs to exactly one possible group — while still accepting
+# every real address a plain `[^\s@]+@[^\s@]+\.[^\s@]+` did.
+_EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$")
 
 
 def looks_like_email(value: str) -> bool:
-    return len(value) <= _MAX_EMAIL_LENGTH and bool(_EMAIL_PATTERN.match(value))
+    return bool(_EMAIL_PATTERN.match(value))
 
 
 class MembershipInput(BaseModel):
