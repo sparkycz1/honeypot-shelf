@@ -104,6 +104,25 @@ services:
     # own mode, the same "pre-create it looser before the real writer
     # touches it" trick `app.ssh.initialize`'s portscan-prep step already
     # uses for rsyslog's `kern.log`.
+    #
+    # `--config /etc/netbird/config.json` matters even more: without it,
+    # `netbird` writes its peer identity/registration to its own built-in
+    # default (`/var/lib/netbird/default.json` — NOT under any volume
+    # this file mounts), so it silently never persisted across a plain
+    # container recreation (an image rebuild on every upgrade, not just a
+    # `down -v`) — confirmed live: `/etc/netbird` stayed a genuinely empty
+    # directory on a box that *had* connected before, because nothing was
+    # ever writing there. Every restart then found no local registration
+    # to reconnect with and fell back to the stored setup key (see
+    # `app.services.netbird.ensure_connected`'s own docstring) — a key
+    # that's single-use and had already been spent by the first
+    # successful registration, so that fallback failed too, forever,
+    # until someone noticed and pasted in a brand new key (which then
+    # immediately hit the exact same unmounted-path problem on the next
+    # upgrade). Pointing `--config` at the already-mounted `netbird_state`
+    # volume is the actual fix — not the setup-key/version-pin mitigations
+    # from before, which were real but addressed a different, smaller
+    # problem sitting on top of this one.
     command:
       - bash
       - -c
@@ -112,7 +131,8 @@ services:
         touch /var/log/netbird/client.log && chmod 644 /var/log/netbird/client.log &&
         netbird service run
         --daemon-addr unix:///var/run/netbird/sock
-        --log-file /var/log/netbird/client.log &
+        --log-file /var/log/netbird/client.log
+        --config /etc/netbird/config.json &
         python -m app.services.vpn_control_server &
         wait -n
     # Only the daemon itself connects/disconnects (via `netbird up`/`down`
