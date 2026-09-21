@@ -58,7 +58,7 @@ python3 scripts/setup.py
 
 It generates every secret, asks a handful of questions (timezone, whether
 to use the bundled Caddy reverse proxy, background-check intervals, the
-superadmin password — or auto-generates one — and the host port), then
+superadmin password, and the host port), then
 applies the DB migration, brings the stack up, and creates the first
 superadmin account for you. Full details:
 [Installation](https://github.com/sparkycz1/honeypot-shelf/wiki/Installation).
@@ -94,6 +94,10 @@ other project conventions.
 ## 🔒 Security
 
 See [.github/SECURITY.md](.github/SECURITY.md) — supported versions and how to report a vulnerability.
+
+## 🤝 Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) — everyone participating is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## 📄 License
 
