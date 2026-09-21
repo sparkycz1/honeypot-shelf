@@ -143,10 +143,12 @@ class Settings(BaseSettings):
     # (`Honeypot.opencanary_log_poll_interval_seconds`).
 
     # --- Branding (nav-bar/login logo, favicon) ---
-    # Either an absolute/relative URL (http://, https://) or a filesystem
-    # path readable inside the `web` container. A URL is linked directly;
-    # a filesystem path is served by the app itself at `/branding/logo` (see
-    # app/web/routes/branding.py) — mount it into the container first (see
+    # Either a remote URL (http://, https://) or a filesystem path readable
+    # inside the `web` container. Both are served by the app itself at
+    # `/branding/logo`/`/branding/favicon` (see app/web/routes/branding.py)
+    # — never linked to directly, since this app's CSP (img-src 'self'
+    # data:;) wouldn't let a browser load a third-party URL anyway. A
+    # filesystem path needs mounting into the container first (see
     # docker-compose.yml's commented-out `branding` volume). Unset means
     # "use the built-in bee mark". See wiki/Installation.md#custom-logo--favicon.
     logo_source: str | None = Field(default=None, alias="LOGO_SOURCE")
