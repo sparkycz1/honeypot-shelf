@@ -17,9 +17,16 @@ code without one model importing the other's module.
 
 Supports plain UDP, plain TCP, and TCP-over-TLS ("encrypted syslog", for
 sending to a SIEM over a network you don't fully trust). The two TCP
-modes use RFC 6587 octet-counting framing (`"<length> <message>"`) so the
-receiver can split a stream into messages — UDP needs no framing, since
-one datagram is already one message.
+modes use RFC 6587 **non-transparent framing** — each message terminated
+by a trailing `\n` — rather than that RFC's other option, octet-counting
+(`"<length> <message>"`). Octet-counting is what this originally shipped
+with, and is equally valid per the RFC, but proved incompatible in
+practice: a real Wazuh deployment (and, going by its own `tcpdump`,
+every *other* syslog source feeding the same target) expects a plain
+newline-terminated line, not a byte-count prefix — the connection opens
+fine (TCP handshake completes) but the receiver never treats the message
+as complete, so it's silently dropped with no error on either side. UDP
+needs no framing at all, since one datagram is already one message.
 
 All socket I/O is blocking (`socket`/`ssl` are simplest for one-shot
 sends like this — no long-lived connection to manage), so `send_syslog`
@@ -61,8 +68,12 @@ def send_syslog_sync(host: str, port: int, protocol: SyslogProtocol, message: st
             sock.sendto(message.encode("utf-8"), (host, port))
         return
 
-    body = message.encode("utf-8")
-    framed = str(len(body)).encode("ascii") + b" " + body
+    # Non-transparent framing (RFC 6587 section 3.4.2): a trailing LF marks
+    # the end of the message. `message` itself never legitimately contains
+    # a literal newline (the RFC 5424 header has none, and the JSON MSG
+    # part is serialized with separators=(",", ":") — compact, no
+    # embedded newlines either), so there's nothing to escape.
+    framed = message.encode("utf-8") + b"\n"
     with socket.create_connection((host, port), timeout=_SOCKET_TIMEOUT_SECONDS) as sock:
         if protocol == SyslogProtocol.TLS:
             context = ssl.create_default_context()

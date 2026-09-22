@@ -50,7 +50,23 @@ def test_tls_send_sets_an_explicit_minimum_tls_version(monkeypatch):
     send_syslog_sync("siem.example.com", 6514, SyslogProtocol.TLS, "hello")
 
     assert fake_context.minimum_version == ssl.TLSVersion.TLSv1_2
-    assert fake_context.wrapped_socket.sent == b"5 hello"
+    assert fake_context.wrapped_socket.sent == b"hello\n"
+
+
+def test_tcp_send_uses_newline_terminated_framing_not_octet_counting(monkeypatch):
+    """Regression test: this used to prefix the message with its byte
+    length (RFC 6587 octet-counting) instead of terminating it with `\\n`
+    (RFC 6587 non-transparent framing) — valid per the RFC, but a real
+    Wazuh deployment (and every other syslog source feeding the same
+    target) expected the newline-terminated form instead, so the
+    octet-counted version was silently dropped: the TCP handshake
+    completed fine, but the message itself never arrived."""
+    plain_socket = _FakeSocket()
+    monkeypatch.setattr(socket, "create_connection", lambda *a, **k: plain_socket)
+
+    send_syslog_sync("siem.example.com", 514, SyslogProtocol.TCP, "hello")
+
+    assert plain_socket.sent == b"hello\n"
 
 
 def test_udp_send_does_not_touch_ssl_at_all(monkeypatch):
