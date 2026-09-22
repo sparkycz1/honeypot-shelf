@@ -6,10 +6,12 @@
   <parent>honeypotshelf</parent>
   <prematch type="pcre2">(?=\{"event":"audit")</prematch>
   <plugin_decoder offset="after_prematch">JSON_Decoder</plugin_decoder>
+  <use_own_name>true</use_own_name>
 </decoder>
 
 <decoder name="honeypotshelf-honeypot-alert">
   <parent>honeypotshelf</parent>
   <prematch type="pcre2">(?=\{"event":"honeypot_alert")</prematch>
   <plugin_decoder offset="after_prematch">JSON_Decoder</plugin_decoder>
+  <use_own_name>true</use_own_name>
 </decoder>
