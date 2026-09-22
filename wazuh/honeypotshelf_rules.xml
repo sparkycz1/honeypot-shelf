@@ -5,7 +5,7 @@
     <description>Honeypot Shelf audit: $(summary)</description>
   </rule>
 
-  <rule id="107001" level="3">
+  <rule id="107001" level="8">
     <decoded_as>honeypotshelf-honeypot-alert</decoded_as>
     <description>Honeypot Shelf: $(label) on honeypot "$(honeypot)"</description>
   </rule>
@@ -31,14 +31,14 @@
 
   <rule id="107005" level="8">
     <if_sid>107003</if_sid>
-    <field name="action" type="pcre2">^user\.login$</field>
+    <action type="pcre2">^user\.login$</action>
     <description>Honeypot Shelf: failed login attempt - $(summary)</description>
     <group>authentication_failed,authentication_failures,</group>
   </rule>
 
   <rule id="107006" level="6">
     <if_sid>107004</if_sid>
-    <field name="action" type="pcre2">^user\.login$</field>
+    <action type="pcre2">^user\.login$</action>
     <description>Honeypot Shelf: login attempt could not complete - $(summary)</description>
     <group>authentication_failed,</group>
   </rule>
@@ -52,250 +52,250 @@
 
   <rule id="107008" level="3">
     <if_sid>107002</if_sid>
-    <field name="action" type="pcre2">^user\.login$</field>
+    <action type="pcre2">^user\.login$</action>
     <description>Honeypot Shelf: successful login - $(summary)</description>
     <group>authentication_success,</group>
   </rule>
 
   <rule id="107009" level="8">
     <if_sid>107003</if_sid>
-    <field name="action" type="pcre2">^user\.login\.totp$</field>
+    <action type="pcre2">^user\.login\.totp$</action>
     <description>Honeypot Shelf: wrong two-factor code - $(summary)</description>
     <group>authentication_failed,</group>
   </rule>
 
   <rule id="107010" level="3">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">^user\.logout$</field>
+    <action type="pcre2">^user\.logout$</action>
     <description>Honeypot Shelf: user logged out - $(summary)</description>
   </rule>
 
   <rule id="107011" level="8">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">^user\.impersonate\.start$</field>
+    <action type="pcre2">^user\.impersonate\.start$</action>
     <description>Honeypot Shelf: a superadmin started impersonating another account - $(summary)</description>
   </rule>
 
   <rule id="107012" level="5">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">^user\.impersonate\.stop$</field>
+    <action type="pcre2">^user\.impersonate\.stop$</action>
     <description>Honeypot Shelf: impersonation session ended - $(summary)</description>
   </rule>
 
   <rule id="107013" level="5">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">^user\.create$</field>
+    <action type="pcre2">^user\.create$</action>
     <description>Honeypot Shelf: user account created - $(summary)</description>
   </rule>
 
   <rule id="107014" level="8">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">^user\.delete$</field>
+    <action type="pcre2">^user\.delete$</action>
     <description>Honeypot Shelf: user account deleted - $(summary)</description>
   </rule>
 
   <rule id="107015" level="3">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">^user\.update$</field>
+    <action type="pcre2">^user\.update$</action>
     <description>Honeypot Shelf: user account updated - $(summary)</description>
   </rule>
 
   <rule id="107016" level="5">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">^user\.password\.change$</field>
+    <action type="pcre2">^user\.password\.change$</action>
     <description>Honeypot Shelf: user changed their own password - $(summary)</description>
   </rule>
 
   <rule id="107017" level="5">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">^user\.password\.reset$</field>
+    <action type="pcre2">^user\.password\.reset$</action>
     <description>Honeypot Shelf: an administrator reset a user's password - $(summary)</description>
   </rule>
 
   <rule id="107018" level="8">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">^user\.totp\.disable$</field>
+    <action type="pcre2">^user\.totp\.disable$</action>
     <description>Honeypot Shelf: two-factor authentication disabled - $(summary)</description>
   </rule>
 
   <rule id="107019" level="3">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">^user\.totp\.enable$</field>
+    <action type="pcre2">^user\.totp\.enable$</action>
     <description>Honeypot Shelf: two-factor authentication enabled - $(summary)</description>
   </rule>
 
   <rule id="107020" level="3">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">^user\.webauthn\.register$</field>
+    <action type="pcre2">^user\.webauthn\.register$</action>
     <description>Honeypot Shelf: passkey registered - $(summary)</description>
   </rule>
 
   <rule id="107021" level="5">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">^user\.webauthn\.delete$</field>
+    <action type="pcre2">^user\.webauthn\.delete$</action>
     <description>Honeypot Shelf: passkey removed - $(summary)</description>
   </rule>
 
   <rule id="107022" level="5">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">^user\.api_token\.create$</field>
+    <action type="pcre2">^user\.api_token\.create$</action>
     <description>Honeypot Shelf: API token created - $(summary)</description>
   </rule>
 
   <rule id="107023" level="3">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">^user\.api_token\.revoke$</field>
+    <action type="pcre2">^user\.api_token\.revoke$</action>
     <description>Honeypot Shelf: API token revoked - $(summary)</description>
   </rule>
 
   <rule id="107024" level="5">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">^user\.sessions\.revoke_all$</field>
+    <action type="pcre2">^user\.sessions\.revoke_all$</action>
     <description>Honeypot Shelf: all sessions revoked for a user - $(summary)</description>
   </rule>
 
   <rule id="107025" level="5">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">^user\.ssh_keys\.</field>
+    <action type="pcre2">^user\.ssh_keys\.</action>
     <description>Honeypot Shelf: a superadmin's personal SSH keys changed - $(summary)</description>
   </rule>
 
   <rule id="107026" level="10">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">^auth\.csrf_rejected$</field>
+    <action type="pcre2">^auth\.csrf_rejected$</action>
     <description>Honeypot Shelf: CSRF token rejected - $(summary)</description>
     <group>attack,</group>
   </rule>
 
   <rule id="107027" level="8">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">^auth\.rate_limited$</field>
+    <action type="pcre2">^auth\.rate_limited$</action>
     <description>Honeypot Shelf: request rate-limited - $(summary)</description>
   </rule>
 
   <rule id="107028" level="5">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">^company\.</field>
+    <action type="pcre2">^company\.</action>
     <description>Honeypot Shelf: company configuration changed - $(summary)</description>
   </rule>
 
   <rule id="107029" level="8">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">^company\.delete$</field>
+    <action type="pcre2">^company\.delete$</action>
     <description>Honeypot Shelf: company deleted - $(summary)</description>
   </rule>
 
   <rule id="107030" level="3">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">^honeypot(s)?\.</field>
+    <action type="pcre2">^honeypot(s)?\.</action>
     <description>Honeypot Shelf: honeypot management action - $(summary)</description>
   </rule>
 
   <rule id="107031" level="5">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">^honeypot\.create$</field>
+    <action type="pcre2">^honeypot\.create$</action>
     <description>Honeypot Shelf: honeypot added - $(summary)</description>
   </rule>
 
   <rule id="107032" level="8">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">^honeypot\.delete$</field>
+    <action type="pcre2">^honeypot\.delete$</action>
     <description>Honeypot Shelf: honeypot deleted - $(summary)</description>
   </rule>
 
   <rule id="107033" level="5">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">^honeypot\.host_key\.trust$</field>
+    <action type="pcre2">^honeypot\.host_key\.trust$</action>
     <description>Honeypot Shelf: honeypot SSH host key trusted - $(summary)</description>
   </rule>
 
   <rule id="107034" level="5">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">^honeypot\.opencanary_config\.save$</field>
+    <action type="pcre2">^honeypot\.opencanary_config\.save$</action>
     <description>Honeypot Shelf: honeypot OpenCanary configuration changed - $(summary)</description>
   </rule>
 
   <rule id="107035" level="5">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">^honeypot\.config_(export|import)$</field>
+    <action type="pcre2">^honeypot\.config_(export|import)$</action>
     <description>Honeypot Shelf: honeypot configuration exported/imported - $(summary)</description>
   </rule>
 
   <rule id="107036" level="5">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">^honeypot\.terminal\.open$</field>
+    <action type="pcre2">^honeypot\.terminal\.open$</action>
     <description>Honeypot Shelf: interactive SSH terminal opened on a honeypot - $(summary)</description>
   </rule>
 
   <rule id="107037" level="3">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">^honeypot\.readonly\.enable$</field>
+    <action type="pcre2">^honeypot\.readonly\.enable$</action>
     <description>Honeypot Shelf: honeypot read-only root filesystem enabled - $(summary)</description>
   </rule>
 
   <rule id="107038" level="5">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">^honeypots\.bulk\.</field>
+    <action type="pcre2">^honeypots\.bulk\.</action>
     <description>Honeypot Shelf: bulk honeypot action - $(summary)</description>
   </rule>
 
   <rule id="107039" level="8">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">^settings\.</field>
+    <action type="pcre2">^settings\.</action>
     <description>Honeypot Shelf: instance settings changed - $(summary)</description>
   </rule>
 
   <rule id="107040" level="8">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">^audit_log\.</field>
+    <action type="pcre2">^audit_log\.</action>
     <description>Honeypot Shelf: audit log maintenance action - $(summary)</description>
   </rule>
 
   <rule id="107041" level="3">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">^scheduled_task\.</field>
+    <action type="pcre2">^scheduled_task\.</action>
     <description>Honeypot Shelf: scheduled task changed - $(summary)</description>
   </rule>
 
   <rule id="107042" level="3">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">^user\.notifications\.</field>
+    <action type="pcre2">^user\.notifications\.</action>
     <description>Honeypot Shelf: notification email/rule changed - $(summary)</description>
   </rule>
 
   <rule id="107043" level="3">
     <if_sid>107000</if_sid>
-    <field name="action" type="pcre2">\.purge$</field>
+    <action type="pcre2">\.purge$</action>
     <description>Honeypot Shelf: automatic retention purge ran - $(summary)</description>
   </rule>
 
-  <rule id="107045" level="5">
+  <rule id="107045" level="8">
     <if_sid>107001</if_sid>
     <field name="type" type="pcre2">^(2000|2001)$</field>
     <description>Honeypot Shelf: FTP honeypot activity on "$(honeypot)" from $(src_ip)</description>
     <group>authentication_failed,</group>
   </rule>
 
-  <rule id="107046" level="5">
+  <rule id="107046" level="8">
     <if_sid>107001</if_sid>
     <field name="type" type="pcre2">^(3000|3001|3002|3003)$</field>
     <description>Honeypot Shelf: HTTP honeypot activity on "$(honeypot)" from $(src_ip)</description>
   </rule>
 
-  <rule id="107047" level="6">
+  <rule id="107047" level="9">
     <if_sid>107046</if_sid>
     <field name="type" type="pcre2">^3001$</field>
     <description>Honeypot Shelf: HTTP credential submission to honeypot "$(honeypot)" from $(src_ip)</description>
     <group>authentication_failed,</group>
   </rule>
 
-  <rule id="107048" level="5">
+  <rule id="107048" level="8">
     <if_sid>107001</if_sid>
     <field name="type" type="pcre2">^(4000|4001|4002)$</field>
     <description>Honeypot Shelf: SSH honeypot activity on "$(honeypot)" from $(src_ip)</description>
   </rule>
 
-  <rule id="107049" level="7">
+  <rule id="107049" level="9">
     <if_sid>107048</if_sid>
     <field name="type" type="pcre2">^4002$</field>
     <description>Honeypot Shelf: SSH login attempt on honeypot "$(honeypot)" from $(src_ip)</description>
@@ -309,123 +309,123 @@
     <group>authentication_failures,</group>
   </rule>
 
-  <rule id="107051" level="5">
+  <rule id="107051" level="8">
     <if_sid>107001</if_sid>
     <field name="type" type="pcre2">^5000$</field>
     <description>Honeypot Shelf: SMB honeypot activity on "$(honeypot)" from $(src_ip)</description>
   </rule>
 
-  <rule id="107052" level="6">
+  <rule id="107052" level="8">
     <if_sid>107001</if_sid>
     <field name="type" type="pcre2">^(5001|5002|5003|5004|5005)$</field>
     <description>Honeypot Shelf: port scan detected against "$(honeypot)" from $(src_ip)</description>
     <group>recon,</group>
   </rule>
 
-  <rule id="107053" level="5">
+  <rule id="107053" level="8">
     <if_sid>107001</if_sid>
     <field name="type" type="pcre2">^(6001|6002)$</field>
     <description>Honeypot Shelf: Telnet honeypot activity on "$(honeypot)" from $(src_ip)</description>
   </rule>
 
-  <rule id="107054" level="7">
+  <rule id="107054" level="9">
     <if_sid>107053</if_sid>
     <field name="type" type="pcre2">^6001$</field>
     <description>Honeypot Shelf: Telnet login attempt on honeypot "$(honeypot)" from $(src_ip)</description>
     <group>authentication_failed,</group>
   </rule>
 
-  <rule id="107055" level="5">
+  <rule id="107055" level="8">
     <if_sid>107001</if_sid>
     <field name="type" type="pcre2">^7001$</field>
     <description>Honeypot Shelf: HTTP proxy honeypot activity on "$(honeypot)" from $(src_ip)</description>
     <group>authentication_failed,</group>
   </rule>
 
-  <rule id="107056" level="5">
+  <rule id="107056" level="8">
     <if_sid>107001</if_sid>
     <field name="type" type="pcre2">^(8001|9003)$</field>
     <description>Honeypot Shelf: MySQL honeypot activity on "$(honeypot)" from $(src_ip)</description>
   </rule>
 
-  <rule id="107057" level="5">
+  <rule id="107057" level="8">
     <if_sid>107001</if_sid>
     <field name="type" type="pcre2">^(9001|9002)$</field>
     <description>Honeypot Shelf: MSSQL honeypot activity on "$(honeypot)" from $(src_ip)</description>
     <group>authentication_failed,</group>
   </rule>
 
-  <rule id="107058" level="4">
+  <rule id="107058" level="8">
     <if_sid>107001</if_sid>
     <field name="type" type="pcre2">^10001$</field>
     <description>Honeypot Shelf: TFTP honeypot activity on "$(honeypot)" from $(src_ip)</description>
   </rule>
 
-  <rule id="107059" level="5">
+  <rule id="107059" level="8">
     <if_sid>107001</if_sid>
     <field name="type" type="pcre2">^11001$</field>
     <description>Honeypot Shelf: NTP monlist request on "$(honeypot)" from $(src_ip)</description>
     <group>recon,</group>
   </rule>
 
-  <rule id="107060" level="5">
+  <rule id="107060" level="8">
     <if_sid>107001</if_sid>
     <field name="type" type="pcre2">^12001$</field>
     <description>Honeypot Shelf: VNC honeypot activity on "$(honeypot)" from $(src_ip)</description>
     <group>authentication_failed,</group>
   </rule>
 
-  <rule id="107061" level="4">
+  <rule id="107061" level="8">
     <if_sid>107001</if_sid>
     <field name="type" type="pcre2">^13001$</field>
     <description>Honeypot Shelf: SNMP honeypot activity on "$(honeypot)" from $(src_ip)</description>
   </rule>
 
-  <rule id="107062" level="5">
+  <rule id="107062" level="8">
     <if_sid>107001</if_sid>
     <field name="type" type="pcre2">^14001$</field>
     <description>Honeypot Shelf: RDP honeypot activity on "$(honeypot)" from $(src_ip)</description>
     <group>authentication_failed,</group>
   </rule>
 
-  <rule id="107063" level="4">
+  <rule id="107063" level="8">
     <if_sid>107001</if_sid>
     <field name="type" type="pcre2">^15001$</field>
     <description>Honeypot Shelf: SIP honeypot activity on "$(honeypot)" from $(src_ip)</description>
   </rule>
 
-  <rule id="107064" level="4">
+  <rule id="107064" level="8">
     <if_sid>107001</if_sid>
     <field name="type" type="pcre2">^16001$</field>
     <description>Honeypot Shelf: Git clone request on "$(honeypot)" from $(src_ip)</description>
   </rule>
 
-  <rule id="107065" level="5">
+  <rule id="107065" level="8">
     <if_sid>107001</if_sid>
     <field name="type" type="pcre2">^17001$</field>
     <description>Honeypot Shelf: Redis command received on "$(honeypot)" from $(src_ip)</description>
   </rule>
 
-  <rule id="107066" level="3">
+  <rule id="107066" level="8">
     <if_sid>107001</if_sid>
     <field name="type" type="pcre2">^1800[1-5]$</field>
     <description>Honeypot Shelf: TCP banner honeypot activity on "$(honeypot)" from $(src_ip)</description>
   </rule>
 
-  <rule id="107067" level="4">
+  <rule id="107067" level="8">
     <if_sid>107001</if_sid>
     <field name="type" type="pcre2">^19001$</field>
     <description>Honeypot Shelf: LLMNR query response from "$(honeypot)" to $(src_ip)</description>
   </rule>
 
-  <rule id="107068" level="5">
+  <rule id="107068" level="8">
     <if_sid>107001</if_sid>
     <field name="type" type="pcre2">^20001$</field>
     <description>Honeypot Shelf: MongoDB honeypot activity on "$(honeypot)" from $(src_ip)</description>
     <group>authentication_failed,</group>
   </rule>
 
-  <rule id="107069" level="3">
+  <rule id="107069" level="8">
     <if_sid>107001</if_sid>
     <field name="type" type="pcre2">^990(0[0-9])$</field>
     <description>Honeypot Shelf: custom OpenCanary event on "$(honeypot)" from $(src_ip)</description>
