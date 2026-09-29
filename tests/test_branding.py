@@ -67,7 +67,7 @@ def test_resolve_branding_url_local_file_goes_through_served_route(tmp_path):
 
 
 def test_favicon_url_falls_back_to_the_built_in_mark(monkeypatch):
-    monkeypatch.setattr("app.web.branding.get_settings", lambda: _FakeSettings())
+    monkeypatch.setattr("app.web.branding.get_settings", _FakeSettings)
     assert branding.favicon_url() == branding.DEFAULT_FAVICON_URL
 
 
@@ -90,7 +90,7 @@ async def test_serves_an_existing_local_file(tmp_path, monkeypatch):
 
 
 async def test_404s_when_nothing_configured(monkeypatch):
-    monkeypatch.setattr("app.web.routes.branding.get_settings", lambda: _FakeSettings())
+    monkeypatch.setattr("app.web.routes.branding.get_settings", _FakeSettings)
 
     with pytest.raises(Exception) as exc_info:
         await branding_routes.branding_logo()

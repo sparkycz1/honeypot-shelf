@@ -14,7 +14,6 @@ from app.services.canary_activity_history import (
 )
 
 _HONEYPOT_ID = uuid.uuid4()
-_COMPANY_ID = uuid.uuid4()
 
 
 def _event(event_type: str, occurred_at: datetime, **kwargs: object) -> HoneypotEvent:

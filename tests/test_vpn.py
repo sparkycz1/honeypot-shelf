@@ -8,7 +8,6 @@ built on top of both."""
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import os
 import pwd
 import re
@@ -651,8 +650,7 @@ async def _run_serve_briefly(tmp_path, monkeypatch):
         mode = stat.S_IMODE(os.stat(socket_path).st_mode)  # noqa: PTH116
     finally:
         task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
+        await asyncio.gather(task, return_exceptions=True)
         if task.done() and not task.cancelled():
             task_exc = task.exception()
             if task_exc is not None:

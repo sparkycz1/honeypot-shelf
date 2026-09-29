@@ -34,11 +34,13 @@ def test_importing_celery_app_alone_configures_every_mapper_cleanly():
         [
             sys.executable,
             "-c",
-            "import sys; sys.argv = ['celery', '-A', 'app.tasks.celery_app', 'beat']; "
-            "import app.tasks.celery_app; "
-            "from sqlalchemy.orm import configure_mappers; "
-            "configure_mappers(); "
-            "print('OK')",
+            (
+                "import sys; sys.argv = ['celery', '-A', 'app.tasks.celery_app', 'beat']; "
+                "import app.tasks.celery_app; "
+                "from sqlalchemy.orm import configure_mappers; "
+                "configure_mappers(); "
+                "print('OK')"
+            ),
         ],
         capture_output=True,
         text=True,

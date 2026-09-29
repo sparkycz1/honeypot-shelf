@@ -48,10 +48,6 @@ FieldType = Literal["bool", "int", "str", "list"]
 
 OPENCANARY_CONFIG_PATH = "/etc/opencanaryd/opencanary.conf"
 
-# Keys this editor never reads into a form field or writes back — merged
-# through unchanged from whatever's already in the file. See module
-# docstring.
-_UNMANAGED_KEYS = ("logger", "telnet.honeycreds")
 
 
 @dataclass(frozen=True)
@@ -384,7 +380,7 @@ def apply_form_to_config(
 ) -> dict[str, Any]:
     """Merges submitted form values into `config` (a copy — the input is
     never mutated), preserving every key this editor doesn't manage
-    (`_UNMANAGED_KEYS`, and any other key a hand-edit or a newer
+    (`logger`, `telnet.honeycreds`, and any other key a hand-edit or a newer
     OpenCanary version added that this schema doesn't know about) exactly
     as read. A checkbox absent from `form` means "unchecked", the normal
     HTML forms convention — every boolean field is set explicitly either
