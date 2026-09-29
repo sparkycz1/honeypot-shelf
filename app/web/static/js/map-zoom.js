@@ -64,9 +64,9 @@
     }
 
     function clampView(next) {
-      let { x, y, w, h } = next;
+      let { x, y, w } = next;
       w = Math.min(Math.max(w, minW), maxW);
-      h = (w / base.w) * base.h;
+      const h = (w / base.w) * base.h;
       x = Math.min(Math.max(x, base.x), base.x + base.w - w);
       y = Math.min(Math.max(y, base.y), base.y + base.h - h);
       return { x, y, w, h };
