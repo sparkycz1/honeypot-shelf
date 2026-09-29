@@ -14,7 +14,6 @@
 (function () {
   "use strict";
 
-  const MIN_SCALE = 1; // 1x = the base viewBox, i.e. "fully zoomed out"
   const MAX_SCALE = 10;
   const WHEEL_ZOOM_FACTOR = 1.25;
   const BUTTON_ZOOM_FACTOR = 1.5;
@@ -193,7 +192,7 @@
   // Same reasoning as monitoring-chart.js's own htmx:afterSwap listener —
   // the Map page's live-refresh (map/index.html, data-live-fleet) swaps
   // this whole panel's DOM on every push/poll, so a freshly inserted
-  // viewport needs setUp re-run on it, and MIN_SCALE=1 means resetting
+  // viewport needs setUp re-run on it, and zoom 1x (the base viewBox) means resetting
   // to the base viewBox on every refresh (rather than trying to preserve
   // whatever the viewer had zoomed to) is an acceptable, simple choice —
   // the same one the Dashboard/Audit log's own live-refreshed tables

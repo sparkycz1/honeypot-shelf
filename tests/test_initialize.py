@@ -715,7 +715,7 @@ class _FakeWebSocket:
 
 
 async def test_wait_for_reboot_succeeds_once_the_device_answers_again(monkeypatch):
-    import app.web.routes.initialize_ws as initialize_ws_module
+    from app.web.routes import initialize_ws as initialize_ws_module
 
     monkeypatch.setattr(initialize_ws_module, "REBOOT_GRACE_SECONDS", 0)
     monkeypatch.setattr(initialize_ws_module, "REBOOT_POLL_INTERVAL_SECONDS", 0)
@@ -735,7 +735,7 @@ async def test_wait_for_reboot_succeeds_once_the_device_answers_again(monkeypatc
 
 
 async def test_wait_for_reboot_reports_a_fingerprint_mismatch_immediately(monkeypatch):
-    import app.web.routes.initialize_ws as initialize_ws_module
+    from app.web.routes import initialize_ws as initialize_ws_module
 
     monkeypatch.setattr(initialize_ws_module, "REBOOT_GRACE_SECONDS", 0)
     monkeypatch.setattr(initialize_ws_module, "REBOOT_POLL_INTERVAL_SECONDS", 0)
@@ -755,8 +755,8 @@ async def test_wait_for_reboot_reports_a_fingerprint_mismatch_immediately(monkey
 
 
 async def test_wait_for_reboot_times_out_if_the_device_never_comes_back(monkeypatch):
-    import app.web.routes.initialize_ws as initialize_ws_module
     from app.ssh.exceptions import SSHConnectionError
+    from app.web.routes import initialize_ws as initialize_ws_module
 
     monkeypatch.setattr(initialize_ws_module, "REBOOT_GRACE_SECONDS", 0)
     monkeypatch.setattr(initialize_ws_module, "REBOOT_POLL_INTERVAL_SECONDS", 0)

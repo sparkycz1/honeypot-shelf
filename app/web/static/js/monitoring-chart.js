@@ -21,7 +21,7 @@
 
 (function () {
   function formatBytesRate(value) {
-    if (value === null || value === undefined) return "—";
+    if (value == null) return "—";
     const units = ["B/s", "KB/s", "MB/s", "GB/s"];
     let v = value;
     let i = 0;
@@ -33,7 +33,7 @@
   }
 
   function formatValue(value, unit, bytesRate) {
-    if (value === null || value === undefined) return "—";
+    if (value == null) return "—";
     if (bytesRate) return formatBytesRate(value);
     const rounded = Math.abs(value) >= 10 ? value.toFixed(0) : value.toFixed(1);
     return `${rounded}${unit}`;
