@@ -21,7 +21,6 @@
 
 (function () {
   function formatBytesRate(value) {
-    if (value == null) return "—";
     const units = ["B/s", "KB/s", "MB/s", "GB/s"];
     let v = value;
     let i = 0;
