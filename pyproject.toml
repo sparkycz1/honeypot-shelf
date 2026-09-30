@@ -1,6 +1,6 @@
 [project]
 name = "honeypot-shelf"
-version = "0.43.14"
+version = "0.44.0"
 description = "Management and monitoring overview for a fleet of OpenCanary honeypots, across multiple companies"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -84,6 +84,12 @@ dev = [
     "types-croniter>=6.0.0",
     "types-ldap3>=2.9.13.20260827",
     "types-qrcode>=8.2.0.20260518",
+]
+# Coverage-guided fuzzing (`python -m fuzz.run`, `.github/workflows/fuzz.yml`).
+# Atheris ships Linux wheels only; `tests/test_fuzz_targets.py` runs the same
+# targets without it on every OS.
+fuzz = [
+    "atheris>=3.1.0 ; sys_platform == 'linux'",
 ]
 
 [tool.uv]

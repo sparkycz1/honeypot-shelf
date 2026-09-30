@@ -80,7 +80,9 @@ def parse_read_output(raw: str) -> LogPollResult:
             continue
         try:
             parsed = json.loads(stripped)
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, RecursionError):
+            # RecursionError: a line nested thousands of levels deep —
+            # skipped like any other unparseable line, not fatal to the poll.
             continue
         if isinstance(parsed, dict):
             events.append(parsed)

@@ -106,7 +106,7 @@ def _prompt_yes_no(question: str, *, default: bool) -> bool:
 # than imported since this script runs on the host, outside the app's own
 # venv/container (same reasoning `scripts/create_admin.py` already has for
 # its own local copy of this constant).
-_MIN_PASSWORD_LENGTH = 12
+_MIN_LENGTH = 12
 
 
 def _prompt_admin_password() -> str:
@@ -122,8 +122,8 @@ def _prompt_admin_password() -> str:
     suppression."""
     while True:
         password = getpass.getpass("Superadmin account password: ")
-        if len(password) < _MIN_PASSWORD_LENGTH:
-            print(f"  (must be at least {_MIN_PASSWORD_LENGTH} characters)")
+        if len(password) < _MIN_LENGTH:
+            print(f"  (must be at least {_MIN_LENGTH} characters)")
             continue
         if getpass.getpass("Confirm password: ") != password:
             print("  (passwords didn't match — try again)")

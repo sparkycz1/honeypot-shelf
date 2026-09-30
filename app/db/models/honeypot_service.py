@@ -24,9 +24,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
-if TYPE_CHECKING:
-    from app.db.models.honeypot import Honeypot
-
 
 class HoneypotService(Base):
     __tablename__ = "honeypot_services"
@@ -54,3 +51,12 @@ class HoneypotService(Base):
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid only
         return f"HoneypotService(honeypot_id={self.honeypot_id!r}, unit={self.unit!r})"
+
+
+# Imported last, and only for type checking: every class above is already
+# defined by the time this module points back at the models it relates
+# to, so no import cycle can leave a class half-defined (CodeQL's
+# "Module-level cyclic import"). SQLAlchemy resolves the relationship
+# targets by name through its registry, never through these imports.
+if TYPE_CHECKING:
+    from app.db.models.honeypot import Honeypot

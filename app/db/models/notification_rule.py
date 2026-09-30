@@ -54,17 +54,12 @@ from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.db.models.notification_log import NotificationChannel
+from app.db.models.notification_channel import NotificationChannel
 from app.db.models.notification_rule_scope import (
     notification_rule_companies,
     notification_rule_honeypots,
 )
 from app.db.pg_enum import pg_enum
-
-if TYPE_CHECKING:
-    from app.db.models.company import Company
-    from app.db.models.honeypot import Honeypot
-    from app.db.models.user import User
 
 # Sane bounds for the debounce fields — generous on both ends (a minute is
 # a legitimate "tell me the second it drops" choice for a critical
@@ -136,3 +131,14 @@ class NotificationRule(Base):
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid only
         return f"NotificationRule(id={self.id!r}, name={self.name!r}, scope={self.scope!r})"
+
+
+# Imported last, and only for type checking: every class above is already
+# defined by the time this module points back at the models it relates
+# to, so no import cycle can leave a class half-defined (CodeQL's
+# "Module-level cyclic import"). SQLAlchemy resolves the relationship
+# targets by name through its registry, never through these imports.
+if TYPE_CHECKING:
+    from app.db.models.company import Company
+    from app.db.models.honeypot import Honeypot
+    from app.db.models.user import User

@@ -58,15 +58,8 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.db.models.access_level import AccessLevel as AccessLevel  # re-exported
 from app.db.pg_enum import pg_enum
-
-if TYPE_CHECKING:
-    from app.db.models.api_token import ApiToken
-    from app.db.models.company_membership import CompanyMembership
-    from app.db.models.notification_rule import NotificationRule
-    from app.db.models.totp_recovery_code import TotpRecoveryCode
-    from app.db.models.user_session import UserSession
-    from app.db.models.webauthn_credential import WebAuthnCredential
 
 
 class AuthProvider(enum.StrEnum):
@@ -74,14 +67,6 @@ class AuthProvider(enum.StrEnum):
     LDAP = "ldap"
     OIDC = "oidc"
 
-
-class AccessLevel(enum.StrEnum):
-    """What a non-superadmin user may do within their own `Company` — see
-    the module docstring. `READ_WRITE` always implies everything `READ`
-    grants; there is no third tier."""
-
-    READ = "read"
-    READ_WRITE = "read_write"
 
 
 class User(Base):
@@ -235,3 +220,17 @@ class User(Base):
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid only
         return f"User(id={self.id!r}, username={self.username!r})"
+
+
+# Imported last, and only for type checking: every class above is already
+# defined by the time this module points back at the models it relates
+# to, so no import cycle can leave a class half-defined (CodeQL's
+# "Module-level cyclic import"). SQLAlchemy resolves the relationship
+# targets by name through its registry, never through these imports.
+if TYPE_CHECKING:
+    from app.db.models.api_token import ApiToken
+    from app.db.models.company_membership import CompanyMembership
+    from app.db.models.notification_rule import NotificationRule
+    from app.db.models.totp_recovery_code import TotpRecoveryCode
+    from app.db.models.user_session import UserSession
+    from app.db.models.webauthn_credential import WebAuthnCredential
