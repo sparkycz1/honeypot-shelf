@@ -31,7 +31,10 @@ def parse_ssh_public_keys(raw: str) -> list[str]:
             continue
         try:
             asyncssh.import_public_key(stripped)
-        except asyncssh.KeyImportError as exc:
+        except Exception as exc:
+            # Not only KeyImportError: a malformed PEM/DER body reaches
+            # asyncssh's ASN.1 decoder, which raises its own errors (found by
+            # fuzzing) — any failure to parse a pasted key means "invalid key".
             shown = stripped if len(stripped) <= 60 else stripped[:57] + "..."
             raise InvalidSshPublicKeyError(f"Not a valid SSH public key: {shown}") from exc
         keys.append(stripped)

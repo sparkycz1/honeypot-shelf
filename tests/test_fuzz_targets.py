@@ -44,6 +44,8 @@ _SEEDS: list[bytes] = [
     b"true",
     b"[1]",
     b"[" * 5000,
+    # A pasted "key" whose DER body trips asyncssh's ASN.1 decoder.
+    b"0#" + b"\x03" * 96,
     # A tag cut at its length cap right after a space.
     b"a" * 63 + b" b",
 ]
