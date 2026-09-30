@@ -18,11 +18,14 @@ paths-ignore:
   - app/web/templates
 
 query-filters:
-  # Models import each other only under `if TYPE_CHECKING:` (for the
-  # relationship annotations); nothing is imported cyclically at runtime,
-  # but this query doesn't recognise the guard.
+  # Two models with a two-way relationship (User <-> Company, Honeypot <->
+  # HoneypotEvent, ...) name each other in their annotations, so each imports
+  # the other for type checking — at the bottom of the module, under
+  # `if TYPE_CHECKING:`, never at runtime. That is still a "cycle" to this
+  # note-level query; the one that matters, py/unsafe-cyclic-import (a class
+  # used before its module finished importing), stays enabled and clean.
   - exclude:
-      id: py/unsafe-cyclic-import
+      id: py/cyclic-import
   # ruff's F401 already enforces unused imports; the only ones left are
   # deliberate side-effect imports (registering every model), marked noqa.
   - exclude:

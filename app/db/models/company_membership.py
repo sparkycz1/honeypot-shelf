@@ -22,12 +22,8 @@ from sqlalchemy import ForeignKey, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.db.models.user import AccessLevel
+from app.db.models.access_level import AccessLevel
 from app.db.pg_enum import pg_enum
-
-if TYPE_CHECKING:
-    from app.db.models.company import Company
-    from app.db.models.user import User
 
 
 class CompanyMembership(Base):
@@ -57,3 +53,13 @@ class CompanyMembership(Base):
             f"CompanyMembership(user_id={self.user_id!r}, company_id={self.company_id!r}, "
             f"access_level={self.access_level!r})"
         )
+
+
+# Imported last, and only for type checking: every class above is already
+# defined by the time this module points back at the models it relates
+# to, so no import cycle can leave a class half-defined (CodeQL's
+# "Module-level cyclic import"). SQLAlchemy resolves the relationship
+# targets by name through its registry, never through these imports.
+if TYPE_CHECKING:
+    from app.db.models.company import Company
+    from app.db.models.user import User

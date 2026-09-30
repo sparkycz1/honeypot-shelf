@@ -36,10 +36,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
-if TYPE_CHECKING:
-    from app.db.models.honeypot import Honeypot
-    from app.db.models.notification_rule import NotificationRule
-
 
 class NotificationRuleState(Base):
     __tablename__ = "notification_rule_states"
@@ -64,3 +60,13 @@ class NotificationRuleState(Base):
         return (
             f"NotificationRuleState(rule_id={self.rule_id!r}, honeypot_id={self.honeypot_id!r})"
         )
+
+
+# Imported last, and only for type checking: every class above is already
+# defined by the time this module points back at the models it relates
+# to, so no import cycle can leave a class half-defined (CodeQL's
+# "Module-level cyclic import"). SQLAlchemy resolves the relationship
+# targets by name through its registry, never through these imports.
+if TYPE_CHECKING:
+    from app.db.models.honeypot import Honeypot
+    from app.db.models.notification_rule import NotificationRule

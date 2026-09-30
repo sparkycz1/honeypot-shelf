@@ -333,8 +333,15 @@ def parse_config(raw: str) -> dict[str, Any]:
     (`"ftp.port"`, not nested `{"ftp": {"port": ...}}`) — OpenCanary's own
     format, not this app's choice. Raises `json.JSONDecodeError` on
     malformed content (surfaced to the operator as an error, not silently
-    swallowed — a broken config on disk needs to be seen)."""
-    return dict(json.loads(raw))
+    swallowed — a broken config on disk needs to be seen), and a plain
+    `ValueError` on valid JSON that isn't an object (`[]`, `true`, `0`)."""
+    try:
+        parsed = json.loads(raw)
+    except RecursionError as exc:
+        raise ValueError("the config is nested too deeply") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("the config must be a JSON object")
+    return parsed
 
 
 def field_value(config: dict[str, Any], field_def: ConfigField) -> Any:

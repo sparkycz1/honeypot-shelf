@@ -89,6 +89,7 @@ from app.ssh.updates import PendingPackage
 # the same name.
 from app.tasks import jobs as tasks
 from app.web.honeypot_search import apply_tag_filter, honeypot_search_clause
+from app.web.redirects import safe_local_path
 from app.web.routes.audit import _csv_safe
 from app.web.templating import t, templates
 
@@ -394,8 +395,8 @@ def _safe_honeypots_redirect(next_path: str) -> str:
     """Only ever redirect back into `/honeypots...` — `next` comes from a
     form field an attacker could tamper with, same reasoning
     `app.web.routes.theme._safe_redirect_target` already documents."""
-    if next_path.startswith("/honeypots") and not next_path.startswith("//"):
-        return next_path
+    if next_path.startswith("/honeypots"):
+        return safe_local_path(next_path, "/honeypots")
     return "/honeypots"
 
 

@@ -18,6 +18,7 @@ from fastapi.responses import RedirectResponse
 
 from app.core.config import get_settings
 from app.core.csrf import verify_csrf
+from app.web.redirects import safe_local_path
 
 router = APIRouter()
 
@@ -31,10 +32,9 @@ def _safe_redirect_target(next_path: str) -> str:
     comes from a form field an attacker could tamper with, so an absolute
     or protocol-relative ("//evil.example") value is rejected in favor of
     a safe default, the same way `app.auth.middleware`'s `next=` handling
-    already treats it as untrusted input."""
-    if next_path.startswith("/") and not next_path.startswith("//"):
-        return next_path
-    return "/dashboard"
+    already treats it as untrusted input. See
+    `app.web.redirects.safe_local_path`."""
+    return safe_local_path(next_path, "/dashboard")
 
 
 @router.post("/theme", dependencies=[Depends(verify_csrf)])

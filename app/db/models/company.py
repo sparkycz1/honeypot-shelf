@@ -22,11 +22,6 @@ from app.db.models.honeypot_company import honeypot_companies
 from app.db.pg_enum import pg_enum
 from app.services.syslog_transport import DEFAULT_SYSLOG_PORT, SyslogProtocol
 
-if TYPE_CHECKING:
-    from app.db.models.company_membership import CompanyMembership
-    from app.db.models.honeypot import Honeypot
-    from app.db.models.user import User
-
 
 class Company(Base):
     __tablename__ = "companies"
@@ -82,3 +77,14 @@ class Company(Base):
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid only
         return f"Company(id={self.id!r}, name={self.name!r})"
+
+
+# Imported last, and only for type checking: every class above is already
+# defined by the time this module points back at the models it relates
+# to, so no import cycle can leave a class half-defined (CodeQL's
+# "Module-level cyclic import"). SQLAlchemy resolves the relationship
+# targets by name through its registry, never through these imports.
+if TYPE_CHECKING:
+    from app.db.models.company_membership import CompanyMembership
+    from app.db.models.honeypot import Honeypot
+    from app.db.models.user import User

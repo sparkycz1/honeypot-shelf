@@ -28,11 +28,10 @@ from sqlalchemy import Boolean, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.db.models.notification_channel import (
+    NotificationChannel as NotificationChannel,  # re-exported
+)
 from app.db.pg_enum import pg_enum
-
-if TYPE_CHECKING:
-    from app.db.models.honeypot import Honeypot
-    from app.db.models.user import User
 
 
 class NotificationKind(enum.StrEnum):
@@ -41,10 +40,6 @@ class NotificationKind(enum.StrEnum):
     RECOVERED = "recovered"
     TEST = "test"
 
-
-class NotificationChannel(enum.StrEnum):
-    EMAIL = "email"
-    WEBHOOK = "webhook"
 
 
 class NotificationLog(Base):
@@ -91,3 +86,13 @@ class NotificationLog(Base):
             f"NotificationLog(user_id={self.user_id!r}, kind={self.kind!r}, "
             f"channel={self.channel!r}, success={self.success!r})"
         )
+
+
+# Imported last, and only for type checking: every class above is already
+# defined by the time this module points back at the models it relates
+# to, so no import cycle can leave a class half-defined (CodeQL's
+# "Module-level cyclic import"). SQLAlchemy resolves the relationship
+# targets by name through its registry, never through these imports.
+if TYPE_CHECKING:
+    from app.db.models.honeypot import Honeypot
+    from app.db.models.user import User

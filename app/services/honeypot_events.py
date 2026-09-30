@@ -20,6 +20,11 @@ from typing import Any
 from app.db.models.honeypot import Honeypot
 from app.db.models.honeypot_event import HoneypotEvent
 
+# `HoneypotEvent.event_type` / `src_ip` column widths, and the port range.
+_EVENT_TYPE_MAX_LENGTH = 100
+_SRC_IP_MAX_LENGTH = 64
+_MAX_PORT = 65535
+
 
 class EventSource:
     """`HoneypotEvent.source` values — a plain string, not an enum,
@@ -62,13 +67,23 @@ def _coerce_port(value: Any) -> int | None:
     otherwise-good event."""
     if isinstance(value, bool):  # bool is an int subclass - not a real port
         return None
-    if isinstance(value, int):
-        return value
     if isinstance(value, str):
         try:
-            return int(value.strip())
+            value = int(value.strip())
         except ValueError:
             return None
+    # Out of range fails the insert just the same (Integer column).
+    if isinstance(value, int) and 0 <= value <= _MAX_PORT:
+        return value
+    return None
+
+
+def _bounded_str(value: Any, max_length: int) -> str | None:
+    """A string field of the payload only if it's really a string that fits
+    its column — a longer or non-string `src_host` isn't an address anyway,
+    and binding it would fail the whole batch's insert."""
+    if isinstance(value, str) and len(value) <= max_length:
+        return value
     return None
 
 
@@ -77,13 +92,16 @@ def build_event(honeypot: Honeypot, payload: dict[str, Any]) -> HoneypotEvent:
     the SSH log poll (see the module docstring) — not yet added to a
     session or committed, that's the caller's job (it may want to batch
     several, or set `honeypot.last_seen_at` alongside)."""
+    logdata = payload.get("logdata")
+    event_type = payload.get("logtype") or (
+        logdata.get("type") if isinstance(logdata, dict) else None
+    )
     return HoneypotEvent(
         honeypot_id=honeypot.id,
-        event_type=str(
-            payload.get("logtype") or payload.get("logdata", {}).get("type") or "UNKNOWN"
-        ),
+        # Cut to the column's width: a forged log line can carry anything.
+        event_type=str(event_type or "UNKNOWN")[:_EVENT_TYPE_MAX_LENGTH],
         occurred_at=parse_occurred_at(payload),
-        src_ip=payload.get("src_host"),
+        src_ip=_bounded_str(payload.get("src_host"), _SRC_IP_MAX_LENGTH),
         src_port=_coerce_port(payload.get("src_port")),
         dst_port=_coerce_port(payload.get("dst_port")),
         raw=payload,
