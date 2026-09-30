@@ -229,9 +229,17 @@ something here works a certain way.
 7. **Test it.** Add/extend a test in `tests/` — the suite runs against
    in-memory SQLite (see `tests/conftest.py`), fast, no real Postgres/
    Redis needed. Run the whole gate before considering the change done.
-8. **Tag and release.** Once `APP_VERSION`/`pyproject.toml` are bumped and
-   the change is committed and pushed, tag it (`git tag vX.Y.Z` + `git
-   push --tags`) and cut a GitHub release (`gh release create vX.Y.Z`).
+8. **Tag and release.** `.github/workflows/release.yml` does this
+   automatically: a push to `main` that changes `app/core/version.py` gets
+   tagged `vX.Y.Z` and a GitHub release (notes = each commit's subject
+   *and full body* since the previous tag, minus commits that only touch
+   CI, tests, docs or version numbers). So the version commit's message
+   **is** the release notes — a user-facing subject plus a body listing
+   everything that changed; with a squash-merged PR, make sure the squash
+   commit keeps that body. Check the workflow run went green. A version
+   that never got its tag: Actions → Release → Run workflow (`version` +
+   the commit on `main` that carries it). Merged PR branches are deleted
+   by `.github/workflows/cleanup-branches.yml`.
 
 None of this means doing every possible thing for every tiny change — it
 means actually checking each of these against what you just did, and
