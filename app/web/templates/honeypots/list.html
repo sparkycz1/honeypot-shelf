@@ -184,6 +184,9 @@
     <form method="post" class="form form-wide" id="bulk-actions-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
+      {# Redrawn in place by live-list.js when the fleet changes (a bulk
+         update check finishing, a honeypot going up or down). #}
+      <div id="honeypot-results" data-live-fleet>
       {% if view_mode == 'list' %}
         <ul class="honeypot-compact-list">
           {% for honeypot in honeypots %}
@@ -291,6 +294,7 @@
           </tbody>
         </table>
       {% endif %}
+      </div>
 
       <div class="page-header-actions" id="bulk-actions-bar">
         <span class="hint">{{ t(request, 'honeypots.bulk.with_selected') }}</span>
@@ -331,4 +335,9 @@
       </div>
     {% endif %}
   {% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+  <script src="/static/js/live-updates.js" defer></script>
+  <script src="/static/js/live-list.js" defer></script>
 {% endblock %}

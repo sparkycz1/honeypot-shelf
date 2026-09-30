@@ -2004,6 +2004,7 @@ async def _check_honeypot_updates(honeypot_id: str) -> dict[str, Any]:
             honeypot.apt_upgradable_packages = [dict(p) for p in result.apt_upgradable_packages]
             await session.commit()
             await publish_honeypot_event(honeypot_id, KIND_UPDATES)
+            await publish_fleet_event(KIND_UPDATES)
             return {"ok": True}
 
         # `apt-get update` itself failed (commonly: no passwordless sudo
@@ -2015,6 +2016,7 @@ async def _check_honeypot_updates(honeypot_id: str) -> dict[str, Any]:
         honeypot.apt_upgradable_packages = None
         await session.commit()
         await publish_honeypot_event(honeypot_id, KIND_UPDATES)
+        await publish_fleet_event(KIND_UPDATES)
         error = f"apt-get update exited with status {result.exit_status}."
         logger.warning("check_honeypot_updates failed for %s: %s", honeypot.name, error)
         return {"ok": False, "error": error}

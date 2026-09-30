@@ -20,12 +20,13 @@ machinery:
 - **Per-honeypot** (`channel_for`/`publish_honeypot_event`) — the
   original one, for a single honeypot's own tabs.
 - **Fleet-wide** (`FLEET_CHANNEL`/`publish_fleet_event`) — "some
-  honeypot's reachability or activity changed", fired alongside the
-  per-honeypot publish for `KIND_STATUS`/`KIND_ACTIVITY` specifically
-  (the only two kinds a cross-honeypot view like the Dashboard or Map
-  actually cares about). Every logged-in user may subscribe — the
-  payload carries no company/honeypot identity, so there's nothing to
-  scope; the panel it triggers a re-fetch of is scoped on its own.
+  honeypot's reachability, activity or update availability changed",
+  fired alongside the per-honeypot publish for `KIND_STATUS`/
+  `KIND_ACTIVITY`/`KIND_UPDATES` specifically (the kinds a cross-honeypot
+  view — the Dashboard, the Map, the honeypot list — actually shows).
+  Every logged-in user may subscribe — the payload carries no
+  company/honeypot identity, so there's nothing to scope; the panel it
+  triggers a re-fetch of is scoped on its own.
 - **Admin-wide** (`ADMIN_CHANNEL`/`publish_admin_event`) — "a new audit
   log entry was written", fired from `app.audit.log_event` itself, so
   it also covers company/user create-edit-delete (always audit-logged).
