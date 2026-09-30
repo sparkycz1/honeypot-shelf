@@ -113,7 +113,7 @@ def test_live_updates_js_builds_the_urls_the_other_three_routes_serve():
 
 
 def test_at_least_the_known_fleet_scoped_pages_wire_up_live_updates():
-    for relative_path in ("dashboard/index.html", "map/index.html"):
+    for relative_path in ("dashboard/index.html", "map/index.html", "honeypots/list.html"):
         text = (_TEMPLATES_DIR / relative_path).read_text(encoding="utf-8")
         assert "live-updates.js" in text, f"{relative_path} no longer includes live-updates.js"
         assert "data-live-fleet" in text, f"{relative_path} no longer sets data-live-fleet"
@@ -130,3 +130,16 @@ def test_notification_history_wires_up_its_own_per_user_live_updates():
     text = (_TEMPLATES_DIR / "notifications/history.html").read_text(encoding="utf-8")
     assert "live-updates.js" in text
     assert "data-live-notifications" in text
+
+
+def test_the_honeypot_list_redraws_itself_on_fleet_pushes():
+    """live-list.js swaps `#honeypot-results`, and only on the kinds the
+    fleet channel actually carries for it (see app.services.live_updates)."""
+    template = (_TEMPLATES_DIR / "honeypots" / "list.html").read_text(encoding="utf-8")
+    script = (_REPO_ROOT / "app" / "web" / "static" / "js" / "live-list.js").read_text(
+        encoding="utf-8"
+    )
+    assert "live-list.js" in template
+    assert 'id="honeypot-results" data-live-fleet' in template
+    assert '"honeypot-results"' in script
+    assert '"live-status"' in script and '"live-updates"' in script
