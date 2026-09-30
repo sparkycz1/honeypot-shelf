@@ -1,0 +1,185 @@
+name: Release
+
+# Turns a version bump into its git tag and GitHub release — CLAUDE.md's
+# "Tag and release" step, done by CI instead of by hand, so an
+# `APP_VERSION` that lands on `main` can't stay invisible to
+# `scripts/upgrade.sh` and the Releases page.
+#
+# - On a push to `main` that touches `app/core/version.py`: tags that
+#   commit `v<APP_VERSION>` and publishes a release, unless the tag
+#   already exists (re-runs and unrelated edits to the file are no-ops).
+# - By hand (Actions → Release → Run workflow): `version` + the commit
+#   (`sha`) that carries it — for a version whose tag was never created.
+#   The commit must be on `main` and its `app/core/version.py` must say
+#   exactly that version.
+#
+# Release notes are the commits since the previous `v*` tag — subject as a
+# heading plus the full commit body (trailers dropped) — leaving out
+# commits that only touch CI, tests, docs/wiki or version numbers. So a
+# version commit's body must itself be complete, user-facing release notes.
+# Running it by hand for a version that is already released rewrites that
+# release's notes the same way.
+# "Latest" always goes to the highest version, so backfilling an older one
+# never steals it; running it for an existing highest tag re-marks it.
+
+on:
+  push:
+    branches: [main]
+    paths: [app/core/version.py]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version without the leading v, e.g. 0.73.0"
+        required: true
+      sha:
+        description: "Full or short commit SHA on main that carries this APP_VERSION"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version and commit
+        id: resolve
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_SHA: ${{ inputs.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            if ! [[ "$INPUT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::version must look like 1.2.3"; exit 1
+            fi
+            if ! [[ "$INPUT_SHA" =~ ^[0-9a-f]{7,40}$ ]]; then
+              echo "::error::sha must be a hex commit SHA"; exit 1
+            fi
+            sha="$(git rev-parse --verify "${INPUT_SHA}^{commit}")"
+            if ! git merge-base --is-ancestor "$sha" origin/main; then
+              echo "::error::$sha is not on main"; exit 1
+            fi
+            version="$INPUT_VERSION"
+          else
+            sha="$GITHUB_SHA"
+            version=""
+          fi
+          file_version="$(git show "$sha:app/core/version.py" \
+            | sed -nE 's/^APP_VERSION = "([0-9]+\.[0-9]+\.[0-9]+)"$/\1/p')"
+          if [ -z "$file_version" ]; then
+            echo "::error::no APP_VERSION in app/core/version.py at $sha"; exit 1
+          fi
+          if [ -n "$version" ] && [ "$version" != "$file_version" ]; then
+            echo "::error::$sha has APP_VERSION $file_version, not $version"; exit 1
+          fi
+          tag="v$file_version"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "$tag already exists — nothing to do."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Write release notes
+        env:
+          TAG: ${{ steps.resolve.outputs.tag }}
+          SHA: ${{ steps.resolve.outputs.sha }}
+        run: |
+          set -euo pipefail
+          # The previous release = the highest other version tag this commit
+          # contains (not `git describe`, which follows first parents only and
+          # skips a version that arrived through a merge's second parent).
+          previous="$(git tag -l 'v*' --sort=-v:refname --merged "$SHA" | grep -vxF "$TAG" | head -n 1 || true)"
+          if [ -n "$previous" ]; then range="$previous..$SHA"; else range="$SHA"; fi
+          # Notes are for people running the app: a commit that only touches
+          # CI, tests, docs/wiki or the version numbers themselves isn't listed.
+          internal='^(\.github/|tests/|wiki/|CLAUDE\.md$|README\.md$|app/core/version\.py$|pyproject\.toml$|uv\.lock$)'
+          # Each commit is listed newest first as its subject (a heading) plus
+          # its full body — the body is where the user-facing details live —
+          # minus trailers (Co-Authored-By, Claude-Session, Signed-off-by).
+          : > changes.md
+          for commit in $(git rev-list --no-merges "$range" | head -n 200); do
+            files="$(git diff-tree --no-commit-id --name-only -r "$commit")"
+            if [ -n "$files" ] && ! grep -qvE "$internal" <<< "$files"; then
+              continue
+            fi
+            {
+              git log -1 --format='### %s' "$commit"
+              body="$(git log -1 --format='%b' "$commit" \
+                | grep -viE '^(co-authored-by|claude-session|signed-off-by):' || true)"
+              if [ -n "${body//[[:space:]]/}" ]; then
+                echo
+                printf '%s\n' "$body" | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}'
+              fi
+              echo
+            } >> changes.md
+          done
+          {
+            echo "## Changes"
+            echo
+            if [ -s changes.md ]; then
+              cat changes.md
+            else
+              echo "- Maintenance release (no user-facing changes)."
+            fi
+            if [ -n "$previous" ]; then
+              echo
+              echo "**Full diff:** https://github.com/$GITHUB_REPOSITORY/compare/$previous...$TAG"
+            fi
+          } > release-notes.md
+          cat release-notes.md
+
+      - name: Tag and publish the release
+        if: steps.resolve.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.resolve.outputs.tag }}
+          SHA: ${{ steps.resolve.outputs.sha }}
+        run: |
+          set -euo pipefail
+          git tag "$TAG" "$SHA"
+          git push origin "refs/tags/$TAG"
+          # "Latest" means the highest version, not the most recently
+          # created release — a backfilled older version must not take it.
+          highest="$(git tag -l 'v*' --sort=-v:refname | head -n 1)"
+          latest=false
+          if [ "$highest" = "$TAG" ]; then latest=true; fi
+          gh release create "$TAG" --title "$TAG" --notes-file release-notes.md \
+            --verify-tag --latest="$latest"
+
+      - name: Refresh an existing release
+        # Run by hand for a version that already has its release: rewrites
+        # its notes with the rules above and, if it is the highest version,
+        # marks it Latest again. A push re-run leaves an existing release
+        # (and any notes edited on GitHub) alone.
+        if: steps.resolve.outputs.skip == 'true' && github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.resolve.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --title "$TAG" --notes-file release-notes.md --verify-tag
+          else
+            gh release edit "$TAG" --notes-file release-notes.md
+          fi
+          highest="$(git tag -l 'v*' --sort=-v:refname | head -n 1)"
+          if [ "$highest" = "$TAG" ]; then
+            gh release edit "$TAG" --latest
+          else
+            gh release edit "$TAG" --latest=false
+          fi
