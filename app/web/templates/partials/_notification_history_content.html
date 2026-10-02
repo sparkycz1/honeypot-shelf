@@ -21,10 +21,12 @@
             {{ t(request, "notifications.event." + entry.kind.value) }}
             {% if entry.is_test %}<span class="badge">{{ t(request, "notifications.history.test_badge") }}</span>{% endif %}
           </td>
-          <td>{{ t(request, "notifications.subscriptions.channel_" + entry.channel.value) }}</td>
+          <td>{{ t(request, "notifications.rule.send_via_" + entry.channel.value) }}</td>
           <td>{{ entry.target }}</td>
           <td>
-            {% if entry.success %}
+            {% if entry.muted_by %}
+              <span class="badge" title="{{ entry.muted_by }}">{{ t(request, "notifications.history.status_muted", window=entry.muted_by) }}</span>
+            {% elif entry.success %}
               <span class="badge badge-ok">{{ t(request, "notifications.history.status_ok") }}</span>
             {% else %}
               <span class="badge badge-error" title="{{ entry.error or '' }}">{{ t(request, "notifications.history.status_failed") }}</span>

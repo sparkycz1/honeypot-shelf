@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t(request, "maintenance.title") }} — Honeypot Shelf{% endblock %}
+
+{% macro scope(w) -%}
+  <span class="badge">{{ w.owner_company.name if w.owner_company else '—' }}</span>
+  {% if w.all_honeypots -%}
+    <span class="badge badge-warn">{{ t(request, "maintenance.all_honeypots") }}</span>
+  {%- else -%}
+    {%- for h in w.honeypots %} <span class="badge">{{ h.name }}</span>{% endfor -%}
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro effects(w) -%}
+  {% if w.pause_scheduled_tasks %}<span class="badge">{{ t(request, "maintenance.effect_pause") }}</span>{% endif %}
+  {% if w.mute_alerts %}<span class="badge badge-warn">{{ t(request, "maintenance.effect_mute_alerts") }}</span>{% endif %}
+{%- endmacro %}
+
+{% macro window_table(windows, show_actions) %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>{{ t(request, "maintenance.name") }}</th>
+        <th>{{ t(request, "maintenance.scope") }}</th>
+        <th>{{ t(request, "maintenance.starts_at") }}</th>
+        <th>{{ t(request, "maintenance.ends_at") }}</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for w in windows %}
+        <tr>
+          <td>
+            <strong>{{ w.name }}</strong>
+            {% if w.reason %}<br><span class="hint">{{ w.reason }}</span>{% endif %}
+            {% if w.created_by %}<br><span class="hint">{{ t(request, "maintenance.created_by", user=w.created_by) }}</span>{% endif %}
+          </td>
+          <td>{{ scope(w) }} {{ effects(w) }}</td>
+          <td>{{ w.starts_at | local_time('%Y-%m-%d %H:%M %Z') }}</td>
+          <td>{{ w.ends_at | local_time('%Y-%m-%d %H:%M %Z') }}</td>
+          <td>
+            {% if show_actions %}
+              <a class="button button-secondary" href="/scheduling/maintenance/{{ w.id }}/edit">{{ t(request, "maintenance.edit") }}</a>
+              <form method="post" action="/scheduling/maintenance/{{ w.id }}/end" class="inline-form"
+                    data-confirm="{{ t(request, 'maintenance.end_confirm', name=w.name) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="button button-secondary">{{ t(request, "maintenance.end_now") }}</button>
+              </form>
+            {% endif %}
+            <form method="post" action="/scheduling/maintenance/{{ w.id }}/delete" class="inline-form"
+                  data-confirm="{{ t(request, 'maintenance.delete_confirm', name=w.name) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button type="submit" class="button button-danger">{{ t(request, "maintenance.delete") }}</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endmacro %}
+
+{% block content %}
+  <p class="hint"><a href="/scheduling">← {{ t(request, "nav.scheduling") }}</a></p>
+  <div class="page-header">
+    <h1>{{ t(request, "maintenance.title") }}</h1>
+    <div class="page-header-actions">
+      <a class="button" href="/scheduling/maintenance/new">{{ t(request, "maintenance.add") }}</a>
+    </div>
+  </div>
+  <p class="hint">{{ t(request, "maintenance.intro") }}</p>
+
+  <section class="panel">
+    <h2>{{ t(request, "maintenance.active") }}</h2>
+    {% if active %}{{ window_table(active, true) }}{% else %}<p class="hint">{{ t(request, "maintenance.none_active") }}</p>{% endif %}
+  </section>
+
+  <section class="panel">
+    <h2>{{ t(request, "maintenance.upcoming") }}</h2>
+    {% if upcoming %}{{ window_table(upcoming, true) }}{% else %}<p class="hint">{{ t(request, "maintenance.none_upcoming") }}</p>{% endif %}
+  </section>
+
+  {% if ended %}
+    <section class="panel">
+      <h2>{{ t(request, "maintenance.ended") }}</h2>
+      {{ window_table(ended, false) }}
+    </section>
+  {% endif %}
+{% endblock %}

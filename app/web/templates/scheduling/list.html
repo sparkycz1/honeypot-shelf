@@ -5,7 +5,10 @@
 {% block content %}
   <div class="page-header">
     <h1>{{ t(request, "scheduling.list.title") }}</h1>
-    <a class="button" href="/scheduling/new">{{ t(request, "scheduling.list.new_task") }}</a>
+    <div class="page-header-actions">
+      <a class="button button-secondary" href="/scheduling/maintenance">{{ t(request, "maintenance.link") }}</a>
+      <a class="button" href="/scheduling/new">{{ t(request, "scheduling.list.new_task") }}</a>
+    </div>
   </div>
 
   {% if ran %}

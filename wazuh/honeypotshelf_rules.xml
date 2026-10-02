@@ -269,6 +269,14 @@
     <description>Honeypot Shelf: automatic retention purge ran - $(summary)</description>
   </rule>
 
+  <!-- A maintenance window mutes notifications (and optionally alerts)
+       for some honeypots: worth seeing in the SIEM who did that, when. -->
+  <rule id="107044" level="5">
+    <if_sid>107000</if_sid>
+    <action type="pcre2">^maintenance_window\.</action>
+    <description>Honeypot Shelf: maintenance window changed - $(summary)</description>
+  </rule>
+
   <rule id="107045" level="8">
     <if_sid>107001</if_sid>
     <field name="type" type="pcre2">^(2000|2001)$</field>

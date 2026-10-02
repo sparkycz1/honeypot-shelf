@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t(request, "maintenance.edit_title" if window else "maintenance.new_title") }} — Honeypot Shelf{% endblock %}
+
+{% block content %}
+  <p class="hint"><a href="/scheduling/maintenance">← {{ t(request, "maintenance.title") }}</a></p>
+  <h1>{{ t(request, "maintenance.edit_title" if window else "maintenance.new_title") }}</h1>
+
+  {% if errors %}
+    <div class="alert alert-error">{% for error in errors %}<p>{{ error }}</p>{% endfor %}</div>
+  {% endif %}
+
+  <form method="post" action="{{ '/scheduling/maintenance/' ~ window.id ~ '/edit' if window else '/scheduling/maintenance' }}" class="form form-wide" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <label for="owner_company_id">{{ t(request, "maintenance.company") }}</label>
+    <select id="owner_company_id" name="owner_company_id" required>
+      {% if companies | length != 1 %}<option value="">—</option>{% endif %}
+      {% for company in companies %}
+        <option value="{{ company.id }}" {% if form.get('owner_company_id') == company.id | string %}selected{% endif %}>{{ company.name }}</option>
+      {% endfor %}
+    </select>
+
+    <label for="name">{{ t(request, "maintenance.name") }}</label>
+    <input type="text" id="name" name="name" value="{{ form.get('name', '') }}" maxlength="255" required
+           placeholder="{{ t(request, 'maintenance.name_placeholder') }}">
+
+    <label for="reason">{{ t(request, "maintenance.reason") }}</label>
+    <textarea id="reason" name="reason" rows="2" maxlength="2000">{{ form.get('reason', '') }}</textarea>
+
+    <label for="starts_at">{{ t(request, "maintenance.starts_at") }}</label>
+    <input type="datetime-local" id="starts_at" name="starts_at" value="{{ form.get('starts_at', '') }}" required>
+
+    <label for="ends_at">{{ t(request, "maintenance.ends_at") }}</label>
+    <input type="datetime-local" id="ends_at" name="ends_at" value="{{ form.get('ends_at', '') }}" required>
+    <p class="hint">{{ t(request, "maintenance.time_hint") }}</p>
+
+    <fieldset>
+      <legend>{{ t(request, "maintenance.scope") }}</legend>
+      <label class="checkbox-row">
+        <input type="checkbox" name="all_honeypots" {% if form.get('all_honeypots') %}checked{% endif %}>
+        {{ t(request, "maintenance.all_honeypots") }}
+      </label>
+      {% for honeypot in honeypots %}
+        <label class="checkbox-row">
+          <input type="checkbox" name="honeypot_ids" value="{{ honeypot.id }}"
+                 {{ 'checked' if honeypot.id | string in form.get('honeypot_ids', []) else '' }}>
+          {{ honeypot.name }}
+          <span class="hint">({{ honeypot.companies | map(attribute="name") | join(", ") }})</span>
+        </label>
+      {% endfor %}
+      <p class="hint">{{ t(request, "maintenance.scope_hint") }}</p>
+    </fieldset>
+
+    <fieldset>
+      <legend>{{ t(request, "maintenance.effects") }}</legend>
+      <p class="hint">{{ t(request, "maintenance.effects_hint") }}</p>
+      <label class="checkbox-row">
+        <input type="checkbox" name="pause_scheduled_tasks" {% if form.get('pause_scheduled_tasks') %}checked{% endif %}>
+        {{ t(request, "maintenance.pause_scheduled_tasks") }}
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" name="mute_alerts" {% if form.get('mute_alerts') %}checked{% endif %}>
+        {{ t(request, "maintenance.mute_alerts") }}
+      </label>
+      <p class="hint">{{ t(request, "maintenance.mute_alerts_hint") }}</p>
+    </fieldset>
+
+    <button type="submit" class="button">{{ t(request, "common.save") }}</button>
+    <a class="button button-secondary" href="/scheduling/maintenance">{{ t(request, "common.cancel") }}</a>
+  </form>
+{% endblock %}

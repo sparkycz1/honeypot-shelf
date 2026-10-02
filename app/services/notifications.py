@@ -55,7 +55,7 @@ from app.db.models.app_settings import AppSettings
 from app.db.models.honeypot import Honeypot
 from app.db.models.notification_log import NotificationChannel, NotificationKind, NotificationLog
 from app.i18n import DEFAULT_LOCALE_CODE
-from app.services import push_channels
+from app.services import maintenance_windows, push_channels
 from app.services.live_updates import publish_notifications_event
 from app.services.smtp import SmtpNotConfiguredError, send_email
 from app.services.webhook import UnsafeWebhookTargetError, redact_url, send_webhook
@@ -96,8 +96,7 @@ _DEFAULT_TEMPLATES: dict[str, dict[str, tuple[str, str]]] = {
         ),
         "unavailable": (
             "Honeypot Shelf: {honeypot_name} je nedostupný",
-            "{honeypot_name} je nedostupný nejméně {threshold_minutes} minut, "
-            "stav k {timestamp}.",
+            "{honeypot_name} je nedostupný nejméně {threshold_minutes} minut, stav k {timestamp}.",
         ),
         "recovered": (
             "Honeypot Shelf: {honeypot_name} je opět dostupný",
@@ -219,6 +218,7 @@ async def _log(
     success: bool,
     error: str | None,
     is_test: bool = False,
+    muted_by: str | None = None,
 ) -> None:
     """Best-effort `NotificationLog` write — `db` is optional (some call
     sites share one caller-managed session across several sends) and a
@@ -243,6 +243,7 @@ async def _log(
                 success=success,
                 error=error,
                 is_test=is_test,
+                muted_by=muted_by,
             )
         )
         await db.commit()
@@ -339,6 +340,30 @@ async def _dispatch_rule(
         return
     if channel == NotificationChannel.EMAIL and not db_app_settings.smtp_enabled:
         return
+    if db is not None:
+        # A honeypot inside an active maintenance window: nothing is sent,
+        # but the delivery history says so, naming the window.
+        window = await maintenance_windows.muting_window(db, honeypot, kind)
+        if window is not None:
+            shown = (
+                push_channels.delivery_target(
+                    channel.value, rule.webhook_url, rule.channel_recipient
+                )
+                if channel.value in push_channels.PUSH_CHANNELS
+                else target
+            )
+            await _log(
+                db,
+                user_id=rule.user_id,
+                honeypot=honeypot,
+                kind=kind,
+                channel=channel,
+                target=shown,
+                success=False,
+                error=None,
+                muted_by=window.name,
+            )
+            return
     subject, body = render_template(template_kind, rule, context)
     await _deliver(
         db_app_settings,

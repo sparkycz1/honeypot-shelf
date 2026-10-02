@@ -20,6 +20,7 @@ from app.db.models.honeypot_service import HoneypotService
 from app.db.models.honeypot_tag import Tag
 from app.db.models.honeypot_update_run import HoneypotUpdateRun
 from app.db.models.initialize_run import InitializeRun
+from app.db.models.maintenance_window import MaintenanceWindow, maintenance_window_honeypots
 from app.db.models.notification_log import NotificationChannel, NotificationKind, NotificationLog
 from app.db.models.notification_rule import NotificationRule, NotificationScope
 from app.db.models.notification_rule_state import NotificationRuleState
@@ -50,6 +51,7 @@ __all__ = [
     "HoneypotService",
     "HoneypotUpdateRun",
     "InitializeRun",
+    "MaintenanceWindow",
     "NotificationChannel",
     "NotificationKind",
     "NotificationLog",
@@ -67,4 +69,5 @@ __all__ = [
     "UserSession",
     "WebAuthnCredential",
     "honeypot_companies",
+    "maintenance_window_honeypots",
 ]
