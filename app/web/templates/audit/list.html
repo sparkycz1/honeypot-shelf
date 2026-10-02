@@ -20,7 +20,7 @@
       <option value="" {% if not outcome %}selected{% endif %}>{{ t(request, "audit.list.any_outcome") }}</option>
       {% for o in outcomes %}
         <option value="{{ o.value }}" {% if outcome == o.value %}selected{% endif %}>
-          {{ o.value }}
+          {{ t(request, "audit.list.outcome_" ~ o.value) }}
         </option>
       {% endfor %}
     </select>

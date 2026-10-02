@@ -280,6 +280,50 @@ img.brand-mark-lg { object-fit: contain; }
   font-weight: 600;
 }
 
+/* The "Administration" menu: a plain <details> (no JS), opening below
+   its summary on desktop and inline inside the phone hamburger menu. */
+.nav-menu {
+  position: relative;
+  /* Reset the generic `details` panel look defined further down. */
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+}
+.nav-menu > summary {
+  display: block;
+  margin: 0;
+  list-style: none;
+  cursor: pointer;
+  color: var(--color-muted);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: 0.92rem;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+.nav-menu > summary::-webkit-details-marker { display: none; }
+.nav-menu > summary::after { content: " ▾"; font-size: 0.8em; }
+.nav-menu[open] > summary::after { content: " ▴"; }
+.nav-menu > summary:hover,
+.nav-menu[open] > summary { color: var(--color-text); background: var(--color-surface-raised); }
+.nav-menu > summary.active { color: var(--color-text); background: var(--color-surface-raised); font-weight: 600; }
+.nav-menu > summary:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.nav-menu-items {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  left: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 12rem;
+  padding: var(--space-1);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+}
+.site-header nav .nav-menu-items a { white-space: nowrap; }
+
 .site-header-user {
   display: flex;
   align-items: center;
@@ -341,8 +385,16 @@ img.brand-mark-lg { object-fit: contain; }
     overflow: hidden;
     transition: max-height var(--transition-fast);
   }
-  .nav-toggle:checked ~ nav { max-height: 24rem; }
+  .nav-toggle:checked ~ nav { max-height: 40rem; }
   .site-header nav a { padding: var(--space-3); border-radius: var(--radius-sm); }
+  .nav-menu > summary { padding: var(--space-3); }
+  .nav-menu-items {
+    position: static;
+    box-shadow: none;
+    border: none;
+    padding: 0 0 0 var(--space-4);
+    background: transparent;
+  }
   .site-header-user { order: 2; margin-left: 0; }
 }
 
