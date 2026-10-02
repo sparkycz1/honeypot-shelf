@@ -18,6 +18,9 @@
       {% endif %}
     </span>
     <div class="panel">
+      {% if request.query_params.get('restored') == '1' %}
+        <div class="alert alert-ok"><p>{{ t(request, "backup.full.restored") }}</p></div>
+      {% endif %}
       {% if oidc_error %}
         <div class="alert alert-error"><p>{{ oidc_error }}</p></div>
       {% endif %}
