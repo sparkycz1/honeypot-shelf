@@ -30,8 +30,9 @@ import shlex
 import time
 import uuid
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import asyncssh
 from sqlalchemy import delete, func, or_, select
@@ -86,7 +87,14 @@ from app.ssh.exceptions import SSHConnectionError
 from app.ssh.exec import run_command
 from app.ssh.facts import gather_facts
 from app.ssh.identity import get_or_create_identity
-from app.ssh.logs import LogAccessError, list_directory, view_file, view_journal
+from app.ssh.logs import (
+    LogAccessError,
+    filter_own_sessions,
+    format_journal_entry,
+    list_directory,
+    view_file,
+    view_journal,
+)
 from app.ssh.monitoring import gather_monitoring_sample
 from app.ssh.onboarding import ONBOARD_SUCCESS_MARKER, ONBOARD_USERNAME, build_onboarding_command
 from app.ssh.opencanary_config import (
@@ -115,6 +123,16 @@ from app.ssh.updates import (
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
+
+
+def _display_zone() -> tzinfo:
+    """The instance's display zone (`TZ`, see `Settings.tz`) — UTC when
+    unset or unknown, the same fallback `app.web.templating.local_time`
+    uses."""
+    try:
+        return ZoneInfo(get_settings().tz or "UTC")
+    except (ZoneInfoNotFoundError, ValueError):
+        return UTC
 
 
 # Keep stored update output from growing unreasonably large for a very
@@ -238,11 +256,25 @@ def run_remote_ssh_command(honeypot_id: str, command: str) -> dict[str, Any]:
 
 
 async def _view_honeypot_journal(
-    honeypot_id: str, *, lines: int, search: str, since: str, until: str
+    honeypot_id: str,
+    *,
+    lines: int,
+    search: str,
+    since: str,
+    until: str,
+    priority: str = "",
+    unit: str = "",
+    boot: str = "",
+    hide_own: bool = False,
 ) -> dict[str, Any]:
     """The Logs tab's default view — no persistence, a fresh read-only SSH
     round trip every time (see `app.ssh.logs`'s module docstring for the
-    permission-tier reasoning)."""
+    permission-tier reasoning).
+
+    Returns `output` (the lines as text, times in the instance's `TZ`),
+    `entries` (the same lines with their journal priority, for coloring)
+    and `hidden` — how many lines `hide_own` dropped as this app's own SSH
+    logins (`app.ssh.logs.filter_own_sessions`)."""
     async with db_session.AsyncSessionLocal() as session:
         app_settings = await get_or_create_app_settings(session)
         honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
@@ -254,7 +286,7 @@ async def _view_honeypot_journal(
         secret = await resolve_honeypot_credential(honeypot, session)
 
         try:
-            output = await view_journal(
+            entries, own_uid, own_address = await view_journal(
                 honeypot,
                 secret,
                 app_settings.ssh_connect_timeout,
@@ -262,12 +294,30 @@ async def _view_honeypot_journal(
                 search=search,
                 since=since,
                 until=until,
+                priority=priority,
+                unit=unit,
+                boot=boot,
             )
         except SSHConnectionError as exc:
             logger.warning("view_honeypot_journal failed for %s: %s", honeypot.name, exc)
             return {"ok": False, "error": str(exc)}
 
-        return {"ok": True, "output": output}
+        hidden = 0
+        if hide_own:
+            entries, hidden = filter_own_sessions(
+                entries, own_uid=own_uid, own_address=own_address, username=honeypot.username or ""
+            )
+        zone = _display_zone()
+        rendered = [
+            {"text": format_journal_entry(entry, zone), "priority": entry.priority}
+            for entry in entries
+        ]
+        return {
+            "ok": True,
+            "output": "\n".join(str(row["text"]) for row in rendered),
+            "entries": rendered,
+            "hidden": hidden,
+        }
 
 
 @celery_app.task(
@@ -275,10 +325,29 @@ async def _view_honeypot_journal(
     time_limit=_SSH_TASK_TIME_LIMIT_SECONDS,
 )
 def view_honeypot_journal(
-    honeypot_id: str, *, lines: int, search: str, since: str, until: str
+    honeypot_id: str,
+    *,
+    lines: int,
+    search: str,
+    since: str,
+    until: str,
+    priority: str = "",
+    unit: str = "",
+    boot: str = "",
+    hide_own: bool = False,
 ) -> dict[str, Any]:
     return asyncio.run(
-        _view_honeypot_journal(honeypot_id, lines=lines, search=search, since=since, until=until)
+        _view_honeypot_journal(
+            honeypot_id,
+            lines=lines,
+            search=search,
+            since=since,
+            until=until,
+            priority=priority,
+            unit=unit,
+            boot=boot,
+            hide_own=hide_own,
+        )
     )
 
 

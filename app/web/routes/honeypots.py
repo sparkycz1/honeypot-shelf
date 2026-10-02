@@ -89,6 +89,7 @@ from app.ssh.updates import PendingPackage
 # the same name.
 from app.tasks import jobs as tasks
 from app.web.honeypot_search import apply_tag_filter, honeypot_search_clause
+from app.web.log_lines import journal_log_lines, parse_log_lines
 from app.web.redirects import safe_local_path
 from app.web.routes.audit import _csv_safe
 from app.web.templating import t, templates
@@ -2532,6 +2533,10 @@ async def honeypot_logs(
     search: str = "",
     since: str = "",
     until: str = "",
+    priority: str = "",
+    unit: str = "",
+    boot: str = "",
+    hide_own: str = "",
     current_user: User = Depends(get_current_user),
 ) -> Response:
     """The Logs tab — three modes, switched with the row of links at the
@@ -2552,6 +2557,12 @@ async def honeypot_logs(
     app_settings = await get_or_create_app_settings(db)
 
     output: str | None = None
+    journal_entries: list[dict[str, object]] | None = None
+    hidden_count = 0
+    priority = ssh_logs.normalize_priority(priority)
+    unit = ssh_logs.normalize_unit(unit)
+    boot = ssh_logs.normalize_boot(boot)
+    hide_own_sessions = hide_own.strip() not in ("", "0")
     browse_entries: list[tuple[str, bool]] | None = None
     error: str | None = None
     if not honeypot.host_key_fingerprint:
@@ -2598,6 +2609,10 @@ async def honeypot_logs(
                     search=search,
                     since=since,
                     until=until,
+                    priority=priority,
+                    unit=unit,
+                    boot=boot,
+                    hide_own=hide_own_sessions,
                 )
             result = await asyncio.to_thread(
                 async_result.get, timeout=app_settings.ssh_connect_timeout + 15
@@ -2605,6 +2620,10 @@ async def honeypot_logs(
             if isinstance(result, dict):
                 if result.get("ok"):
                     output = str(result.get("output") or "")
+                    raw_entries = result.get("entries")
+                    if isinstance(raw_entries, list):
+                        journal_entries = [e for e in raw_entries if isinstance(e, dict)]
+                    hidden_count = int(result.get("hidden") or 0)
                 else:
                     error = str(result.get("error") or "Unknown error.")
         except CeleryTimeoutError:
@@ -2628,6 +2647,10 @@ async def honeypot_logs(
             details={"search": search} if search.strip() else None,
         )
 
+    if journal_entries is not None:
+        log_lines = journal_log_lines(journal_entries, search)
+    else:
+        log_lines = parse_log_lines(output, search)
     csrf_token, new_cookie = get_or_create_csrf_token(request)
     response = templates.TemplateResponse(
         request,
@@ -2638,6 +2661,14 @@ async def honeypot_logs(
             "active_tab": "logs",
             "csrf_token": csrf_token,
             "output": output,
+            "log_lines": log_lines,
+            "hidden_count": hidden_count,
+            "priority": priority,
+            "priorities": ssh_logs.JOURNAL_PRIORITIES,
+            "unit": unit,
+            "boot": boot,
+            "max_boot_offset": ssh_logs.MAX_BOOT_OFFSET,
+            "hide_own": hide_own_sessions,
             "browse": browse,
             "browse_entries": browse_entries,
             "browse_root": settings.log_file_allowed_path_list[0]
