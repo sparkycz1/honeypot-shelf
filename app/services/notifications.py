@@ -56,7 +56,7 @@ from app.db.models.notification_log import NotificationChannel, NotificationKind
 from app.i18n import DEFAULT_LOCALE_CODE
 from app.services.live_updates import publish_notifications_event
 from app.services.smtp import SmtpNotConfiguredError, send_email
-from app.services.webhook import UnsafeWebhookTargetError, send_webhook
+from app.services.webhook import UnsafeWebhookTargetError, redact_url, send_webhook
 
 if TYPE_CHECKING:
     from app.db.models.notification_rule import NotificationRule
@@ -174,6 +174,12 @@ def resolve_target(rule: NotificationRule) -> str | None:
     return rule.target_email or rule.user.email
 
 
+def _loggable(channel: NotificationChannel, target: str) -> str:
+    """A target as it may appear in the server log: a webhook URL without
+    its secret path, an email address as is."""
+    return redact_url(target) if channel == NotificationChannel.WEBHOOK else target
+
+
 async def _log(
     db: AsyncSession | None,
     *,
@@ -192,6 +198,11 @@ async def _log(
     record, so this never raises."""
     if db is None:
         return
+    if channel == NotificationChannel.WEBHOOK:
+        # The history keeps where a webhook went, never its secret path.
+        shown = redact_url(target)
+        error = error.replace(target, shown) if error else error
+        target = shown
     try:
         db.add(
             NotificationLog(
@@ -243,10 +254,15 @@ async def _deliver(
         logger.debug("Skipping notification email to %s: SMTP not configured", target)
         error = "SMTP not configured"
     except UnsafeWebhookTargetError as exc:
-        logger.warning("Refusing unsafe webhook target %s: %s", target, exc)
+        logger.warning("Refusing unsafe webhook target %s: %s", redact_url(target), exc)
         error = str(exc)
     except Exception as exc:
-        logger.warning("Failed to send %s notification to %s", channel.value, target, exc_info=True)
+        logger.warning(
+            "Failed to send %s notification to %s",
+            channel.value,
+            _loggable(channel, target),
+            exc_info=True,
+        )
         error = str(exc) or exc.__class__.__name__
     await _log(
         db,
@@ -458,7 +474,7 @@ async def send_test_notification(
     except (SmtpNotConfiguredError, UnsafeWebhookTargetError) as exc:
         error = str(exc)
     except Exception as exc:
-        logger.warning("Test notification to %s failed", target, exc_info=True)
+        logger.warning("Test notification to %s failed", _loggable(channel, target), exc_info=True)
         error = str(exc) or exc.__class__.__name__
     await _log(
         db,

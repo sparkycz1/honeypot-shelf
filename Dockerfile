@@ -30,6 +30,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # --- Stage 2: minimal runtime image ------------------------------------------
 FROM python:3.14.7-slim@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d AS runtime
 
+# Lets scripts/upgrade.sh find (and remove) old untagged Honeypot Shelf builds.
+LABEL io.honeypotshelf.image="app"
+
 # The netbird CLI/daemon binary — pinned to an exact version (same
 # reasoning as Postgres/Redis/Caddy/uv above: bumped deliberately, not
 # silently picked up on every rebuild). This one specifically is NOT

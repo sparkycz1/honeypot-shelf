@@ -4,7 +4,7 @@
 {% block title %}{{ t(request, "honeypots.terminal.title") }} — {{ honeypot.name }} — Honeypot Shelf{% endblock %}
 
 {% block extra_head %}
-  <link rel="stylesheet" href="/static/css/xterm.css">
+  <link rel="stylesheet" href="{{ static_url('css/xterm.css') }}">
 {% endblock %}
 
 {% block content %}
@@ -27,8 +27,8 @@
 {% endblock %}
 
 {% block extra_scripts %}
-  <script src="/static/js/xterm.min.js"></script>
-  <script src="/static/js/xterm-addon-fit.min.js"></script>
-  <script src="/static/js/xterm-addon-canvas.min.js"></script>
-  <script src="/static/js/terminal.js" defer></script>
+  <script src="{{ static_url('js/xterm.min.js') }}"></script>
+  <script src="{{ static_url('js/xterm-addon-fit.min.js') }}"></script>
+  <script src="{{ static_url('js/xterm-addon-canvas.min.js') }}"></script>
+  <script src="{{ static_url('js/terminal.js') }}" defer></script>
 {% endblock %}

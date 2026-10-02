@@ -396,3 +396,56 @@ async def test_purge_old_notification_logs_is_a_noop_when_retention_unset(
     async with db_session_factory() as db:
         remaining = (await db.execute(select(NotificationLog.target))).scalars().all()
         assert remaining == ["forever@example.com"]
+
+
+def test_redact_url_keeps_only_where_a_webhook_goes():
+    from app.services.webhook import redact_url
+
+    assert redact_url("https://discord.com/api/webhooks/1/secret") == "https://discord.com/…"
+    assert redact_url("https://hooks.example.com:8443/x?token=t") == "https://hooks.example.com:8443/…"
+    assert redact_url("https://hooks.example.com") == "https://hooks.example.com"
+    assert redact_url("https://[::1/broken") == "…"
+    assert redact_url("not a url") == "…"
+
+
+async def test_a_webhook_send_is_logged_without_its_secret_path(
+    client, db_session_factory, monkeypatch
+):
+    honeypot_id = await _make_honeypot(db_session_factory)
+    secret_url = "https://hooks.example.com/services/T000/B000/very-secret"
+
+    def failing_webhook(url, payload):
+        raise RuntimeError(f"upstream refused {url}")
+
+    monkeypatch.setattr("app.services.notifications.send_webhook", failing_webhook)
+    monkeypatch.setattr("app.web.routes.notifications.validate_webhook_url", lambda url: None)
+
+    async with db_session_factory() as db:
+        user = (await db.execute(select(User))).scalars().first()
+        assert user is not None
+        honeypot = await db.get(Honeypot, honeypot_id)
+        assert honeypot is not None
+        rule = NotificationRule(
+            user_id=user.id,
+            name="Hook",
+            scope=NotificationScope.HONEYPOT,
+            honeypots=[honeypot],
+            delivery_channel=NotificationChannel.WEBHOOK,
+            webhook_url=secret_url,
+            notify_on_alert=True,
+        )
+        db.add(rule)
+        await db.commit()
+        rule_id = rule.id
+
+    form = await client.get("/account/notifications")
+    await client.post(
+        f"/account/notifications/{rule_id}/test",
+        data={"csrf_token": _csrf_from(form)},
+        follow_redirects=False,
+    )
+
+    async with db_session_factory() as db:
+        entry = (await db.execute(select(NotificationLog))).scalar_one()
+    assert entry.target == "https://hooks.example.com/…"
+    assert entry.error is not None and "very-secret" not in entry.error

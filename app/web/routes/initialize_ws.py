@@ -38,6 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.audit import log_event
 from app.auth.sessions import SESSION_COOKIE_NAME, get_valid_session
 from app.auth.ssh_keys import parse_ssh_public_keys
+from app.auth.websocket_origin import is_same_origin
 from app.core.app_settings import get_or_create_app_settings
 from app.core.security import decrypt_secret
 from app.db.models.audit_log import AuditOutcome
@@ -78,6 +79,10 @@ async def _authenticate(websocket: WebSocket) -> User | None:
     there's no company/honeypot to additionally scope against, since
     Initialize is deliberately standalone (see
     `app.web.routes.initialize`'s module docstring)."""
+    # Cross-site WebSocket hijacking guard — see `app.auth.websocket_origin`.
+    if not is_same_origin(websocket.headers):
+        await websocket.close(code=_POLICY_VIOLATION, reason="Cross-origin request refused.")
+        return None
     raw_token = websocket.cookies.get(SESSION_COOKIE_NAME)
     if not raw_token:
         await websocket.close(code=_POLICY_VIOLATION, reason="Not authenticated.")

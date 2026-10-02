@@ -44,6 +44,7 @@ from redis.asyncio.client import PubSub
 
 from app.auth.scope import can_see_honeypot
 from app.auth.sessions import SESSION_COOKIE_NAME, get_valid_session
+from app.auth.websocket_origin import is_same_origin
 from app.db.models.honeypot import Honeypot
 from app.db.models.user import User
 from app.services.live_updates import ADMIN_CHANNEL, FLEET_CHANNEL, channel_for
@@ -65,6 +66,10 @@ async def _authenticated_user(websocket: WebSocket) -> User | None:
     already closing the socket with an explanatory reason. Shared first
     step for every route below — each then applies its own extra scope
     check (a honeypot lookup, or `is_superadmin`) on top."""
+    # Cross-site WebSocket hijacking guard — see `app.auth.websocket_origin`.
+    if not is_same_origin(websocket.headers):
+        await websocket.close(code=_POLICY_VIOLATION, reason="Cross-origin request refused.")
+        return None
     raw_token = websocket.cookies.get(SESSION_COOKIE_NAME)
     if not raw_token:
         await websocket.close(code=_POLICY_VIOLATION, reason="Not authenticated.")
@@ -80,6 +85,10 @@ async def _authenticated_user(websocket: WebSocket) -> User | None:
 
 
 async def _authenticate_honeypot(websocket: WebSocket, honeypot_id: uuid.UUID) -> Honeypot | None:
+    # Cross-site WebSocket hijacking guard — see `app.auth.websocket_origin`.
+    if not is_same_origin(websocket.headers):
+        await websocket.close(code=_POLICY_VIOLATION, reason="Cross-origin request refused.")
+        return None
     raw_token = websocket.cookies.get(SESSION_COOKIE_NAME)
     if not raw_token:
         await websocket.close(code=_POLICY_VIOLATION, reason="Not authenticated.")

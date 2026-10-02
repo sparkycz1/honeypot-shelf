@@ -79,4 +79,4 @@ async def test_terminal_page_loads_the_canvas_addon(client, db_session_factory):
     response = await client.get(f"/honeypots/{honeypot.id}/terminal")
 
     assert response.status_code == 200
-    assert '<script src="/static/js/xterm-addon-canvas.min.js">' in response.text
+    assert '<script src="/static/js/xterm-addon-canvas.min.js?v=' in response.text

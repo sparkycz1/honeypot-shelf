@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Honeypot Shelf{% endblock %}</title>
   <link rel="icon" href="{{ branding_favicon_url() }}">
-  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="{{ static_url('css/style.css') }}">
   {% block extra_head %}{% endblock %}
 </head>
 <body>
@@ -97,11 +97,11 @@
     </p>
   </footer>
 
-  <script src="/static/js/htmx.min.js" defer></script>
-  <script src="/static/js/confirm.js" defer></script>
-  <script src="/static/js/bulk-select.js" defer></script>
-  <script src="/static/js/auto-submit.js" defer></script>
-  <script src="/static/js/toggle-hidden.js" defer></script>
+  <script src="{{ static_url('js/htmx.min.js') }}" defer></script>
+  <script src="{{ static_url('js/confirm.js') }}" defer></script>
+  <script src="{{ static_url('js/bulk-select.js') }}" defer></script>
+  <script src="{{ static_url('js/auto-submit.js') }}" defer></script>
+  <script src="{{ static_url('js/toggle-hidden.js') }}" defer></script>
   {% block extra_scripts %}{% endblock %}
 </body>
 </html>

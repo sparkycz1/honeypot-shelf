@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ t(request, "auth.totp_challenge.title") }} — Honeypot Shelf</title>
   <link rel="icon" href="{{ branding_favicon_url() }}">
-  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="{{ static_url('css/style.css') }}">
 </head>
 <body class="auth-body">
   <main class="auth-page">
@@ -54,6 +54,6 @@
       {% endif %}
     </div>
   </main>
-  <script src="/static/js/webauthn.js" defer></script>
+  <script src="{{ static_url('js/webauthn.js') }}" defer></script>
 </body>
 </html>
