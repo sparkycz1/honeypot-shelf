@@ -56,6 +56,7 @@ from app.db.models.honeypot_update_run import HoneypotUpdateRun, UpdateRunStatus
 from app.db.models.notification_log import NotificationLog
 from app.db.models.notification_rule import NotificationRule, NotificationScope
 from app.db.models.notification_rule_state import NotificationRuleState
+from app.services import disk_forecast
 from app.services.company_stats import compute_company_stats
 from app.services.geoip import GeoipDownloadError
 from app.services.geoip import get_reader as get_geoip_reader
@@ -1476,6 +1477,52 @@ async def _monitor_all_honeypots() -> None:
 @celery_app.task(name="app.tasks.jobs.monitor_all_honeypots")
 def monitor_all_honeypots() -> None:
     asyncio.run(_monitor_all_honeypots())
+
+
+async def _forecast_honeypot_disks(honeypot_id: str) -> dict[str, Any]:
+    """Recompute `Honeypot.disk_forecast` from the last week of monitoring
+    samples (app.services.disk_forecast). No SSH — database only."""
+    async with db_session.AsyncSessionLocal() as session:
+        honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
+        if honeypot is None:
+            return {"ok": False, "error": "Honeypot not found."}
+        now = datetime.now(UTC)
+        result = await session.execute(
+            select(HoneypotMonitoringSample.sampled_at, HoneypotMonitoringSample.filesystems)
+            .where(
+                HoneypotMonitoringSample.honeypot_id == honeypot.id,
+                HoneypotMonitoringSample.sampled_at >= now - disk_forecast.WINDOW,
+            )
+            .order_by(HoneypotMonitoringSample.sampled_at)
+        )
+        rows = [(as_aware_utc(sampled_at), filesystems) for sampled_at, filesystems in result.all()]
+        honeypot.disk_forecast = disk_forecast.forecast_filesystems(rows, now) or None
+        await session.commit()
+        return {"ok": True, "mounts": len(honeypot.disk_forecast or {})}
+
+
+@celery_app.task(name="app.tasks.jobs.forecast_honeypot_disks")
+def forecast_honeypot_disks(honeypot_id: str) -> dict[str, Any]:
+    return asyncio.run(_forecast_honeypot_disks(honeypot_id))
+
+
+async def _forecast_all_honeypot_disks() -> None:
+    """Hourly fan-out — one `forecast_honeypot_disks` per honeypot that has
+    monitoring data, never awaited inline."""
+    async with db_session.AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(Honeypot.id).where(
+                Honeypot.is_active, Honeypot.monitoring_updated_at.is_not(None)
+            )
+        )
+        honeypot_ids = [row[0] for row in result.all()]
+    for honeypot_id in honeypot_ids:
+        forecast_honeypot_disks.delay(str(honeypot_id))
+
+
+@celery_app.task(name="app.tasks.jobs.forecast_all_honeypot_disks")
+def forecast_all_honeypot_disks() -> None:
+    asyncio.run(_forecast_all_honeypot_disks())
 
 
 async def _poll_honeypot_canary_log(honeypot_id: str) -> dict[str, Any]:

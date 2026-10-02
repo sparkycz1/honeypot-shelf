@@ -164,6 +164,7 @@
 
       {% if history.filesystem_usage_by_mount %}
         <h3>{{ t(request, 'honeypots.monitoring.usage') }}</h3>
+        {% if honeypot.disk_forecast %}<p class="hint">{{ t(request, 'honeypots.monitoring.disk_forecast_hint') }}</p>{% endif %}
         {% for mount, series in history.filesystem_usage_by_mount.items() %}
           {% set current = history.latest_filesystems.get(mount) %}
           <h4><code>{{ mount }}</code></h4>
@@ -173,6 +174,15 @@
               {{ '%.1f GB' % (current.used_bytes / 1073741824) }} {{ t(request, 'honeypots.monitoring.used') }} {{ t(request, 'honeypots.monitoring.of') }}
               {{ '%.1f GB' % (current.size_bytes / 1073741824) }}
               {% if current.use_percent is not none %}({{ current.use_percent }}%){% endif %}
+              {% set fc = (honeypot.disk_forecast or {}).get(mount) or {} %}
+              {% if fc.days_until_full is number %}
+                —
+                {% if fc.days_until_full <= 0 %}
+                  {{ t(request, 'honeypots.monitoring.disk_full_now') }}
+                {% else %}
+                  {{ t(request, 'honeypots.monitoring.disk_full_in', days=(fc.days_until_full | round(0) | int), rate=('%.2f GB' % (fc.bytes_per_day / 1073741824))) }}
+                {% endif %}
+              {% endif %}
             {% else %}
               —
             {% endif %}

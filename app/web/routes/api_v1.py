@@ -186,6 +186,9 @@ def _honeypot_to_dict(honeypot: Honeypot) -> dict[str, object]:
         "snap_upgradable_packages": honeypot.snap_upgradable_packages,
         "updates_checked_at": _isoformat(honeypot.updates_checked_at),
         "packages_updated_at": _isoformat(honeypot.packages_updated_at),
+        # {mount: {bytes_per_day, days_until_full, used_bytes, size_bytes}}
+        # — the hourly disk-full forecast (app.services.disk_forecast).
+        "disk_forecast": honeypot.disk_forecast,
     }
 
 

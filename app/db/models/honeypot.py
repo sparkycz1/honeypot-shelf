@@ -158,6 +158,10 @@ class Honeypot(Base):
     # --- Monitoring tab: CPU/RAM/disk-usage samples and the systemd service
     # snapshot ---
     monitoring_updated_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    # `{mount: {"bytes_per_day", "days_until_full", "used_bytes",
+    # "size_bytes"}}` — the disk-full forecast, recomputed hourly from the
+    # last week of monitoring samples (app.services.disk_forecast).
+    disk_forecast: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     services_updated_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     # --- Post-onboarding readiness check (see app.ssh.readiness) ---

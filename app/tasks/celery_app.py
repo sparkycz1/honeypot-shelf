@@ -235,6 +235,12 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.jobs.monitor_all_honeypots",
         "schedule": timedelta(seconds=_interval_settings["monitoring_interval_seconds"]),
     },
+    # Database only (no SSH): refit each honeypot's disk-full forecast from
+    # the last week of monitoring samples — see app.services.disk_forecast.
+    "forecast-all-honeypot-disks": {
+        "task": "app.tasks.jobs.forecast_all_honeypot_disks",
+        "schedule": crontab(minute=20),
+    },
     "poll-all-honeypot-canary-logs": {
         "task": "app.tasks.jobs.poll_all_honeypot_canary_logs",
         "schedule": timedelta(
