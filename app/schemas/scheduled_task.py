@@ -7,6 +7,7 @@ from typing import Self
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.core.timezones import is_valid_timezone
 from app.db.models.scheduled_task import ScheduleTargetType
 from app.scheduling.actions import get_action
 from app.scheduling.cron import validate_cron_expression
@@ -24,6 +25,8 @@ class ScheduledTaskCreate(BaseModel):
     # `app.db.models.scheduled_task.ScheduledTask`'s module docstring.
     owner_company_id: uuid.UUID | None = None
     cron_expression: str = Field(min_length=1, max_length=100)
+    # IANA zone the expression is read in; empty/None means UTC.
+    timezone: str | None = Field(default=None, max_length=64)
     is_enabled: bool = True
 
     @field_validator("action")
@@ -39,6 +42,16 @@ class ScheduledTaskCreate(BaseModel):
         stripped = value.strip()
         validate_cron_expression(stripped)
         return stripped
+
+    @field_validator("timezone")
+    @classmethod
+    def _validate_timezone(cls, value: str | None) -> str | None:
+        name = (value or "").strip()
+        if not name:
+            return None
+        if not is_valid_timezone(name):
+            raise ValueError(f'"{name}" is not a known time zone (e.g. Europe/Prague, UTC).')
+        return name
 
     @model_validator(mode="after")
     def _validate_target(self) -> Self:

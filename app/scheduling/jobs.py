@@ -67,7 +67,7 @@ async def _run_due_scheduled_tasks() -> None:
         for task in due:
             run_scheduled_task.delay(str(task.id))
             try:
-                task.next_run_at = compute_next_run(task.cron_expression, now)
+                task.next_run_at = compute_next_run(task.cron_expression, now, task.timezone)
             except ValueError:
                 # Shouldn't happen — expressions are validated on save — but
                 # don't let a bad stored expression wedge this task into

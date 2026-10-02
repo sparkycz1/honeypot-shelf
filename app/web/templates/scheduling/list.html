@@ -43,7 +43,7 @@
               {% endif %}
             </td>
             <td>{{ action_labels.get(task.action, task.action) }}</td>
-            <td><code>{{ task.cron_expression }}</code></td>
+            <td><code>{{ task.cron_expression }}</code><br><span class="hint">{{ task.timezone or 'UTC' }}</span></td>
             <td>
               {% if task.is_enabled and task.next_run_at %}
                 {{ task.next_run_at | local_time('%Y-%m-%d %H:%M %Z') }}

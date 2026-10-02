@@ -17,6 +17,7 @@ account that can create a schedule at all can use every registered action,
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
@@ -27,7 +28,9 @@ from sqlalchemy.orm import selectinload
 from app.audit import log_event
 from app.auth.dependencies import get_current_user, require_write
 from app.auth.scope import has_company_access, honeypots_visible_to
+from app.core.config import get_settings
 from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie, verify_csrf
+from app.core.timezones import is_valid_timezone, timezone_names, zone
 from app.db.models.audit_log import AuditOutcome
 from app.db.models.honeypot import Honeypot
 from app.db.models.scheduled_task import ScheduledTask
@@ -35,11 +38,11 @@ from app.db.models.scheduled_task_run import ScheduledTaskRun
 from app.db.models.user import User
 from app.db.session import get_db
 from app.scheduling.actions import all_actions, get_action
-from app.scheduling.cron import compute_next_run
+from app.scheduling.cron import compute_next_run, next_runs
 from app.scheduling.jobs import run_scheduled_task
 from app.scheduling.targets import decode_target, encode_target, task_within_scope
 from app.schemas.scheduled_task import ScheduledTaskCreate
-from app.web.templating import templates
+from app.web.templating import t, templates
 
 router = APIRouter(prefix="/scheduling")
 _write = Depends(require_write)
@@ -81,7 +84,38 @@ async def _form_context(
         "own_company_ids": user.company_ids(),
         "form": form,
         "errors": errors,
+        "timezones": timezone_names(),
     }
+
+
+def _default_timezone() -> str:
+    """A new schedule starts in this instance's display zone (`TZ`)."""
+    name = get_settings().tz or "UTC"
+    return name if is_valid_timezone(name) else "UTC"
+
+
+@router.get("/cron-preview", dependencies=[_write])
+async def cron_preview(
+    request: Request, cron_expression: str = "", timezone: str = ""
+) -> Response:
+    """The schedule form's live "next runs" preview (htmx, as the cron field
+    or the time zone changes) — read-only. Shown in the task's own zone,
+    and in this instance's display zone too when that differs. Registered
+    before `/{task_id}/...` so "cron-preview" is never read as an id."""
+    expression = cron_expression.strip()
+    zone_name = timezone.strip() if is_valid_timezone(timezone.strip()) else "UTC"
+    runs: list[datetime] = []
+    error: str | None = None
+    if expression:
+        try:
+            runs = next_runs(expression, timezone=zone_name)
+        except ValueError:
+            error = t(request, "scheduling.cron_preview.invalid")
+    return templates.TemplateResponse(
+        request,
+        "partials/cron_preview.html",
+        {"runs": runs, "error": error, "zone_name": zone_name, "task_zone": zone(zone_name)},
+    )
 
 
 def _action_params_from_form(action_key: str, raw_form: dict[str, str]) -> dict[str, str]:
@@ -177,7 +211,9 @@ async def new_scheduled_task_form(
     # ends up in `form` when a checkbox was actually submitted (unchecked =
     # the key is simply absent from the POST body), so this default is only
     # applied here, not silently reapplied on a failed-validation re-render.
-    context = await _form_context(db, current_user, {"is_enabled": "on"}, [])
+    context = await _form_context(
+        db, current_user, {"is_enabled": "on", "timezone": _default_timezone()}, []
+    )
     context["csrf_token"] = csrf_token
     response = templates.TemplateResponse(request, "scheduling/new.html", context)
     if new_cookie:
@@ -215,6 +251,7 @@ async def create_scheduled_task(
             target_honeypot_id=target_honeypot_id,
             owner_company_id=owner_company_id,
             cron_expression=raw_form.get("cron_expression", ""),
+            timezone=raw_form.get("timezone", ""),
             is_enabled=bool(raw_form.get("is_enabled")),
         )
     except ValueError as exc:
@@ -259,8 +296,13 @@ async def create_scheduled_task(
         target_honeypot_id=payload.target_honeypot_id,
         owner_company_id=payload.owner_company_id,
         cron_expression=payload.cron_expression,
+        timezone=payload.timezone,
         is_enabled=payload.is_enabled,
-        next_run_at=compute_next_run(payload.cron_expression) if payload.is_enabled else None,
+        next_run_at=(
+            compute_next_run(payload.cron_expression, timezone=payload.timezone)
+            if payload.is_enabled
+            else None
+        ),
     )
     db.add(task)
     await db.commit()
@@ -294,6 +336,7 @@ async def edit_scheduled_task_form(
         "target": encode_target(task.target_type, task.target_honeypot_id),
         "owner_company_id": str(task.owner_company_id),
         "cron_expression": task.cron_expression,
+        "timezone": task.timezone or "UTC",
         "is_enabled": "on" if task.is_enabled else "",
         **{f"param_{k}": v for k, v in (task.action_params or {}).items()},
     }
@@ -330,6 +373,7 @@ async def update_scheduled_task(
             target_honeypot_id=target_honeypot_id,
             owner_company_id=owner_company_id,
             cron_expression=raw_form.get("cron_expression", ""),
+            timezone=raw_form.get("timezone", ""),
             is_enabled=bool(raw_form.get("is_enabled")),
         )
     except ValueError as exc:
@@ -377,8 +421,13 @@ async def update_scheduled_task(
     task.target_honeypot_id = payload.target_honeypot_id
     task.owner_company_id = payload.owner_company_id
     task.cron_expression = payload.cron_expression
+    task.timezone = payload.timezone
     task.is_enabled = payload.is_enabled
-    task.next_run_at = compute_next_run(payload.cron_expression) if payload.is_enabled else None
+    task.next_run_at = (
+        compute_next_run(payload.cron_expression, timezone=payload.timezone)
+        if payload.is_enabled
+        else None
+    )
 
     await db.commit()
     await log_event(
@@ -402,7 +451,9 @@ async def toggle_scheduled_task(
 ) -> Response:
     task = await _get_task_or_404(task_id, db, current_user)
     task.is_enabled = not task.is_enabled
-    task.next_run_at = compute_next_run(task.cron_expression) if task.is_enabled else None
+    task.next_run_at = (
+        compute_next_run(task.cron_expression, timezone=task.timezone) if task.is_enabled else None
+    )
     await db.commit()
     await log_event(
         db,
