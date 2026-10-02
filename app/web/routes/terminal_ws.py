@@ -66,6 +66,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.audit import log_event
 from app.auth.scope import can_write_honeypot
 from app.auth.sessions import SESSION_COOKIE_NAME, get_valid_session
+from app.auth.websocket_origin import is_same_origin
 from app.core.app_settings import get_or_create_app_settings
 from app.db.models.honeypot import Honeypot
 from app.db.models.user import User
@@ -110,6 +111,10 @@ async def _authenticate(
 ) -> tuple[User, Honeypot] | None:
     """Returns (user, honeypot) if the connection is allowed to proceed, or
     `None` after already closing the socket with an explanatory reason."""
+    # Cross-site WebSocket hijacking guard — see `app.auth.websocket_origin`.
+    if not is_same_origin(websocket.headers):
+        await websocket.close(code=_POLICY_VIOLATION, reason="Cross-origin request refused.")
+        return None
     raw_token = websocket.cookies.get(SESSION_COOKIE_NAME)
     if not raw_token:
         await websocket.close(code=_POLICY_VIOLATION, reason="Not authenticated.")

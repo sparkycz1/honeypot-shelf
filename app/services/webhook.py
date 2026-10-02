@@ -50,6 +50,24 @@ class UnsafeWebhookTargetError(ValueError):
     connect to — see this module's docstring."""
 
 
+def redact_url(url: str) -> str:
+    """`https://host[:port]/…` — a webhook URL's path (and query) is usually
+    its secret (Discord's `/api/webhooks/<id>/<token>`, Slack's
+    `/services/...`, an ntfy topic), so the delivery history and the
+    server log keep only where it goes, never how to post there. A URL too
+    malformed to split redacts to nothing at all."""
+    try:
+        parts = urlsplit(url)
+        port = parts.port
+    except ValueError:
+        return "…"
+    if not parts.scheme or not parts.hostname:
+        return "…"
+    host = parts.hostname + (f":{port}" if port else "")
+    rest = "/…" if parts.path.strip("/") or parts.query else ""
+    return f"{parts.scheme}://{host}{rest}"
+
+
 def validate_webhook_url(url: str) -> None:
     """Raise `UnsafeWebhookTargetError` if `url` isn't a plausible,
     safe-to-send-to webhook target: http(s) only, a hostname present, and

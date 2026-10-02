@@ -3,6 +3,7 @@ imported from routers without a circular dependency)."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime
 from functools import lru_cache
@@ -184,6 +185,28 @@ templates.env.globals["branding_favicon_url"] = branding.favicon_url
 
 # Footer (base.html) — same values settings/_general.html's "Version" panel
 # used to show before that panel was removed in favor of the footer.
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+
+@lru_cache(maxsize=256)
+def _static_fingerprint(path: str) -> str:
+    try:
+        return hashlib.sha256((STATIC_DIR / path).read_bytes()).hexdigest()[:12]
+    except OSError:
+        return "missing"
+
+
+def static_url(path: str) -> str:
+    """`/static/<path>?v=<content hash>` — every page references its CSS/JS
+    through this, so a new release's files get a new URL and a browser
+    never keeps rendering new HTML with a stale cached stylesheet or script
+    (which silently breaks whatever layout or behaviour changed). The hash
+    is computed once per file per process, and `app.main` serves such
+    versioned URLs as immutable."""
+    return f"/static/{path}?v={_static_fingerprint(path)}"
+
+
+templates.env.globals["static_url"] = static_url
 templates.env.globals["app_version"] = APP_VERSION
 templates.env.globals["git_commit"] = get_git_commit
 

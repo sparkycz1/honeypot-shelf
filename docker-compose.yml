@@ -31,6 +31,15 @@ x-app-image: &app-image
     # wiki/Architecture.md.
     TZ: ${TZ:-UTC}
   restart: unless-stopped
+  # web/worker/beat/migrate run as an unprivileged user and need no Linux
+  # capability at all (reachability is a plain TCP connect), so drop them
+  # all and forbid regaining any through a setuid binary. The optional
+  # `vpn` sidecar (docker-compose.vpn.yml) is defined separately and keeps
+  # the NET_ADMIN it needs.
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
 
 services:
   db:

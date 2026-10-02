@@ -260,8 +260,22 @@ def create_app() -> FastAPI:
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
         response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        # Severs `window.opener` for any cross-origin page this app opens
+        # or is opened by (e.g. an OIDC provider's popup/redirect chain).
+        response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
         if settings.is_production:
             response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+        if request.url.path.startswith("/static/"):
+            # Templates link every CSS/JS file as `static_url(...)` —
+            # `?v=<content hash>` — so a versioned URL can never change
+            # content and may be cached for good; anything else must be
+            # revalidated (cheap: an ETag 304), or a browser keeps a stale
+            # stylesheet or script across upgrades.
+            response.headers["Cache-Control"] = (
+                "public, max-age=31536000, immutable"
+                if request.query_params.get("v")
+                else "no-cache"
+            )
         return response
 
     app.include_router(api_docs.router)
