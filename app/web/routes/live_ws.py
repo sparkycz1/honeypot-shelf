@@ -42,6 +42,7 @@ import uuid
 from fastapi import APIRouter, WebSocket, status
 from redis.asyncio.client import PubSub
 
+from app.auth import session_policy
 from app.auth.scope import can_see_honeypot
 from app.auth.sessions import SESSION_COOKIE_NAME, get_valid_session
 from app.auth.websocket_origin import is_same_origin
@@ -70,6 +71,9 @@ async def _authenticated_user(websocket: WebSocket) -> User | None:
     if not is_same_origin(websocket.headers):
         await websocket.close(code=_POLICY_VIOLATION, reason="Cross-origin request refused.")
         return None
+    if not await session_policy.websocket_network_allowed(websocket):
+        await websocket.close(code=_POLICY_VIOLATION, reason="Not allowed from this network.")
+        return None
     raw_token = websocket.cookies.get(SESSION_COOKIE_NAME)
     if not raw_token:
         await websocket.close(code=_POLICY_VIOLATION, reason="Not authenticated.")
@@ -88,6 +92,9 @@ async def _authenticate_honeypot(websocket: WebSocket, honeypot_id: uuid.UUID) -
     # Cross-site WebSocket hijacking guard — see `app.auth.websocket_origin`.
     if not is_same_origin(websocket.headers):
         await websocket.close(code=_POLICY_VIOLATION, reason="Cross-origin request refused.")
+        return None
+    if not await session_policy.websocket_network_allowed(websocket):
+        await websocket.close(code=_POLICY_VIOLATION, reason="Not allowed from this network.")
         return None
     raw_token = websocket.cookies.get(SESSION_COOKIE_NAME)
     if not raw_token:

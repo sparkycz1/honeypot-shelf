@@ -16,7 +16,8 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.audit import log_event, verify_chain
+from app.audit import client_ip, log_event, verify_chain
+from app.auth import session_policy
 from app.auth.dependencies import require_superadmin
 from app.core.app_settings import get_or_create_app_settings
 from app.core.config import get_settings
@@ -93,6 +94,8 @@ async def _render_settings(
         "smtp_encryptions": list(SmtpEncryption),
         "tabs": _tabs(request),
         "active_tab": tab,
+        "sign_in_limits": SIGN_IN_POLICY_LIMITS,
+        "client_ip": client_ip(request),
         **extra,
     }
     # Only fetched for the tab that actually shows it — this is a
@@ -269,6 +272,80 @@ async def update_checks_settings(
         },
     )
     return RedirectResponse(url="/settings?tab=checks", status_code=status.HTTP_303_SEE_OTHER)
+
+
+# Settings -> Security's sign-in policy (app.auth.session_policy): the
+# allowed range of each number, used by the form's min/max and the handler.
+SIGN_IN_POLICY_LIMITS: dict[str, tuple[int, int]] = {
+    "session_idle_timeout_minutes": (5, 43200),
+    "session_absolute_max_hours": (1, 8760),
+    "login_max_failed_attempts": (1, 100),
+    "login_lockout_minutes": (1, 1440),
+}
+
+
+@router.post("/sign-in-policy", dependencies=[Depends(verify_csrf)])
+async def update_sign_in_policy(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    session_idle_timeout_minutes: str = Form(""),
+    session_absolute_max_hours: str = Form(""),
+    login_max_failed_attempts: str = Form(""),
+    login_lockout_minutes: str = Form(""),
+    login_allowed_networks: str = Form(""),
+) -> Response:
+    """Settings -> Security's sign-in policy (`app.auth.session_policy`).
+
+    The network allowlist is refused when it would exclude the address
+    saving it — the one mistake here that would lock the operator out of
+    the instance with no way back in short of editing the database."""
+    app_settings = await get_or_create_app_settings(db)
+    errors: list[str] = []
+    values: dict[str, int] = {}
+    for name, raw, label_key in (
+        ("session_idle_timeout_minutes", session_idle_timeout_minutes,
+         "settings.security.idle_timeout"),
+        ("session_absolute_max_hours", session_absolute_max_hours,
+         "settings.security.absolute_max"),
+        ("login_max_failed_attempts", login_max_failed_attempts,
+         "settings.security.max_failed_attempts"),
+        ("login_lockout_minutes", login_lockout_minutes, "settings.security.lockout_minutes"),
+    ):
+        minimum, maximum = SIGN_IN_POLICY_LIMITS[name]
+        value, error = _parse_bounded_int(
+            raw, label=t(request, label_key), minimum=minimum, maximum=maximum
+        )
+        if error:
+            errors.append(error)
+        elif value is not None:
+            values[name] = value
+
+    networks, invalid = session_policy.parse_networks(login_allowed_networks)
+    if invalid:
+        errors.append(
+            t(request, "settings.security.invalid_networks", entries=", ".join(invalid[:5]))
+        )
+    elif networks and not session_policy.ip_allowed(client_ip(request), networks):
+        errors.append(
+            t(request, "settings.security.networks_exclude_you", ip=client_ip(request) or "?")
+        )
+    if errors:
+        return await _render_settings(request, db, errors, tab="security")
+
+    for name, value in values.items():
+        setattr(app_settings, name, value)
+    app_settings.login_allowed_networks = "\n".join(str(n) for n in networks) or None
+    await db.commit()
+    session_policy.invalidate()
+
+    await log_event(
+        db,
+        request=request,
+        action="settings.sign_in_policy.update",
+        summary="Updated the sign-in policy",
+        details={**values, "login_allowed_networks": [str(n) for n in networks]},
+    )
+    return RedirectResponse(url="/settings?tab=security", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/audit-retention", dependencies=[Depends(verify_csrf)])

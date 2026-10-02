@@ -6,8 +6,12 @@ debcontrol's own reasoning verbatim:
 - **Version/commit info** and the **SSH public key/fingerprint** — safe to
   read over a bearer-token API; the public key is *meant* to be copied
   elsewhere (into `authorized_keys`).
-- **Background-check intervals** and **audit log retention** — operational
-  facts, not secrets.
+- **Background-check intervals**, **audit log retention** and the **sign-in
+  policy** (session lifetime, lockout, allowed networks) — operational
+  facts, not secrets. Read-only like everything here: a wrong network
+  allowlist locks every browser *and* every API token out at once, and
+  the web form refuses a list that excludes the address saving it — a
+  safeguard a script running from somewhere else wouldn't get.
 
 What's deliberately **not** exposed here, even to a superadmin token:
 
@@ -56,4 +60,9 @@ async def get_settings_api(db: AsyncSession = Depends(get_db)) -> dict[str, obje
         "update_timeout_seconds": app_settings.update_timeout_seconds,
         "ssh_connect_timeout": app_settings.ssh_connect_timeout,
         "audit_log_retention_days": app_settings.audit_log_retention_days,
+        "session_idle_timeout_minutes": app_settings.session_idle_timeout_minutes,
+        "session_absolute_max_hours": app_settings.session_absolute_max_hours,
+        "login_max_failed_attempts": app_settings.login_max_failed_attempts,
+        "login_lockout_minutes": app_settings.login_lockout_minutes,
+        "login_allowed_networks": (app_settings.login_allowed_networks or "").split() or [],
     }

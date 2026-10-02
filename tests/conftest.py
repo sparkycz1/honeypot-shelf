@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 
 # Set these BEFORE importing `app.main` — configuration (`Settings`) is
 # validated right at import time, and tests don't run against real
@@ -79,6 +80,18 @@ class RecordedCeleryCalls(list[tuple[str, tuple[Any, ...], dict[str, Any]]]):
     @property
     def names(self) -> list[str]:
         return [name for name, _args, _kwargs in self]
+
+
+@pytest.fixture(autouse=True)
+def _fresh_sign_in_policy() -> Iterator[None]:
+    """`app.auth.session_policy` caches the policy in process for a few
+    seconds; every test gets its own in-memory database, so a policy cached
+    from the previous test's settings must never carry over."""
+    from app.auth import session_policy
+
+    session_policy.invalidate()
+    yield
+    session_policy.invalidate()
 
 
 @pytest.fixture(autouse=True)
