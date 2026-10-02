@@ -9,16 +9,19 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import shutil
 
 from celery.exceptions import TimeoutError as CeleryTimeoutError
-from fastapi import APIRouter, Depends, Form, Request, Response, status
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Depends, File, Form, Request, Response, UploadFile, status
+from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.background import BackgroundTask
 
 from app.audit import client_ip, log_event, verify_chain
 from app.auth import session_policy
 from app.auth.dependencies import require_superadmin
+from app.auth.sessions import clear_session_cookie
 from app.core.app_settings import get_or_create_app_settings
 from app.core.config import get_settings
 from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie, verify_csrf
@@ -37,7 +40,7 @@ from app.db.models.geoip_database import SINGLETON_ID as GEOIP_SINGLETON_ID
 from app.db.models.geoip_database import GeoipDatabase
 from app.db.models.honeypot import AuthMethod, Honeypot
 from app.db.session import get_db
-from app.services import netbird, wireguard
+from app.services import full_backup, netbird, wireguard
 from app.services.syslog_transport import DEFAULT_SYSLOG_PORT, SyslogProtocol
 from app.ssh.identity import (
     activate_pending_identity,
@@ -55,7 +58,7 @@ router = APIRouter(prefix="/settings", dependencies=[Depends(require_superadmin)
 # why: there's only ever one GET route here, not one per tab, since every
 # POST handler below redirects back to /settings regardless of which tab
 # it belongs to).
-_TAB_KEYS = ("general", "checks", "security", "integrations", "vpn", "geoip")
+_TAB_KEYS = ("general", "checks", "security", "integrations", "vpn", "geoip", "backup")
 _VALID_TABS = set(_TAB_KEYS)
 _DEFAULT_TAB = "general"
 
@@ -95,6 +98,7 @@ async def _render_settings(
         "tabs": _tabs(request),
         "active_tab": tab,
         "sign_in_limits": SIGN_IN_POLICY_LIMITS,
+        "min_passphrase": full_backup.MIN_PASSPHRASE_LENGTH,
         "client_ip": client_ip(request),
         **extra,
     }
@@ -1256,3 +1260,88 @@ async def wireguard_status_panel(request: Request) -> Response:
     return templates.TemplateResponse(
         request, "partials/wireguard_status.html", {"wireguard_status": await wireguard.status()}
     )
+
+
+# --- Settings -> Backup & restore: the whole application
+# (app.services.full_backup). Superadmin-only like every route here. ---
+
+
+@router.post("/backup/full", dependencies=[Depends(verify_csrf)])
+async def download_full_backup(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    passphrase: str = Form(""),
+    passphrase_confirm: str = Form(""),
+) -> Response:
+    """The whole application as one passphrase-encrypted file."""
+    if passphrase != passphrase_confirm:
+        return await _render_settings(
+            request, db, [t(request, "backup.full.mismatch")], tab="backup"
+        )
+    if len(passphrase) < full_backup.MIN_PASSPHRASE_LENGTH:
+        return await _render_settings(
+            request,
+            db,
+            [t(request, "backup.full.too_short", count=full_backup.MIN_PASSPHRASE_LENGTH)],
+            tab="backup",
+        )
+    path = full_backup.temporary_path()
+    with path.open("wb") as destination:
+        manifest = await full_backup.write_backup(db, destination, passphrase)
+    await log_event(
+        db,
+        request=request,
+        action="backup.full.export",
+        summary="Downloaded a full backup of the application",
+        details={"tables": len(manifest["tables"]), "rows": sum(manifest["tables"].values())},
+    )
+    return FileResponse(
+        path,
+        media_type="application/octet-stream",
+        filename=full_backup.backup_filename(),
+        background=BackgroundTask(path.unlink, missing_ok=True),
+    )
+
+
+@router.post("/backup/full/restore", dependencies=[Depends(verify_csrf)])
+async def restore_full_backup(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    backup_file: UploadFile = File(...),
+    passphrase: str = Form(""),
+    confirm: str = Form(""),
+) -> Response:
+    """Replaces the whole application with an uploaded full backup, then
+    signs everyone out (every account and session comes from the backup)."""
+    if confirm.strip() != "RESTORE":
+        return await _render_settings(
+            request, db, [t(request, "backup.full.confirm_needed")], tab="backup"
+        )
+    path = full_backup.temporary_path()
+    try:
+        with path.open("wb") as copy:
+            shutil.copyfileobj(backup_file.file, copy)
+        with path.open("rb") as source:
+            manifest = await full_backup.restore_backup(db, source, passphrase)
+    except full_backup.BackupError as exc:
+        return await _render_settings(
+            request, db, [t(request, "backup.full.restore_failed", reason=str(exc))], tab="backup"
+        )
+    finally:
+        path.unlink(missing_ok=True)
+
+    session_policy.invalidate()
+    await log_event(
+        db,
+        request=request,
+        action="backup.full.restore",
+        summary=f"Restored the application from a full backup made {manifest.get('created_at')}",
+        details={
+            "backup_app_version": manifest.get("app_version"),
+            "backup_created_at": manifest.get("created_at"),
+            "rows": sum(manifest.get("tables", {}).values()),
+        },
+    )
+    response = RedirectResponse(url="/login?restored=1", status_code=status.HTTP_303_SEE_OTHER)
+    clear_session_cookie(response)
+    return response
