@@ -17,7 +17,9 @@
 // target shown/hidden (e.g. Notifications: "Applies to" company vs.
 // honeypot), use `data-toggle-hidden-map='{"value1":"id1","value2":"id2"}'`
 // instead — every listed target is hidden except the one whose key matches
-// the current value.
+// the current value. A value may list several space-separated ids (e.g.
+// Notifications' "Send via": Telegram shows its token *and* recipient
+// fields); an id listed under several values shows for any of them.
 function applyToggle(input) {
   if (!input || !input.dataset) return;
 
@@ -28,9 +30,12 @@ function applyToggle(input) {
     } catch {
       return;
     }
-    for (const [value, id] of Object.entries(map)) {
-      const target = document.getElementById(id);
-      if (target) target.hidden = value !== input.value;
+    const shown = new Set(String(map[input.value] || "").split(/\s+/));
+    for (const ids of Object.values(map)) {
+      for (const id of String(ids).split(/\s+/)) {
+        const target = id ? document.getElementById(id) : null;
+        if (target) target.hidden = !shown.has(id);
+      }
     }
     return;
   }

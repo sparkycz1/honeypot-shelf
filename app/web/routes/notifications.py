@@ -25,6 +25,7 @@ from app.auth.dependencies import get_current_user
 from app.auth.scope import can_see_honeypot, companies_visible_to, honeypots_visible_to
 from app.core.app_settings import get_or_create_app_settings
 from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie, verify_csrf
+from app.core.security import encrypt_secret
 from app.db.models.company import Company
 from app.db.models.honeypot import Honeypot
 from app.db.models.notification_log import NotificationChannel, NotificationLog
@@ -37,6 +38,7 @@ from app.db.models.notification_rule import (
 from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.user import looks_like_email
+from app.services import push_channels
 from app.services.notifications import default_template, resolve_target, send_test_notification
 from app.services.webhook import UnsafeWebhookTargetError, validate_webhook_url
 from app.web.templating import templates
@@ -230,8 +232,70 @@ def _parse_ids(form: FormData, field: str) -> tuple[list[uuid.UUID], bool]:
     return ids, all_valid
 
 
+def _parse_delivery(
+    form: FormData, errors: list[str], *, has_token: bool
+) -> dict[str, object]:
+    """The rule's "Send via" part: channel, and whichever of email, URL,
+    token and recipient that channel uses (the others are cleared). A URL is
+    SSRF-checked the same as the plain webhook's; the token is stored only
+    encrypted, and a token field left blank on edit keeps the stored one."""
+    get = form.get
+    raw_channel = str(get("delivery_channel") or "").strip().lower()
+    try:
+        channel = NotificationChannel(raw_channel)
+    except ValueError:
+        channel = NotificationChannel.EMAIL
+    channel_name = push_channels.CHANNEL_NAMES.get(channel.value, channel.value)
+    target_email = str(get("target_email") or "").strip() or None
+    webhook_url = str(get("webhook_url") or "").strip() or None
+    channel_token = str(get("channel_token") or "").strip() or None
+    channel_recipient = str(get("channel_recipient") or "").strip() or None
+    if channel == NotificationChannel.EMAIL:
+        if target_email and not looks_like_email(target_email):
+            errors.append("That doesn't look like a valid email address.")
+    else:
+        target_email = None
+    if channel.value in push_channels.URL_CHANNELS:
+        if not webhook_url:
+            errors.append(f"{channel_name} needs a URL.")
+        elif not webhook_url.startswith(("http://", "https://")):
+            errors.append("The URL must start with http:// or https://.")
+        else:
+            try:
+                validate_webhook_url(webhook_url)
+            except UnsafeWebhookTargetError as exc:
+                errors.append(str(exc))
+    else:
+        webhook_url = None
+    if channel.value in push_channels.RECIPIENT_CHANNELS:
+        if not channel_recipient:
+            errors.append(
+                f"{channel_name} needs a recipient (a Telegram chat id, a Pushover user key)."
+            )
+    else:
+        channel_recipient = None
+    token_used = channel.value in (
+        push_channels.TOKEN_CHANNELS | push_channels.OPTIONAL_TOKEN_CHANNELS
+    )
+    if channel.value in push_channels.TOKEN_CHANNELS and not channel_token and not has_token:
+        errors.append(f"{channel_name} needs a token.")
+
+
+    delivery: dict[str, object] = {
+        "delivery_channel": channel,
+        "target_email": target_email,
+        "webhook_url": webhook_url,
+        "channel_recipient": channel_recipient,
+    }
+    if channel_token and token_used:
+        delivery["channel_token_encrypted"] = encrypt_secret(channel_token)
+    elif not token_used:
+        delivery["channel_token_encrypted"] = None
+    return delivery
+
+
 def _parse_rule_form(
-    form: FormData,
+    form: FormData, *, has_token: bool = False
 ) -> tuple[dict[str, object], list[uuid.UUID], list[uuid.UUID], list[str]]:
     """Shared parse/validate for both create and edit — returns a dict of
     plain column values ready to assign onto a `NotificationRule`, the
@@ -262,25 +326,7 @@ def _parse_rule_form(
             errors.append("Choose at least one honeypot.")
         company_ids = []
 
-    raw_channel = str(get("delivery_channel") or "").strip().lower()
-    channel = (
-        NotificationChannel.WEBHOOK if raw_channel == "webhook" else NotificationChannel.EMAIL
-    )
-    target_email = str(get("target_email") or "").strip() or None
-    webhook_url = str(get("webhook_url") or "").strip() or None
-    if channel == NotificationChannel.EMAIL:
-        if target_email and not looks_like_email(target_email):
-            errors.append("That doesn't look like a valid email address.")
-        webhook_url = None
-    else:
-        if not webhook_url:
-            errors.append("A webhook URL is required when the channel is webhook.")
-        else:
-            try:
-                validate_webhook_url(webhook_url)
-            except UnsafeWebhookTargetError as exc:
-                errors.append(str(exc))
-        target_email = None
+    delivery = _parse_delivery(form, errors, has_token=has_token)
 
     notify_on_alert = get("notify_on_alert") == "on"
     notify_on_unavailable = get("notify_on_unavailable") == "on"
@@ -305,9 +351,7 @@ def _parse_rule_form(
     values: dict[str, object] = {
         "name": name,
         "scope": scope,
-        "delivery_channel": channel,
-        "target_email": target_email,
-        "webhook_url": webhook_url,
+        **delivery,
         "notify_on_alert": notify_on_alert,
         "notify_on_unavailable": notify_on_unavailable,
         "unavailable_after_minutes": unavailable_after_minutes,
@@ -411,7 +455,9 @@ async def update_notification_rule(
     assert user is not None
     rule = await _get_own_rule(db, user, rule_id)
     form = await request.form()
-    values, company_ids, honeypot_ids, errors = _parse_rule_form(form)
+    values, company_ids, honeypot_ids, errors = _parse_rule_form(
+        form, has_token=rule.channel_token_encrypted is not None
+    )
     companies: list[Company] = []
     honeypots: list[Honeypot] = []
     if not errors:
@@ -487,7 +533,7 @@ async def send_test(
     else:
         target = resolve_target(rule)
         if not target:
-            error = "No email address or webhook URL is set for this rule."
+            error = "No destination (email address, URL or recipient) is set for this rule."
         else:
             app_settings = await get_or_create_app_settings(db)
             error = await send_test_notification(

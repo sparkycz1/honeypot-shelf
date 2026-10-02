@@ -12,3 +12,12 @@ import enum
 class NotificationChannel(enum.StrEnum):
     EMAIL = "email"
     WEBHOOK = "webhook"
+    # Push services and team chats — see app.services.push_channels.
+    NTFY = "ntfy"
+    GOTIFY = "gotify"
+    TELEGRAM = "telegram"
+    DISCORD = "discord"
+    PUSHOVER = "pushover"
+    MATTERMOST = "mattermost"
+    SLACK = "slack"
+    TEAMS = "teams"
