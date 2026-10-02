@@ -25,7 +25,7 @@ from __future__ import annotations
 import enum
 from datetime import datetime
 
-from sqlalchemy import Boolean, Integer, LargeBinary, String, func
+from sqlalchemy import Boolean, Integer, LargeBinary, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -356,6 +356,27 @@ class AppSettings(Base):
     geoip_refresh_interval_hours: Mapped[int] = mapped_column(
         Integer, default=168, nullable=False
     )
+
+    # --- Sign-in policy (Settings -> Security, see app.auth.session_policy).
+    # Defaults are the values that used to be hardcoded in app.auth.sessions
+    # and app.auth.login, so an upgrading instance behaves identically until
+    # a superadmin changes one. Ported from debcontrol. ---
+    #
+    # A session with no request for this long expires (sliding window).
+    session_idle_timeout_minutes: Mapped[int] = mapped_column(
+        Integer, default=720, nullable=False
+    )
+    # ...and every session ends this long after sign-in, however active.
+    session_absolute_max_hours: Mapped[int] = mapped_column(
+        Integer, default=720, nullable=False
+    )
+    # Consecutive failed sign-ins (password or second factor) that lock an
+    # account, and for how long — app.auth.login._register_failed_attempt.
+    login_max_failed_attempts: Mapped[int] = mapped_column(Integer, default=5, nullable=False)
+    login_lockout_minutes: Mapped[int] = mapped_column(Integer, default=15, nullable=False)
+    # IPs/CIDRs (one per line) allowed to reach the app at all — web UI,
+    # REST API and WebSockets. NULL/empty = from anywhere.
+    login_allowed_networks: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     updated_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), onupdate=func.now(), nullable=False

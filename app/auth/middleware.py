@@ -42,6 +42,8 @@ from urllib.parse import quote
 from fastapi import Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
 
+from app.audit import client_ip
+from app.auth import session_policy
 from app.auth.sessions import SESSION_COOKIE_NAME, get_valid_session
 from app.core.config import get_settings
 from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie
@@ -69,6 +71,25 @@ _PUBLIC_PATHS = frozenset(
 # optional custom logo/favicon (app.web.routes.branding) — same reasoning
 # as `/static/`, the login page needs it too.
 _PUBLIC_PREFIXES = ("/static/", "/api/", "/branding/")
+
+
+# Outside Settings -> Security's network allowlist: assets the block page
+# itself needs, the container health check, and honeypot self-registration
+# (machine-to-machine, token-authenticated, typically from networks an
+# operator never signs in from).
+_NETWORK_EXEMPT_PATHS = frozenset({"/healthz", "/api/inform"})
+_NETWORK_EXEMPT_PREFIXES = ("/static/", "/branding/")
+
+
+async def _network_allowed(request: Request) -> bool:
+    path = request.url.path
+    if path in _NETWORK_EXEMPT_PATHS or path.startswith(_NETWORK_EXEMPT_PREFIXES):
+        return True
+    policy = session_policy.fresh_cached_policy()
+    if policy is None:
+        async with request.app.state.db_session_factory() as db:
+            policy = await session_policy.load_policy(db)
+    return policy.allows_ip(client_ip(request))
 
 
 def _is_public(path: str) -> bool:
@@ -100,6 +121,26 @@ async def require_auth(
     # resolves to one that has chosen its own language. See app.i18n's
     # module docstring.
     request.state.locale = get_locale(None, default=get_settings().default_language)
+
+    if not await _network_allowed(request):
+        # Before any session lookup or login form: from outside the allowed
+        # networks there is nothing to sign in to. Same message for every
+        # path, so it reveals nothing beyond "not from here".
+        blocked: Response
+        if request.url.path.startswith("/api/") or request.headers.get(
+            "accept", ""
+        ).startswith("application/json"):
+            blocked = JSONResponse(
+                {"detail": "Access from this network is not allowed."},
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+        else:
+            blocked = Response(
+                "Access to Honeypot Shelf from this network is not allowed.",
+                status_code=status.HTTP_403_FORBIDDEN,
+                media_type="text/plain; charset=utf-8",
+            )
+        return blocked
 
     if not _is_public(request.url.path):
         session = None
