@@ -69,7 +69,7 @@
                 {% if rule.notify_on_recovered %}<span class="badge">{{ t(request, "notifications.rule.event_recovered") }} ({{ rule.recovered_after_minutes }}m)</span>{% endif %}
               </td>
               <td>
-                {{ t(request, "notifications.subscriptions.channel_" + rule.delivery_channel.value) }}
+                {{ t(request, "notifications.rule.send_via_" + rule.delivery_channel.value) }}
               </td>
               <td>
                 <a href="/account/notifications/{{ rule.id }}/edit">{{ t(request, "notifications.rule.edit") }}</a>

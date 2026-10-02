@@ -50,7 +50,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, ForeignKey, Integer, LargeBinary, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -97,6 +97,12 @@ class NotificationRule(Base):
     )
     target_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     webhook_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    # Push channels (app.services.push_channels): a token some need
+    # (Telegram's bot token, Pushover's app token, Gotify's app token, an
+    # ntfy access token) — encrypted, never shown again — and a recipient
+    # (a Telegram chat id, a Pushover user key).
+    channel_token_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    channel_recipient: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     notify_on_alert: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     notify_on_unavailable: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

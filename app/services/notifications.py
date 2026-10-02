@@ -50,10 +50,12 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.security import DecryptionError, decrypt_secret
 from app.db.models.app_settings import AppSettings
 from app.db.models.honeypot import Honeypot
 from app.db.models.notification_log import NotificationChannel, NotificationKind, NotificationLog
 from app.i18n import DEFAULT_LOCALE_CODE
+from app.services import push_channels
 from app.services.live_updates import publish_notifications_event
 from app.services.smtp import SmtpNotConfiguredError, send_email
 from app.services.webhook import UnsafeWebhookTargetError, redact_url, send_webhook
@@ -169,15 +171,41 @@ def resolve_target(rule: NotificationRule) -> str | None:
     rule; for an email rule, `target_email` (the rule's own override) if
     set, else the owning user's own account email — `None` if there's
     nowhere to send yet. `rule.user` must already be loaded (selectinload)."""
-    if rule.delivery_channel == NotificationChannel.WEBHOOK:
+    channel = rule.delivery_channel.value
+    if channel in push_channels.URL_CHANNELS:
         return rule.webhook_url
+    if channel in push_channels.RECIPIENT_CHANNELS:
+        return rule.channel_recipient
     return rule.target_email or rule.user.email
+
+
+def rule_token(rule: NotificationRule) -> str | None:
+    """A push rule's channel token, decrypted — `None` if it has none (or
+    it can't be decrypted any more, which the send then reports)."""
+    if rule.channel_token_encrypted is None:
+        return None
+    try:
+        return decrypt_secret(rule.channel_token_encrypted)
+    except DecryptionError:
+        return None
+
+
+async def _send_push(
+    channel: NotificationChannel, target: str, *, token: str | None, subject: str, body: str
+) -> tuple[str | None, str]:
+    """(error or None, what the history shows as the target)."""
+    url = target if channel.value in push_channels.URL_CHANNELS else None
+    recipient = None if url else target
+    error = await push_channels.send(
+        channel.value, url=url, token=token, recipient=recipient, subject=subject, body=body
+    )
+    return error, push_channels.delivery_target(channel.value, url, recipient)
 
 
 def _loggable(channel: NotificationChannel, target: str) -> str:
     """A target as it may appear in the server log: a webhook URL without
     its secret path, an email address as is."""
-    return redact_url(target) if channel == NotificationChannel.WEBHOOK else target
+    return redact_url(target) if channel.value in push_channels.URL_CHANNELS else target
 
 
 async def _log(
@@ -198,7 +226,7 @@ async def _log(
     record, so this never raises."""
     if db is None:
         return
-    if channel == NotificationChannel.WEBHOOK:
+    if channel.value in push_channels.URL_CHANNELS:
         # The history keeps where a webhook went, never its secret path.
         shown = redact_url(target)
         error = error.replace(target, shown) if error else error
@@ -236,12 +264,29 @@ async def _deliver(
     body: str,
     webhook_payload: dict[str, Any],
     is_test: bool = False,
+    token: str | None = None,
 ) -> None:
     """Send one notification through `channel` and log the outcome —
     the single choke point every public `notify_*`/`send_test_notification`
     function in this module funnels through."""
     error: str | None = None
     success = False
+    if channel.value in push_channels.PUSH_CHANNELS:
+        error, shown = await _send_push(channel, target, token=token, subject=subject, body=body)
+        if error:
+            logger.warning("Failed to send %s notification to %s: %s", channel.value, shown, error)
+        await _log(
+            db,
+            user_id=user_id,
+            honeypot=honeypot,
+            kind=kind,
+            channel=channel,
+            target=shown,
+            success=error is None,
+            error=error,
+            is_test=is_test,
+        )
+        return
     try:
         if channel == NotificationChannel.WEBHOOK:
             await asyncio.to_thread(send_webhook, target, webhook_payload)
@@ -306,6 +351,7 @@ async def _dispatch_rule(
         subject=subject,
         body=body,
         webhook_payload=webhook_payload,
+        token=rule_token(rule),
     )
 
 
@@ -463,6 +509,22 @@ async def send_test_notification(
     }
     error: str | None = None
     success = False
+    if channel.value in push_channels.PUSH_CHANNELS:
+        error, shown = await _send_push(
+            channel, target, token=rule_token(rule), subject=subject, body=body
+        )
+        await _log(
+            db,
+            user_id=rule.user_id,
+            honeypot=honeypot,
+            kind=NotificationKind.TEST,
+            channel=channel,
+            target=shown,
+            success=error is None,
+            error=error,
+            is_test=True,
+        )
+        return error
     try:
         if channel == NotificationChannel.WEBHOOK:
             await asyncio.to_thread(send_webhook, target, webhook_payload)
@@ -497,5 +559,6 @@ __all__ = [
     "notify_unavailable",
     "render_template",
     "resolve_target",
+    "rule_token",
     "send_test_notification",
 ]
