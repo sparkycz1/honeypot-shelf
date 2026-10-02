@@ -30,25 +30,46 @@
     <label for="nav-toggle" class="nav-toggle-label" aria-label="{{ t(request, 'nav.toggle_navigation') }}">☰</label>
     {% set current_user = request.state.user %}
     {% set current_path = request.url.path %}
+    {# Everyday pages stay in the bar; account/instance administration
+       folds into one "Administration" menu (a plain <details>, no JS —
+       opens on click, and inline inside the phone hamburger menu). #}
+    {% set main_links = [
+      ('/dashboard', 'nav.dashboard', true, '/dashboard'),
+      ('/honeypots', 'nav.honeypots', true, '/honeypots'),
+      ('/map', 'nav.map', true, '/map'),
+      ('/account/notifications', 'nav.notifications', true, '/account/notifications'),
+      ('/initialize', 'nav.initialize', current_user.can_write(), '/initialize'),
+      ('/scheduling', 'nav.scheduling', current_user.can_write(), '/scheduling'),
+    ] %}
+    {% set admin_links = [
+      ('/companies', 'nav.companies', current_user.is_superadmin, '/companies'),
+      ('/users', 'nav.users', current_user.is_superadmin, '/users'),
+      ('/audit', 'nav.audit', current_user.is_superadmin, '/audit'),
+      ('/settings', 'nav.settings', current_user.is_superadmin, '/settings'),
+      ('/api', 'nav.api_docs', current_user.can_write() and current_user.api_access_enabled, '/api'),
+    ] %}
+    {% macro nav_link(href, key, prefix) %}
+      {% set is_active = current_path == prefix or current_path.startswith(prefix ~ '/') %}
+      <a href="{{ href }}" {% if is_active %}class="active" aria-current="page"{% endif %}>{{ t(request, key) }}</a>
+    {% endmacro %}
     <nav>
-      <a href="/dashboard" {% if current_path == '/dashboard' %}class="active" aria-current="page"{% endif %}>{{ t(request, "nav.dashboard") }}</a>
-      <a href="/honeypots" {% if current_path.startswith('/honeypots') %}class="active" aria-current="page"{% endif %}>{{ t(request, "nav.honeypots") }}</a>
-      <a href="/map" {% if current_path.startswith('/map') %}class="active" aria-current="page"{% endif %}>{{ t(request, "nav.map") }}</a>
-      <a href="/account/notifications" {% if current_path.startswith('/account/notifications') %}class="active" aria-current="page"{% endif %}>{{ t(request, "nav.notifications") }}</a>
-      {% if current_user.can_write() %}
-        <a href="/initialize" {% if current_path.startswith('/initialize') %}class="active" aria-current="page"{% endif %}>{{ t(request, "nav.initialize") }}</a>
-      {% endif %}
-      {% if current_user.can_write() %}
-        <a href="/scheduling" {% if current_path.startswith('/scheduling') %}class="active" aria-current="page"{% endif %}>{{ t(request, "nav.scheduling") }}</a>
-      {% endif %}
-      {% if current_user.is_superadmin %}
-        <a href="/companies" {% if current_path.startswith('/companies') %}class="active" aria-current="page"{% endif %}>{{ t(request, "nav.companies") }}</a>
-        <a href="/audit" {% if current_path.startswith('/audit') %}class="active" aria-current="page"{% endif %}>{{ t(request, "nav.audit") }}</a>
-        <a href="/users" {% if current_path.startswith('/users') %}class="active" aria-current="page"{% endif %}>{{ t(request, "nav.users") }}</a>
-        <a href="/settings" {% if current_path.startswith('/settings') %}class="active" aria-current="page"{% endif %}>{{ t(request, "nav.settings") }}</a>
-      {% endif %}
-      {% if current_user.can_write() and current_user.api_access_enabled %}
-        <a href="/api" {% if current_path == '/api' %}class="active" aria-current="page"{% endif %}>{{ t(request, "nav.api_docs") }}</a>
+      {% for href, key, shown, prefix in main_links if shown %}
+        {{ nav_link(href, key, prefix) }}
+      {% endfor %}
+      {% set visible_admin = admin_links | selectattr(2) | list %}
+      {% if visible_admin %}
+        {% set ns = namespace(admin_active=false) %}
+        {% for link in visible_admin %}
+          {% if current_path == link[3] or current_path.startswith(link[3] ~ '/') %}{% set ns.admin_active = true %}{% endif %}
+        {% endfor %}
+        <details class="nav-menu">
+          <summary {% if ns.admin_active %}class="active"{% endif %}>{{ t(request, "nav.administration") }}</summary>
+          <div class="nav-menu-items">
+            {% for href, key, shown, prefix in visible_admin %}
+              {{ nav_link(href, key, prefix) }}
+            {% endfor %}
+          </div>
+        </details>
       {% endif %}
     </nav>
     <div class="site-header-user">

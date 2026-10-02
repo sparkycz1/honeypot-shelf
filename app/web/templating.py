@@ -19,7 +19,7 @@ from markupsafe import Markup
 
 from app.core.config import get_settings
 from app.core.version import APP_VERSION, get_git_commit
-from app.i18n import get_locale
+from app.i18n import DEFAULT_LOCALE_CODE, get_locale
 from app.i18n import translate as _translate
 from app.services.geoip_display import country_flag
 from app.services.opencanary_logtypes import localized_logtype_label, logtype_label
@@ -197,6 +197,34 @@ def t(request: Request, key: str, **kwargs: object) -> str:
 
 
 templates.env.globals["t"] = t
+
+
+def audit_text(request: Request, action: str, summary: str) -> str:
+    """`{{ audit_text(request, entry.action, entry.summary) }}` — an audit
+    entry's one-line description in the reader's language. Ported from
+    debcontrol.
+
+    `summary` is written in English when the event is recorded (it also
+    goes to exports, syslog and the API, which stay English), so it's what
+    an English reader sees — it's the more specific text. Any other
+    language shows the translated label for the action code instead —
+    `audit.action_label.<action>`, else the label of its parent code
+    (`honeypot.power.reboot` -> `honeypot.power`), else the English
+    summary when neither is translated. The label says *what* happened;
+    the row's target, user and outcome columns say the rest."""
+    locale = getattr(request.state, "locale", None) or get_locale(None)
+    if locale.code == DEFAULT_LOCALE_CODE:
+        return summary
+    code = action
+    while code:
+        label = locale.strings.get(f"audit.action_label.{code}")
+        if label is not None:
+            return label
+        code = code.rpartition(".")[0]
+    return summary
+
+
+templates.env.globals["audit_text"] = audit_text
 
 templates.env.globals["branding_logo_url"] = branding.logo_url
 templates.env.globals["branding_favicon_url"] = branding.favicon_url

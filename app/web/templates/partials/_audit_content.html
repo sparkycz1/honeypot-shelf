@@ -38,10 +38,16 @@
               —
             {% endif %}
           </td>
-          <td>
-            {{ entry.summary }}
+          <td title="{{ entry.summary }}">
+            {{ audit_text(request, entry.action, entry.summary) }}
             {% if entry.details %}
-              <br><span class="hint">{{ entry.details }}</span>
+              <br><span class="hint">
+                {%- if entry.details is mapping -%}
+                  {%- for key, value in entry.details | dictsort -%}
+                    {{ key }}: {{ value | join(', ') if value is iterable and value is not string and value is not mapping else value }}{% if not loop.last %} · {% endif %}
+                  {%- endfor -%}
+                {%- else -%}{{ entry.details }}{%- endif -%}
+              </span>
             {% endif %}
           </td>
           <td>
