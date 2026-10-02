@@ -624,6 +624,7 @@ img.brand-mark-lg { object-fit: contain; }
 
 .search-form input[type="search"],
 .search-form input[type="text"],
+.search-form input[type="number"],
 .search-form select {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -1259,6 +1260,83 @@ pre code { background: none; padding: 0; }
    (up to MAX_LINE_LIMIT), so it scrolls in place rather than growing the
    whole page. */
 .log-output { max-height: 32rem; overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
+
+/* Logs tab: one <li> per line, colored by journal priority (or a keyword
+   guess for a plain file) — see app/web/log_lines.py. */
+.log-viewer { border: 1px solid var(--color-border); border-radius: var(--radius-sm); overflow: hidden; }
+.log-viewer-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+}
+.log-viewer-title { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.log-viewer-count { color: var(--color-muted); font-size: 0.82rem; }
+.log-lines {
+  counter-reset: log-line;
+  list-style: none;
+  margin: 0;
+  padding: var(--space-2) 0;
+  max-height: 70vh;
+  overflow: auto;
+  background: var(--color-bg);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+.log-line {
+  position: relative;
+  padding: 0 var(--space-3) 0 4.25rem;
+  white-space: pre;
+  border-left: 3px solid transparent;
+}
+.log-lines.is-wrapped .log-line { white-space: pre-wrap; word-break: break-word; }
+.log-line::before {
+  counter-increment: log-line;
+  content: counter(log-line);
+  position: absolute;
+  left: 0;
+  width: 3.25rem;
+  text-align: right;
+  color: var(--color-muted);
+  opacity: 0.6;
+  user-select: none;
+}
+.log-line:hover { background: var(--color-surface-raised); }
+.log-error {
+  color: var(--color-danger);
+  border-left-color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 6%, transparent);
+}
+.log-warn { color: var(--color-warn); border-left-color: var(--color-warn); }
+.log-debug { color: var(--color-muted); }
+.log-notice { border-left-color: var(--color-accent); }
+.log-line mark {
+  background: color-mix(in srgb, var(--color-warn) 35%, transparent);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.log-lines:empty { display: none; }
+.log-viewer-actions { display: flex; gap: var(--space-2); }
+.log-small-button { padding: 0.3rem 0.65rem; font-size: 0.8rem; }
+.log-small-button[aria-pressed="true"] { border-color: var(--color-accent); color: var(--color-accent); }
+.log-follow-status { font-size: 0.8rem; color: var(--color-muted); }
+.log-follow-status.is-live { color: var(--color-ok); }
+.log-follow-status.is-live::before { content: "● "; }
+.log-empty { margin: 0; padding: var(--space-4); text-align: center; color: var(--color-muted); }
+.log-filters { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-2); }
+.log-filters label { display: flex; flex-direction: column; gap: 2px; font-size: 0.85rem; }
+/* Beats `.search-form input[type="text"]`'s flex-grow, which would stretch a
+   labelled input vertically inside the column-direction label. */
+.search-form.log-filters label > input,
+.search-form.log-filters label > select { flex: none; }
+.log-filters .checkbox-row { flex-direction: row; align-items: center; }
+.log-input-short { width: 12em; }
 
 details {
   border: 1px solid var(--color-border);

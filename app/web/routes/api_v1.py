@@ -27,7 +27,9 @@ for a different reason: it's an inherently interactive, browser-only
 feature (a live WebSocket relaying keystrokes to a PTY and a real
 terminal emulator's output back) with no meaningful "REST" shape to
 expose — there's nothing here for a script to call that would do anything
-useful without a human driving it. Impersonate (`/users/{id}/impersonate`,
+useful without a human driving it. The Logs tab's *Follow live* stream
+(`app/web/routes/logs_ws.py`) is web-only for the same reason — a script
+reads the same lines with `GET /honeypots/{id}/logs`. Impersonate (`/users/{id}/impersonate`,
 `app/web/routes/impersonation.py`) is excluded for the same reason as the
 terminal: it swaps the browser's own session cookie for another one, a
 concept that doesn't translate to a stateless bearer-token API call at
@@ -989,12 +991,22 @@ async def honeypot_logs_api(
     search: str = "",
     since: str = "",
     until: str = "",
+    priority: str = "",
+    unit: str = "",
+    boot: str = "",
+    hide_own: bool = False,
     user: User = Depends(get_api_token_user),
 ) -> dict[str, object]:
     """The API equivalent of `GET /honeypots/{id}/logs` — journal by default,
     or one allow-listed file when `path` is given. Gated behind
     `ACTION_TERMINAL`, same as the web route, not `HONEYPOT_VIEW` — see
-    `app.ssh.logs`'s module docstring for why. Never stored anywhere."""
+    `app.ssh.logs`'s module docstring for why. Never stored anywhere.
+
+    Journal-only filters: `priority` (journalctl's `-p` name), `unit`
+    (`-u`), `boot` (0 = this boot, -1 = the previous one, down to -20) and
+    `hide_own` (drop this app's own SSH logins). A journal response also
+    carries `entries` (each line with its numeric priority, 0-7 or null)
+    and `hidden` (how many lines `hide_own` dropped)."""
     honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
     app_settings = await get_or_create_app_settings(db)
 
@@ -1006,6 +1018,7 @@ async def honeypot_logs_api(
 
     clamped_lines = max(1, min(lines, ssh_logs.MAX_LINE_LIMIT))
     output: str | None = None
+    extra: dict[str, object] = {}
     error: str | None = None
     try:
         if path.strip():
@@ -1014,7 +1027,15 @@ async def honeypot_logs_api(
             )
         else:
             async_result = tasks.view_honeypot_journal.delay(
-                str(honeypot.id), lines=clamped_lines, search=search, since=since, until=until
+                str(honeypot.id),
+                lines=clamped_lines,
+                search=search,
+                since=since,
+                until=until,
+                priority=ssh_logs.normalize_priority(priority),
+                unit=ssh_logs.normalize_unit(unit),
+                boot=ssh_logs.normalize_boot(boot),
+                hide_own=hide_own,
             )
         result = await asyncio.to_thread(
             async_result.get, timeout=app_settings.ssh_connect_timeout + 15
@@ -1022,6 +1043,11 @@ async def honeypot_logs_api(
         if isinstance(result, dict):
             if result.get("ok"):
                 output = str(result.get("output") or "")
+                if not path.strip():
+                    extra = {
+                        "entries": result.get("entries") or [],
+                        "hidden": int(result.get("hidden") or 0),
+                    }
             else:
                 error = str(result.get("error") or "Unknown error.")
     except CeleryTimeoutError:
@@ -1046,7 +1072,7 @@ async def honeypot_logs_api(
     )
     if error is not None:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=error)
-    return {"output": output or ""}
+    return {"output": output or "", **extra}
 
 
 # --- Bulk actions (ad-hoc selection from the honeypot list) ------------------
