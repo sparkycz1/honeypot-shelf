@@ -1,6 +1,6 @@
 """Honeypot Overview: reboot/shut down live there directly — there's no
 separate "Power" tab any more (see `honeypots._honeypot_tabs`) — and the
-terminal page loads the CSP-safe canvas addon for ANSI colors."""
+terminal page loads the CSP-safe xterm.js 6 renderer for ANSI colors."""
 
 from __future__ import annotations
 
@@ -65,18 +65,20 @@ async def test_old_power_tab_url_redirects_to_overview(client, db_session_factor
     assert response.headers["location"] == f"/honeypots/{honeypot.id}"
 
 
-async def test_terminal_page_loads_the_canvas_addon(client, db_session_factory):
+async def test_terminal_page_loads_the_csp_safe_renderer(client, db_session_factory):
     """Regression guard: xterm.js's default DOM renderer draws ANSI colors
-    via a dynamically injected <style> element, which this app's CSP
+    via dynamically injected <style> elements, which this app's CSP
     (`style-src 'self'`, no `unsafe-inline`) silently blocks — every color
     code renders as plain foreground-only text, with no error visible
-    anywhere except the browser console. The canvas addon draws colors via
-    <canvas> instead, which CSP's style-src has no say over. See
-    `terminal.js`'s own comment for the full story."""
+    anywhere except the browser console. The WebGL addon draws on a
+    <canvas> instead, and xterm-csp.css carries the rules the DOM fallback
+    would otherwise inject. See `terminal.js`'s own comment."""
     company = await create_company(db_session_factory)
     honeypot = await _create_pinned_honeypot(db_session_factory, company.id)
 
     response = await client.get(f"/honeypots/{honeypot.id}/terminal")
 
     assert response.status_code == 200
-    assert '<script src="/static/js/xterm-addon-canvas.min.js?v=' in response.text
+    assert '<script src="/static/js/xterm-addon-webgl.min.js?v=' in response.text
+    assert '<link rel="stylesheet" href="/static/css/xterm-csp.css?v=' in response.text
+    assert "xterm-addon-canvas" not in response.text
