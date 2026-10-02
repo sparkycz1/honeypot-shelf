@@ -32,6 +32,7 @@ from app.scheduling.actions import get_action
 from app.scheduling.builtin_actions import register_builtin_actions
 from app.scheduling.cron import compute_next_run
 from app.scheduling.targets import resolve_target_honeypots
+from app.services.maintenance_windows import honeypots_paused_for_scheduling
 from app.tasks.celery_app import celery_app
 
 # `actor` for every audit entry this module writes — there's no HTTP
@@ -57,9 +58,7 @@ async def _run_due_scheduled_tasks() -> None:
 
     async with db_session.AsyncSessionLocal() as session:
         result = await session.execute(
-            select(ScheduledTask).where(
-                ScheduledTask.is_enabled, ScheduledTask.next_run_at <= now
-            )
+            select(ScheduledTask).where(ScheduledTask.is_enabled, ScheduledTask.next_run_at <= now)
         )
         due = list(result.scalars().all())
         if not due:
@@ -131,8 +130,15 @@ async def _run_scheduled_task(task_id: str) -> dict[str, Any]:
         # hiccup, a bug in a third-party action — still leaves a row behind
         # to retry from, instead of silently vanishing into Celery's own
         # failure handling with no trace in this app.
+        paused = 0
         try:
             honeypots = await resolve_target_honeypots(session, task)
+            # Honeypots inside an active maintenance window that pauses
+            # scheduled tasks are skipped for this run (not queued).
+            paused_ids = await honeypots_paused_for_scheduling(session, honeypots)
+            if paused_ids:
+                paused = len(paused_ids)
+                honeypots = [h for h in honeypots if h.id not in paused_ids]
             result = await action.run(session, honeypots, task.action_params or {})
         except Exception as exc:
             summary = f"Failed to run: {exc}"
@@ -166,6 +172,8 @@ async def _run_scheduled_task(task_id: str) -> dict[str, Any]:
                 f"Triggered for {result.attempted} honeypot(s), "
                 f"{result.skipped} skipped (no pinned host key)."
             )
+        if paused:
+            summary = f"{summary[:-1]}; {paused} paused by a maintenance window."
         task.last_run_at = datetime.now(UTC)
         task.last_run_summary = summary
         session.add(
@@ -187,10 +195,19 @@ async def _run_scheduled_task(task_id: str) -> dict[str, Any]:
             target_type="scheduled_task",
             target_id=task.id,
             target_label=task.name,
-            details={"attempted": result.attempted, "skipped": result.skipped},
+            details={
+                "attempted": result.attempted,
+                "skipped": result.skipped,
+                "paused_by_maintenance": paused,
+            },
         )
 
-        return {"ok": True, "attempted": result.attempted, "skipped": result.skipped}
+        return {
+            "ok": True,
+            "attempted": result.attempted,
+            "skipped": result.skipped,
+            "paused_by_maintenance": paused,
+        }
 
 
 @celery_app.task(name="app.scheduling.jobs.run_scheduled_task")

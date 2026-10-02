@@ -50,7 +50,7 @@ from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.honeypot import HoneypotCreate, HoneypotUpdate
 from app.schemas.honeypot_config import HoneypotConfigExport
-from app.services import canary_activity_history, monitoring_history
+from app.services import canary_activity_history, maintenance_windows, monitoring_history
 from app.services.honeypot_actions import (
     send_power_to_honeypots,
     trigger_check_updates,
@@ -1090,6 +1090,7 @@ async def honeypot_detail(
         "honeypots/detail.html",
         {
             "honeypot": honeypot,
+            "maintenance_window": await maintenance_windows.active_window_for(db, honeypot),
             "csrf_token": csrf_token,
             "tabs": _honeypot_tabs(request, honeypot, current_user),
             "active_tab": "overview",

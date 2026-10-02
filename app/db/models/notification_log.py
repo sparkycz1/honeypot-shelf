@@ -69,6 +69,9 @@ class NotificationLog(Base):
     # answerable from one place) but flagged, never mixed up with a real
     # delivery in the UI.
     is_test: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Set when nothing was sent because an active maintenance window muted
+    # it — the window's name (app.services.maintenance_windows).
+    muted_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # honeypot_name is denormalized (kept even after honeypot_id goes NULL
     # on delete) for the same "history stays readable" reason as `target`

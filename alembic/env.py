@@ -22,6 +22,7 @@ from app.db.models import (  # noqa: F401 - registers models with metadata
     CompanySnapshot,
     Honeypot,
     HoneypotEvent,
+    MaintenanceWindow,
     TotpRecoveryCode,
     User,
     UserSession,

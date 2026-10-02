@@ -35,6 +35,7 @@ from app.web.routes import (
     api_v1_backup,
     api_v1_dashboard,
     api_v1_events,
+    api_v1_maintenance,
     api_v1_scheduling,
     api_v1_settings,
     api_v1_users,
@@ -50,6 +51,7 @@ from app.web.routes import (
     initialize_ws,
     live_ws,
     logs_ws,
+    maintenance,
     notifications,
     scheduling,
     terminal_ws,
@@ -288,11 +290,13 @@ def create_app() -> FastAPI:
     app.include_router(honeypots.router)
     app.include_router(companies.router)
     app.include_router(initialize.router)
+    app.include_router(maintenance.router)
     app.include_router(scheduling.router)
     app.include_router(audit.router)
     app.include_router(inform.router)
     app.include_router(api_v1.router)
     app.include_router(api_v1_scheduling.router)
+    app.include_router(api_v1_maintenance.router)
     app.include_router(api_v1_users.router)
     app.include_router(api_v1_audit.router)
     app.include_router(api_v1_settings.router)
