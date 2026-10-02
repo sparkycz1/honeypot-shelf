@@ -84,6 +84,10 @@ class ScheduledTask(Base):
     owner_company: Mapped[Company] = relationship()
 
     cron_expression: Mapped[str] = mapped_column(String(100), nullable=False)
+    # IANA zone the cron expression is read in (`Europe/Prague`); None —
+    # every task saved before 0.54.0 — means UTC, as before. See
+    # app.scheduling.cron.
+    timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     # Denormalized so the per-minute tick (`app.scheduling.jobs.run_due_scheduled_tasks`)

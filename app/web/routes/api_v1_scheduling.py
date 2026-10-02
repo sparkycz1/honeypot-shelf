@@ -18,11 +18,12 @@ from sqlalchemy.orm import selectinload
 from app.audit import log_event
 from app.auth.dependencies import get_api_token_user, require_api_write
 from app.auth.scope import has_company_access
+from app.core.timezones import is_valid_timezone
 from app.db.models.honeypot import Honeypot
 from app.db.models.scheduled_task import ScheduledTask
 from app.db.models.user import User
 from app.db.session import get_db
-from app.scheduling.cron import compute_next_run
+from app.scheduling.cron import compute_next_run, next_runs
 from app.scheduling.jobs import run_scheduled_task
 from app.scheduling.targets import task_within_scope
 from app.schemas.scheduled_task import ScheduledTaskCreate
@@ -47,6 +48,7 @@ def _task_to_dict(task: ScheduledTask) -> dict[str, object]:
         "target_honeypot_id": str(task.target_honeypot_id) if task.target_honeypot_id else None,
         "owner_company_id": str(task.owner_company_id),
         "cron_expression": task.cron_expression,
+        "timezone": task.timezone or "UTC",
         "is_enabled": task.is_enabled,
         "next_run_at": _isoformat(task.next_run_at),
         "last_run_at": _isoformat(task.last_run_at),
@@ -129,6 +131,26 @@ async def list_scheduled_tasks_api(
     return [_task_to_dict(t) for t in result.scalars().all() if task_within_scope(user, t)]
 
 
+@router.get("/cron-preview", dependencies=[_view])
+async def cron_preview_api(cron_expression: str, timezone: str = "UTC") -> dict[str, object]:
+    """The next runs of `cron_expression` read in `timezone` (an IANA name,
+    default UTC) — the API twin of the schedule form's live preview. A
+    400 for an invalid expression or zone. Registered before
+    `/{task_id}` so "cron-preview" is never read as a task id."""
+    zone_name = timezone.strip() or "UTC"
+    if not is_valid_timezone(zone_name):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown time zone.")
+    try:
+        runs = next_runs(cron_expression.strip(), timezone=zone_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return {
+        "cron_expression": cron_expression.strip(),
+        "timezone": zone_name,
+        "next_runs": [run.isoformat() for run in runs],
+    }
+
+
 @router.get("/{task_id}", dependencies=[_view])
 async def get_scheduled_task_api(
     task_id: uuid.UUID,
@@ -154,8 +176,13 @@ async def create_scheduled_task_api(
         target_honeypot_id=payload.target_honeypot_id,
         owner_company_id=owner_company_id,
         cron_expression=payload.cron_expression,
+        timezone=payload.timezone,
         is_enabled=payload.is_enabled,
-        next_run_at=compute_next_run(payload.cron_expression) if payload.is_enabled else None,
+        next_run_at=(
+            compute_next_run(payload.cron_expression, timezone=payload.timezone)
+            if payload.is_enabled
+            else None
+        ),
     )
     db.add(task)
     await db.commit()
@@ -189,8 +216,13 @@ async def update_scheduled_task_api(
     task.target_honeypot_id = payload.target_honeypot_id
     task.owner_company_id = owner_company_id
     task.cron_expression = payload.cron_expression
+    task.timezone = payload.timezone
     task.is_enabled = payload.is_enabled
-    task.next_run_at = compute_next_run(payload.cron_expression) if payload.is_enabled else None
+    task.next_run_at = (
+        compute_next_run(payload.cron_expression, timezone=payload.timezone)
+        if payload.is_enabled
+        else None
+    )
     await db.commit()
     await log_event(
         db,
@@ -213,7 +245,7 @@ async def enable_scheduled_task_api(
 ) -> dict[str, object]:
     task = await _get_task_or_404(task_id, db, user)
     task.is_enabled = True
-    task.next_run_at = compute_next_run(task.cron_expression)
+    task.next_run_at = compute_next_run(task.cron_expression, timezone=task.timezone)
     await db.commit()
     await log_event(
         db,

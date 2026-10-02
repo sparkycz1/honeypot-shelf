@@ -74,7 +74,10 @@
   <label for="cron_expression">{{ t(request, "scheduling.form.cron_expression") }}</label>
   <input type="text" id="cron_expression" name="cron_expression" required maxlength="100"
          list="cron-presets" value="{{ form.get('cron_expression', '') }}"
-         placeholder="0 3 * * *">
+         placeholder="0 3 * * *"
+         hx-get="/scheduling/cron-preview" hx-trigger="load, input changed delay:400ms, change, change from:#timezone"
+         hx-include="#timezone" hx-target="#cron-preview" hx-swap="innerHTML"
+         aria-describedby="cron-preview">
   <datalist id="cron-presets">
     <option value="0 3 * * *" label="{{ t(request, 'scheduling.form.preset_daily') }}">
     <option value="0 3 * * 0" label="{{ t(request, 'scheduling.form.preset_weekly') }}">
@@ -85,6 +88,16 @@
     {{ t(request, "scheduling.form.cron_hint") }}
     <code>0 3 * * *</code> {{ t(request, "scheduling.form.cron_hint_example") }}
   </p>
+  <div id="cron-preview" class="cron-preview" aria-live="polite"></div>
+
+  <label for="timezone">{{ t(request, "scheduling.form.timezone") }}</label>
+  <select id="timezone" name="timezone">
+    {% set current_zone = form.get('timezone') or 'UTC' %}
+    {% for name in timezones %}
+      <option value="{{ name }}" {% if name == current_zone %}selected{% endif %}>{{ name }}</option>
+    {% endfor %}
+  </select>
+  <p class="hint">{{ t(request, "scheduling.form.timezone_hint") }}</p>
 
   <label>
     <input type="checkbox" name="is_enabled" {% if form.get('is_enabled') %}checked{% endif %}>
