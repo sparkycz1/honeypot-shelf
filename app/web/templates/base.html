@@ -3,6 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  {# htmx otherwise injects its own <style> for .htmx-indicator on load,
+     which `style-src 'self'` blocks (a console error on every page). No
+     page here uses hx-indicator. #}
+  <meta name="htmx-config" content='{"includeIndicatorStyles": false}'>
   <title>{% block title %}Honeypot Shelf{% endblock %}</title>
   <link rel="icon" href="{{ branding_favicon_url() }}">
   <link rel="stylesheet" href="{{ static_url('css/style.css') }}">

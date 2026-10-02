@@ -14,6 +14,9 @@
       </a>
     {% endif %}
   </div>
+  {% if maintenance_window %}
+    <p><span class="badge badge-warn">{{ t(request, 'maintenance.in_progress', until=(maintenance_window.ends_at | local_time('%Y-%m-%d %H:%M %Z')), name=maintenance_window.name) }}</span></p>
+  {% endif %}
 
   {{ render_tabnav(tabs, active_tab) }}
 

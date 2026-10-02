@@ -62,6 +62,24 @@ def local_time(value: datetime | None, fmt: str = "%Y-%m-%d %H:%M") -> str:
 templates.env.filters["local_time"] = local_time
 
 
+def to_local_input(value: datetime | None) -> str:
+    """A stored UTC timestamp as a `<input type="datetime-local">` value in
+    the configured `TZ` (the zone every other timestamp is shown in)."""
+    return local_time(value, "%Y-%m-%dT%H:%M") if value is not None else ""
+
+
+def parse_local_input(raw: str) -> datetime:
+    """The inverse of `to_local_input`: a `datetime-local` value, read in
+    the configured `TZ`, as an aware UTC datetime. Raises `ValueError`."""
+    naive = datetime.fromisoformat(raw.strip())
+    if naive.tzinfo is not None:
+        return naive.astimezone(UTC)
+    return naive.replace(tzinfo=_display_zone(get_settings().tz)).astimezone(UTC)
+
+
+templates.env.filters["local_input"] = to_local_input
+
+
 def format_uptime(seconds: int | None) -> str:
     """Render a honeypot's uptime as e.g. "12d 3h 4m" — the DB only stores
     the raw second count (`Honeypot.uptime_seconds`, from `/proc/uptime`)."""
