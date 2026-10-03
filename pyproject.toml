@@ -1,19 +1,19 @@
 [project]
 name = "honeypot-shelf"
-version = "0.55.0"
+version = "0.55.1"
 description = "Management and monitoring overview for a fleet of OpenCanary honeypots, across multiple companies"
 readme = "README.md"
 requires-python = ">=3.14"
 license = { text = "PolyForm-Noncommercial-1.0.0" }
 
 dependencies = [
-    "fastapi>=0.141.1",
-    "uvicorn[standard]>=0.52.4",
-    "pydantic>=2.13.4",
+    "fastapi>=0.142.2",
+    "uvicorn[standard]>=0.54.0",
+    "pydantic>=2.13.5",
     "pydantic-settings>=2.15.0",
-    "sqlalchemy[asyncio]>=2.0.52",
+    "sqlalchemy[asyncio]>=2.1.2",
     "asyncpg>=0.31.0",
-    "alembic>=1.19.1",
+    "alembic>=1.20.0",
     # Note: the `redis-py` client library is independent from the Redis SERVER
     # version. Only the lower bound is pinned here — the real upper bound
     # comes from `kombu[redis]` (Celery's transport layer). See
@@ -27,11 +27,11 @@ dependencies = [
     "asyncssh>=2.24.0",
     "jinja2>=3.1.6",
     "python-multipart>=0.0.32",
-    "cryptography>=50.0.1",
+    "cryptography>=50.0.2",
     "itsdangerous>=2.2.0",
     # Standard 5-field cron expression parsing/next-run computation for
     # Scheduling (app/scheduling/). Well-established, tiny, no transitive deps.
-    "croniter>=6.0.0",
+    "croniter>=6.2.4",
     # --- Authentication (app/auth/) ---
     # Argon2id password hashing for local accounts — current OWASP-recommended
     # default, memory-hard (better GPU/ASIC resistance than bcrypt).
@@ -43,7 +43,7 @@ dependencies = [
     # validation. Used together with Starlette's own SessionMiddleware (no
     # new dependency needed for that) to carry state/nonce across the
     # redirect to/from the provider.
-    "authlib>=1.7.2",
+    "authlib>=1.8.0",
     # Not used directly by this app's own code — but
     # authlib.integrations.starlette_client (app/auth/oidc.py) imports
     # authlib.integrations.httpx_client at module load time regardless of
@@ -59,11 +59,11 @@ dependencies = [
     # Renders Company/Honeypot notes from Markdown to HTML — pure Python,
     # no C extension. Used with its default escape=True (raw HTML in the
     # source is escaped to text, not passed through). See app.web.templating.
-    "mistune>=3.0.0",
+    "mistune>=3.3.4",
     # WebAuthn/passkey registration and authentication ceremony verification
     # (RP-side): attestation/assertion signature checking, challenge
     # handling. See app/auth/webauthn.py.
-    "webauthn>=2.0.0",
+    "webauthn>=3.0.1",
     # Reads a MaxMind-DB-format (.mmdb) database this app downloads itself
     # (Settings -> GeoIP, app.services.geoip) - never bundled, since
     # redistributing MaxMind's own GeoLite2 data isn't allowed under their
@@ -77,11 +77,11 @@ dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "aiosqlite>=0.22.1",
-    "ruff>=0.16.4",
-    "mypy>=2.3.1",
-    "python-dotenv>=1.2.3",
-    "types-authlib>=1.7.2.20260827",
-    "types-croniter>=6.0.0",
+    "ruff>=0.16.10",
+    "mypy>=2.4.0",
+    "python-dotenv>=1.2.4",
+    "types-authlib>=1.8.0.20260911",
+    "types-croniter>=6.2.4.20260711",
     "types-ldap3>=2.9.13.20260827",
     "types-qrcode>=8.2.0.20260518",
 ]
@@ -94,6 +94,9 @@ fuzz = [
 
 [tool.uv]
 package = false
+# Never resolve to an alpha/beta/rc, even when a newer stable dependency
+# (e.g. redis-py beyond kombu's cap) is only satisfiable by one.
+prerelease = "disallow"
 
 [tool.ruff]
 target-version = "py314"

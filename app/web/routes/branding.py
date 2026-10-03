@@ -49,6 +49,19 @@ _MAX_BYTES = 5 * 1024 * 1024
 # and failed, cached too so a permanently-unreachable URL doesn't retry
 # (and re-log a warning) on every single page load.
 _remote_cache: dict[str, tuple[bytes, str] | None] = {}
+# Tests swap in an `httpx.MockTransport`; None means the real network.
+_transport: httpx.AsyncBaseTransport | None = None
+
+
+def _image_type(url: str, header: str) -> str | None:
+    """The response's media type if it is an image, else None — a logo is
+    served from this app's own origin, so a remote server (or a redirect
+    target) answering with HTML or anything else must not be passed
+    through as if it were ours."""
+    content_type = header.split(";")[0].strip().lower()
+    if not content_type or content_type == "application/octet-stream":
+        content_type = (mimetypes.guess_type(url)[0] or "").lower()
+    return content_type if content_type.startswith("image/") else None
 
 
 async def _fetch_remote(url: str) -> tuple[bytes, str] | None:
@@ -56,18 +69,25 @@ async def _fetch_remote(url: str) -> tuple[bytes, str] | None:
         return _remote_cache[url]
     result: tuple[bytes, str] | None = None
     try:
-        async with httpx.AsyncClient(
-            timeout=_FETCH_TIMEOUT_SECONDS, follow_redirects=True
-        ) as client:
-            response = await client.get(url)
+        async with (
+            httpx.AsyncClient(
+                timeout=_FETCH_TIMEOUT_SECONDS, follow_redirects=True, transport=_transport
+            ) as client,
+            client.stream("GET", url) as response,
+        ):
             response.raise_for_status()
-        if len(response.content) > _MAX_BYTES:
+            content_type = _image_type(url, response.headers.get("content-type", ""))
+            body = bytearray()
+            async for chunk in response.aiter_bytes():
+                body.extend(chunk)
+                if len(body) > _MAX_BYTES:
+                    break
+        if content_type is None:
+            logger.warning("Branding URL %s did not return an image — ignoring.", url)
+        elif len(body) > _MAX_BYTES:
             logger.warning("Branding URL %s is larger than %d bytes — ignoring.", url, _MAX_BYTES)
         else:
-            content_type = response.headers.get("content-type", "").split(";")[0].strip()
-            if not content_type:
-                content_type = mimetypes.guess_type(url)[0] or "application/octet-stream"
-            result = (response.content, content_type)
+            result = (bytes(body), content_type)
     except httpx.HTTPError as exc:
         logger.warning("Could not fetch branding URL %s: %s", url, exc)
     _remote_cache[url] = result

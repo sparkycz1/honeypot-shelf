@@ -48,7 +48,7 @@ def honeypot_search_clause(query: str) -> ColumnElement[bool]:
     )
 
 
-def apply_tag_filter[S: Select[tuple[Honeypot]]](query: S, tags: list[str], tag_mode: str) -> S:
+def apply_tag_filter[S: Select[Honeypot]](query: S, tags: list[str], tag_mode: str) -> S:
     """Filter `query` by one or more tag names — `tag_mode="or"` (default,
     and used whenever `tag_mode` isn't exactly `"and"`) matches a honeypot
     carrying *any* of `tags`; `"and"` matches only a honeypot carrying

@@ -97,25 +97,26 @@ async def test_404s_when_nothing_configured(monkeypatch):
     assert exc_info.value.status_code == 404  # type: ignore[attr-defined]
 
 
-class _FakeHttpxResponse:
-    def __init__(self, *, content: bytes, content_type: str, status_code: int = 200):
-        self.content = content
-        self.headers = {"content-type": content_type}
-        self.status_code = status_code
+def _mock_remote(monkeypatch, handler) -> list[str]:
+    """Route `branding`'s remote fetch through `handler(request) ->
+    httpx.Response`; returns the URLs requested."""
+    calls: list[str] = []
 
-    def raise_for_status(self) -> None:
-        if self.status_code >= 400:
-            raise httpx.HTTPStatusError("boom", request=None, response=self)  # type: ignore[arg-type]
+    def _handle(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        return handler(request)
+
+    monkeypatch.setattr(branding_routes, "_transport", httpx.MockTransport(_handle))
+    return calls
 
 
 async def test_fetches_and_serves_a_remote_url(monkeypatch):
-    calls = []
-
-    async def fake_get(self, url, **kwargs):
-        calls.append(url)
-        return _FakeHttpxResponse(content=b"<svg>logo</svg>", content_type="image/svg+xml")
-
-    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+    calls = _mock_remote(
+        monkeypatch,
+        lambda r: httpx.Response(
+            200, content=b"<svg>logo</svg>", headers={"content-type": "image/svg+xml"}
+        ),
+    )
     monkeypatch.setattr(
         "app.web.routes.branding.get_settings",
         lambda: _FakeSettings(logo_source="https://example.com/logo.svg"),
@@ -129,13 +130,10 @@ async def test_fetches_and_serves_a_remote_url(monkeypatch):
 
 
 async def test_remote_fetch_is_cached_across_requests(monkeypatch):
-    calls = []
-
-    async def fake_get(self, url, **kwargs):
-        calls.append(url)
-        return _FakeHttpxResponse(content=b"data", content_type="image/png")
-
-    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+    calls = _mock_remote(
+        monkeypatch,
+        lambda r: httpx.Response(200, content=b"data", headers={"content-type": "image/png"}),
+    )
     monkeypatch.setattr(
         "app.web.routes.branding.get_settings",
         lambda: _FakeSettings(favicon_source="https://example.com/favicon.png"),
@@ -148,13 +146,10 @@ async def test_remote_fetch_is_cached_across_requests(monkeypatch):
 
 
 async def test_remote_fetch_failure_404s_and_does_not_retry_every_request(monkeypatch):
-    calls = []
+    def refuse(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("boom", request=request)
 
-    async def fake_get(self, url, **kwargs):
-        calls.append(url)
-        raise httpx.ConnectError("boom")
-
-    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+    calls = _mock_remote(monkeypatch, refuse)
     monkeypatch.setattr(
         "app.web.routes.branding.get_settings",
         lambda: _FakeSettings(logo_source="https://unreachable.example/logo.png"),
@@ -169,12 +164,14 @@ async def test_remote_fetch_failure_404s_and_does_not_retry_every_request(monkey
 
 
 async def test_remote_fetch_larger_than_cap_is_rejected(monkeypatch):
-    async def fake_get(self, url, **kwargs):
-        return _FakeHttpxResponse(
-            content=b"x" * (branding_routes._MAX_BYTES + 1), content_type="image/png"
-        )
-
-    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+    _mock_remote(
+        monkeypatch,
+        lambda r: httpx.Response(
+            200,
+            content=b"x" * (branding_routes._MAX_BYTES + 1),
+            headers={"content-type": "image/png"},
+        ),
+    )
     monkeypatch.setattr(
         "app.web.routes.branding.get_settings",
         lambda: _FakeSettings(logo_source="https://example.com/huge.png"),
@@ -183,3 +180,34 @@ async def test_remote_fetch_larger_than_cap_is_rejected(monkeypatch):
     with pytest.raises(Exception) as exc_info:
         await branding_routes.branding_logo()
     assert exc_info.value.status_code == 404  # type: ignore[attr-defined]
+
+
+async def test_remote_non_image_is_never_served_from_this_origin(monkeypatch):
+    """A logo is served from this app's own origin, so an HTML page (a
+    login portal, an error page, a compromised host) must not come back
+    out of `/branding/logo` as if it were ours."""
+    _mock_remote(
+        monkeypatch,
+        lambda r: httpx.Response(
+            200, content=b"<html><script>x</script></html>", headers={"content-type": "text/html"}
+        ),
+    )
+    monkeypatch.setattr(
+        "app.web.routes.branding.get_settings",
+        lambda: _FakeSettings(logo_source="https://example.com/logo"),
+    )
+
+    with pytest.raises(Exception) as exc_info:
+        await branding_routes.branding_logo()
+    assert exc_info.value.status_code == 404  # type: ignore[attr-defined]
+
+
+async def test_remote_without_a_content_type_falls_back_to_the_extension(monkeypatch):
+    _mock_remote(monkeypatch, lambda r: httpx.Response(200, content=b"png-bytes"))
+    monkeypatch.setattr(
+        "app.web.routes.branding.get_settings",
+        lambda: _FakeSettings(logo_source="https://example.com/logo.png"),
+    )
+
+    response = await branding_routes.branding_logo()
+    assert response.media_type == "image/png"

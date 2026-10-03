@@ -76,7 +76,7 @@ def visible_company_ids(user: User) -> set[uuid.UUID] | None:
     return None if user.is_superadmin else user.company_ids()
 
 
-def honeypots_visible_to(user: User) -> Select[tuple[Honeypot]]:
+def honeypots_visible_to(user: User) -> Select[Honeypot]:
     """A `Select` for `Honeypot`, already scope-filtered — compose with
     `.where()` / `.order_by()` / `.options()` exactly as the call site
     needs. A honeypot is visible if it shares **any** company with the
@@ -89,7 +89,7 @@ def honeypots_visible_to(user: User) -> Select[tuple[Honeypot]]:
     return query
 
 
-def companies_visible_to(user: User) -> Select[tuple[Company]]:
+def companies_visible_to(user: User) -> Select[Company]:
     """The `Company` equivalent of `honeypots_visible_to`."""
     query = select(Company)
     company_ids = visible_company_ids(user)

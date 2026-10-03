@@ -66,7 +66,7 @@ def _parse_iso(value: str) -> datetime | None:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
-def _apply_filters[S: Select[tuple[HoneypotEvent]]](
+def _apply_filters[S: Select[HoneypotEvent]](
     query: S,
     user: User,
     *,
