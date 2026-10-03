@@ -6,7 +6,7 @@ never link to a third-party URL directly)."""
 
 from __future__ import annotations
 
-import httpx
+import httpx2
 import pytest
 from fastapi.responses import FileResponse
 
@@ -99,21 +99,21 @@ async def test_404s_when_nothing_configured(monkeypatch):
 
 def _mock_remote(monkeypatch, handler) -> list[str]:
     """Route `branding`'s remote fetch through `handler(request) ->
-    httpx.Response`; returns the URLs requested."""
+    httpx2.Response`; returns the URLs requested."""
     calls: list[str] = []
 
-    def _handle(request: httpx.Request) -> httpx.Response:
+    def _handle(request: httpx2.Request) -> httpx2.Response:
         calls.append(str(request.url))
         return handler(request)
 
-    monkeypatch.setattr(branding_routes, "_transport", httpx.MockTransport(_handle))
+    monkeypatch.setattr(branding_routes, "_transport", httpx2.MockTransport(_handle))
     return calls
 
 
 async def test_fetches_and_serves_a_remote_url(monkeypatch):
     calls = _mock_remote(
         monkeypatch,
-        lambda r: httpx.Response(
+        lambda r: httpx2.Response(
             200, content=b"<svg>logo</svg>", headers={"content-type": "image/svg+xml"}
         ),
     )
@@ -132,7 +132,7 @@ async def test_fetches_and_serves_a_remote_url(monkeypatch):
 async def test_remote_fetch_is_cached_across_requests(monkeypatch):
     calls = _mock_remote(
         monkeypatch,
-        lambda r: httpx.Response(200, content=b"data", headers={"content-type": "image/png"}),
+        lambda r: httpx2.Response(200, content=b"data", headers={"content-type": "image/png"}),
     )
     monkeypatch.setattr(
         "app.web.routes.branding.get_settings",
@@ -146,8 +146,8 @@ async def test_remote_fetch_is_cached_across_requests(monkeypatch):
 
 
 async def test_remote_fetch_failure_404s_and_does_not_retry_every_request(monkeypatch):
-    def refuse(request: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError("boom", request=request)
+    def refuse(request: httpx2.Request) -> httpx2.Response:
+        raise httpx2.ConnectError("boom", request=request)
 
     calls = _mock_remote(monkeypatch, refuse)
     monkeypatch.setattr(
@@ -166,7 +166,7 @@ async def test_remote_fetch_failure_404s_and_does_not_retry_every_request(monkey
 async def test_remote_fetch_larger_than_cap_is_rejected(monkeypatch):
     _mock_remote(
         monkeypatch,
-        lambda r: httpx.Response(
+        lambda r: httpx2.Response(
             200,
             content=b"x" * (branding_routes._MAX_BYTES + 1),
             headers={"content-type": "image/png"},
@@ -188,7 +188,7 @@ async def test_remote_non_image_is_never_served_from_this_origin(monkeypatch):
     out of `/branding/logo` as if it were ours."""
     _mock_remote(
         monkeypatch,
-        lambda r: httpx.Response(
+        lambda r: httpx2.Response(
             200, content=b"<html><script>x</script></html>", headers={"content-type": "text/html"}
         ),
     )
@@ -203,7 +203,7 @@ async def test_remote_non_image_is_never_served_from_this_origin(monkeypatch):
 
 
 async def test_remote_without_a_content_type_falls_back_to_the_extension(monkeypatch):
-    _mock_remote(monkeypatch, lambda r: httpx.Response(200, content=b"png-bytes"))
+    _mock_remote(monkeypatch, lambda r: httpx2.Response(200, content=b"png-bytes"))
     monkeypatch.setattr(
         "app.web.routes.branding.get_settings",
         lambda: _FakeSettings(logo_source="https://example.com/logo.png"),

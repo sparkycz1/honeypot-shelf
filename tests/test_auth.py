@@ -125,7 +125,7 @@ async def test_oidc_login_with_unreachable_provider_redirects_gracefully(
 ):
     """A provider discovery-document fetch failure (unreachable host, or a
     misconfigured Issuer URL that 404s) used to be an uncaught
-    httpx.HTTPStatusError -> 500. It must instead redirect back to /login
+    httpx2.HTTPStatusError -> 500. It must instead redirect back to /login
     with the same kind of oidc_error the callback route already handles."""
     from app.core.app_settings import get_or_create_app_settings
 

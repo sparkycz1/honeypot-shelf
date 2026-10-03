@@ -7,7 +7,7 @@ FROM python:3.14.8-slim@sha256:89fb7d3da20043c370643435258bdd7ab755d326d359001d0
 # Pinned to an exact version (same reasoning as Postgres/Redis/Caddy) —
 # `:latest` would silently pick up a new uv release, and thus a possibly
 # different dependency resolver/behavior, on every rebuild.
-COPY --from=ghcr.io/astral-sh/uv:0.12.17 /uv /uvx /usr/local/bin/
+COPY --from=ghcr.io/astral-sh/uv:0.12.22@sha256:f513a91fc62fe7c17567eee97230dd198e43edb8a9fbecca843714a4358fe1bc /uv /uvx /usr/local/bin/
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \

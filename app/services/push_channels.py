@@ -33,7 +33,7 @@ import asyncio
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-import httpx
+import httpx2
 
 from app.db.models.notification_channel import NotificationChannel
 from app.services.webhook import UnsafeWebhookTargetError, redact_url, validate_webhook_url
@@ -119,7 +119,7 @@ def build_request(
     subject: str,
     body: str,
 ) -> tuple[str, dict[str, Any]]:
-    """`(url, httpx request kwargs)` for one push — pure, so each service's
+    """`(url, httpx2 request kwargs)` for one push — pure, so each service's
     exact request shape is testable without a network. Raises ValueError
     when the rule is missing something the channel needs."""
     if channel in URL_CHANNELS and not url:
@@ -205,7 +205,7 @@ async def send(
             # Self-service rules: a user-supplied URL is re-checked at send
             # time too (a DNS answer can change after the rule was saved).
             await asyncio.to_thread(validate_webhook_url, target)
-        async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS, follow_redirects=False) as client:
+        async with httpx2.AsyncClient(timeout=_TIMEOUT_SECONDS, follow_redirects=False) as client:
             response = await client.post(target, **kwargs)
         if response.status_code >= 300:
             return f"HTTP {response.status_code}"

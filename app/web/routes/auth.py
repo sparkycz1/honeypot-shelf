@@ -739,7 +739,7 @@ async def oidc_login(request: Request, db: AsyncSession = Depends(get_db)) -> Re
         # Issuer URL (the most common cause - see the "discovery_failed"
         # message below), DNS/TLS failure, or the provider itself is down.
         # Same "OIDC didn't work" signal as a failed callback below, never
-        # a 500 - this used to be an uncaught httpx.HTTPStatusError here.
+        # a 500 - this used to be an uncaught httpx2.HTTPStatusError here.
         await log_event(
             db,
             request=request,

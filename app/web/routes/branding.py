@@ -27,7 +27,7 @@ from __future__ import annotations
 import logging
 import mimetypes
 
-import httpx
+import httpx2
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import FileResponse, Response
 
@@ -49,8 +49,8 @@ _MAX_BYTES = 5 * 1024 * 1024
 # and failed, cached too so a permanently-unreachable URL doesn't retry
 # (and re-log a warning) on every single page load.
 _remote_cache: dict[str, tuple[bytes, str] | None] = {}
-# Tests swap in an `httpx.MockTransport`; None means the real network.
-_transport: httpx.AsyncBaseTransport | None = None
+# Tests swap in an `httpx2.MockTransport`; None means the real network.
+_transport: httpx2.AsyncBaseTransport | None = None
 
 
 def _image_type(url: str, header: str) -> str | None:
@@ -70,7 +70,7 @@ async def _fetch_remote(url: str) -> tuple[bytes, str] | None:
     result: tuple[bytes, str] | None = None
     try:
         async with (
-            httpx.AsyncClient(
+            httpx2.AsyncClient(
                 timeout=_FETCH_TIMEOUT_SECONDS, follow_redirects=True, transport=_transport
             ) as client,
             client.stream("GET", url) as response,
@@ -88,7 +88,7 @@ async def _fetch_remote(url: str) -> tuple[bytes, str] | None:
             logger.warning("Branding URL %s is larger than %d bytes — ignoring.", url, _MAX_BYTES)
         else:
             result = (bytes(body), content_type)
-    except httpx.HTTPError as exc:
+    except httpx2.HTTPError as exc:
         logger.warning("Could not fetch branding URL %s: %s", url, exc)
     _remote_cache[url] = result
     return result
