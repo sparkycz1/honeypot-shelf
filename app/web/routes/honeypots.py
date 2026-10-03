@@ -27,6 +27,7 @@ from sqlalchemy.orm import aliased, selectinload
 from app.audit import log_event
 from app.auth.dependencies import get_current_user, require_write
 from app.auth.scope import (
+    can_write_honeypot,
     honeypots_visible_to,
     visible_honeypots_by_ids,
 )
@@ -1129,7 +1130,7 @@ def _normalize_range_key(range_key: str) -> str:
 
 
 async def _build_monitoring_context(
-    honeypot: Honeypot, range_key: str, db: AsyncSession
+    honeypot: Honeypot, range_key: str, db: AsyncSession, user: User
 ) -> dict[str, Any]:
     """The Monitoring tab's own data, shared by the first-paint route, the
     auto-refresh/live-update panel route, and the "Refresh now" route —
@@ -1182,8 +1183,21 @@ async def _build_monitoring_context(
         "time_ranges": monitoring_history.TIME_RANGES,
         "range_key": range_key,
         "service_counts": await _get_service_counts(honeypot.id, db),
+        # The whole services table is on the page (filtered and sorted
+        # client-side, static/js/monitoring-chart.js) — a honeypot runs a
+        # few dozen units, not thousands.
+        "services": list(
+            (
+                await db.execute(
+                    select(HoneypotService)
+                    .where(HoneypotService.honeypot_id == honeypot.id)
+                    .order_by(HoneypotService.unit)
+                )
+            ).scalars()
+        ),
         "last_checked_at": last_checked_at,
-        "palette": _CHART_PALETTE,
+        # "Refresh now" is a write action (`POST .../monitoring/refresh`).
+        "can_refresh": can_write_honeypot(user, honeypot),
     }
 
 
@@ -1202,7 +1216,7 @@ async def honeypot_monitoring(
     erroring, same tolerance `status_filter` on the Updates tab already has
     for a bad query param."""
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    context = await _build_monitoring_context(honeypot, range_key, db)
+    context = await _build_monitoring_context(honeypot, range_key, db, current_user)
 
     csrf_token, new_cookie = get_or_create_csrf_token(request)
     response = templates.TemplateResponse(
@@ -1233,7 +1247,7 @@ async def honeypot_monitoring_panel(
     currently in the DB, no SSH round trip. Distinct from `POST .../
     monitoring/refresh` below, which forces a fresh sample first."""
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    context = await _build_monitoring_context(honeypot, range_key, db)
+    context = await _build_monitoring_context(honeypot, range_key, db, current_user)
     csrf_token, _ = get_or_create_csrf_token(request)
     return templates.TemplateResponse(
         request, "partials/honeypot_monitoring_content.html", {**context, "csrf_token": csrf_token}
@@ -1250,18 +1264,20 @@ async def refresh_monitoring_endpoint(
     range_key: str = Form(monitoring_history.DEFAULT_TIME_RANGE),
     current_user: User = Depends(get_current_user),
 ) -> Response:
-    """"Refresh now" on the Monitoring tab — forces both an immediate
-    CPU/RAM/OpenCanary sample and an immediate reachability check (the
-    tab's two independent data sources, see `_build_monitoring_context`),
-    waits for both concurrently (same "enqueue, then block on the Celery
-    result" shape `refresh_facts_endpoint` already uses, just gathered
-    rather than sequential since neither job depends on the other), then
+    """"Refresh now" on the Monitoring tab — forces an immediate
+    CPU/RAM/OpenCanary sample, an immediate reachability check and a fresh
+    systemd services snapshot (everything the tab shows, see
+    `_build_monitoring_context`), waits for them concurrently (same
+    "enqueue, then block on the Celery result" shape
+    `refresh_facts_endpoint` already uses, just gathered rather than
+    sequential since no job depends on another), then
     re-renders the same partial the auto-poll panel does."""
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
     app_settings = await get_or_create_app_settings(db)
 
     monitoring_result = tasks.sample_honeypot_monitoring.delay(str(honeypot.id))
     reachability_result = tasks.check_honeypot_reachability.delay(str(honeypot.id))
+    services_result = tasks.refresh_honeypot_services.delay(str(honeypot.id))
     error: str | None = None
     try:
         results = await asyncio.gather(
@@ -1271,6 +1287,7 @@ async def refresh_monitoring_endpoint(
             asyncio.to_thread(
                 reachability_result.get, timeout=app_settings.ssh_connect_timeout + 5
             ),
+            asyncio.to_thread(services_result.get, timeout=app_settings.ssh_connect_timeout + 5),
         )
         for result in results:
             if isinstance(result, dict) and not result.get("ok"):
@@ -1293,7 +1310,7 @@ async def refresh_monitoring_endpoint(
     )
 
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    context = await _build_monitoring_context(honeypot, range_key, db)
+    context = await _build_monitoring_context(honeypot, range_key, db, current_user)
     csrf_token, _ = get_or_create_csrf_token(request)
     return templates.TemplateResponse(
         request, "partials/honeypot_monitoring_content.html", {**context, "csrf_token": csrf_token}
@@ -2523,11 +2540,31 @@ async def terminal_page(
     )
 
 
+def _resolve_log_source(
+    source: str, path: str, browse: str, honeypot_log_path: str
+) -> tuple[str, str]:
+    """Which of the Logs tab's three source cards is active — `journal`
+    (default), `file` (an allowed log file, or its directory browser) or
+    `honeypot` (OpenCanary's own log on this device) — and the file path
+    that goes with it. A bare `?path=` (older links, the browse picker)
+    is read as whichever of the two file sources that path is."""
+    if browse.strip():
+        return "file", path
+    if source == "honeypot":
+        return "honeypot", honeypot_log_path
+    if source == "file":
+        return "file", path
+    if path.strip():
+        return ("honeypot" if path.strip() == honeypot_log_path else "file"), path
+    return "journal", path
+
+
 @router.get("/{honeypot_id}/logs", dependencies=[_terminal])
 async def honeypot_logs(
     request: Request,
     honeypot_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    source: str = "",
     path: str = "",
     browse: str = "",
     lines: int = ssh_logs.DEFAULT_LINE_LIMIT,
@@ -2564,10 +2601,14 @@ async def honeypot_logs(
     unit = ssh_logs.normalize_unit(unit)
     boot = ssh_logs.normalize_boot(boot)
     hide_own_sessions = hide_own.strip() not in ("", "0")
+    source, path = _resolve_log_source(source, path, browse, honeypot.opencanary_log_path)
     browse_entries: list[tuple[str, bool]] | None = None
     error: str | None = None
     if not honeypot.host_key_fingerprint:
         error = "Confirm the server's key fingerprint on the Overview tab first."
+    elif source == "file" and not path.strip() and not browse.strip():
+        # The file source with nothing picked yet: just the form.
+        pass
     elif browse.strip():
         try:
             async_result = tasks.list_honeypot_log_directory.delay(
@@ -2670,6 +2711,7 @@ async def honeypot_logs(
             "boot": boot,
             "max_boot_offset": ssh_logs.MAX_BOOT_OFFSET,
             "hide_own": hide_own_sessions,
+            "source": source,
             "browse": browse,
             "browse_entries": browse_entries,
             "browse_root": settings.log_file_allowed_path_list[0]

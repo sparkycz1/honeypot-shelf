@@ -74,6 +74,7 @@ async def test_refresh_monitoring_enqueues_both_sample_and_reachability_tasks(
     assert response.status_code == 200
     assert "app.tasks.jobs.sample_honeypot_monitoring" in celery_calls.names
     assert "app.tasks.jobs.check_honeypot_reachability" in celery_calls.names
+    assert "app.tasks.jobs.refresh_honeypot_services" in celery_calls.names
 
 
 async def test_refresh_activity_enqueues_the_log_poll_task(

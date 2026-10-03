@@ -143,10 +143,29 @@ def _filesystem_usage_series(
     return keys, per_key
 
 
+def _rate_series_by_key(
+    samples: list[HoneypotMonitoringSample],
+    timestamps: list[datetime],
+    list_attr: str,
+    key_field: str,
+    value_fields: tuple[str, ...],
+) -> dict[str, list[float | None]]:
+    """`{key: [bytes/sec, ...]}` for one direction (or several summed) of a
+    per-sample list of cumulative counters — one downsampled series per
+    key (interface, disk) seen anywhere in the window."""
+    keys, per_key = _cumulative_series(samples, list_attr, key_field)
+    return {
+        key: _bucket_average(
+            _combined_rate_series(per_key[key], timestamps, value_fields), _TARGET_POINTS
+        )
+        for key in keys
+    }
+
+
 def _combined_rate_series(
     entries: list[dict[str, Any] | None],
     timestamps: list[datetime],
-    value_fields: tuple[str, str],
+    value_fields: tuple[str, ...],
 ) -> list[float | None]:
     """The combined (summed) bytes/sec rate across `value_fields` (e.g.
     `("rx_bytes", "tx_bytes")` or `("read_bytes", "write_bytes")`) between
@@ -220,6 +239,13 @@ class MonitoringHistory:
     # a bucket with only `None` samples stays a gap, same as
     # `_bucket_average`'s own convention.
     opencanary_uptime_percent: list[float | None]
+    # Per-direction rates for the Monitoring tab's charts (received/sent
+    # per interface, read/write per disk) — the combined series above stay
+    # for anything that only wants one line per device.
+    network_rx_by_iface: dict[str, list[float | None]]
+    network_tx_by_iface: dict[str, list[float | None]]
+    disk_read_by_device: dict[str, list[float | None]]
+    disk_write_by_device: dict[str, list[float | None]]
     latest_opencanary_active: bool | None
 
 
@@ -313,6 +339,18 @@ def build_monitoring_history(
         latest_failed_services_count=latest.failed_services_count if latest else None,
         latest_sampled_at=latest.sampled_at if latest else None,
         opencanary_uptime_percent=opencanary_series,
+        network_rx_by_iface=_rate_series_by_key(
+            samples, timestamps, "network_io", "iface", ("rx_bytes",)
+        ),
+        network_tx_by_iface=_rate_series_by_key(
+            samples, timestamps, "network_io", "iface", ("tx_bytes",)
+        ),
+        disk_read_by_device=_rate_series_by_key(
+            samples, timestamps, "disk_io", "device", ("read_bytes",)
+        ),
+        disk_write_by_device=_rate_series_by_key(
+            samples, timestamps, "disk_io", "device", ("write_bytes",)
+        ),
         latest_opencanary_active=latest.opencanary_active if latest else None,
     )
 

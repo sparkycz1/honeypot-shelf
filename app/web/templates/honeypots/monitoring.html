@@ -3,16 +3,7 @@
 
 {% block title %}{{ t(request, 'honeypots.monitoring.title') }} — {{ honeypot.name }} — Honeypot Shelf{% endblock %}
 
-{# Rotating palette for series that don't have one fixed color (Load
-   average's 1/5/15m lines, one line per network interface/disk/filesystem
-   mount) — kept here rather than per-metric so every chart on the page
-   draws from the same set and stays visually consistent. Also passed
-   explicitly by the -panel/refresh routes when they render
-   partials/honeypot_monitoring_content.html on its own (an `{% include %}`
-   shares the including template's context automatically, but a route
-   rendering the partial directly as its own response has no such
-   including template to inherit it from). #}
-{% set palette = ['#5b8fff', '#46bf8a', '#e0ab4a', '#f0685f', '#a970ff', '#38bdf8', '#f472b6', '#facc15'] %}
+{% block main_class %}container-wide{% endblock %}
 
 {% block content %}
   <div class="page-header" data-live-honeypot-id="{{ honeypot.id }}" data-live-honeypot-name="{{ honeypot.name }}">
@@ -37,26 +28,6 @@
     hx-swap="innerHTML settle:600ms"
   >
     {% include "partials/honeypot_monitoring_content.html" %}
-  </div>
-
-  <div id="services-modal" popover class="modal">
-    <div class="modal-dialog">
-      <div class="modal-header">
-        <h2 class="modal-title">{{ t(request, 'honeypots.monitoring.services_modal_title') }} — {{ honeypot.name }}</h2>
-        <button
-          type="button"
-          class="modal-close"
-          popovertarget="services-modal"
-          popovertargetaction="hide"
-          aria-label="{{ t(request, 'common.close') }}"
-        >
-          &times;
-        </button>
-      </div>
-      <div id="services-panel" class="modal-body">
-        <p class="hint">{{ t(request, 'honeypots.detail.loading') }}</p>
-      </div>
-    </div>
   </div>
 {% endblock %}
 

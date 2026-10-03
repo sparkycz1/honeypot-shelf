@@ -8,6 +8,7 @@ import json
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import mistune
@@ -23,7 +24,7 @@ from app.i18n import DEFAULT_LOCALE_CODE, get_locale
 from app.i18n import translate as _translate
 from app.services.geoip_display import country_flag
 from app.services.opencanary_logtypes import localized_logtype_label, logtype_label
-from app.web import branding
+from app.web import branding, charts
 from app.web.os_logos import badge_for
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
@@ -78,6 +79,20 @@ def parse_local_input(raw: str) -> datetime:
 
 
 templates.env.filters["local_input"] = to_local_input
+
+
+def _chart(*args: Any, **kwargs: Any) -> charts.Chart:
+    """`chart(...)` in a template: `app.web.charts.build_chart` with time
+    labels rendered in the configured display zone."""
+    kwargs.setdefault("time_label", local_time)
+    return charts.build_chart(*args, **kwargs)
+
+
+templates.env.globals["chart"] = _chart
+templates.env.globals["chart_palette"] = charts.PALETTE
+templates.env.globals["noise_interfaces"] = charts.noise_interfaces
+templates.env.filters["chart_value"] = charts.format_value
+templates.env.filters["bytes"] = charts.format_bytes
 
 
 def format_uptime(seconds: int | None) -> str:
