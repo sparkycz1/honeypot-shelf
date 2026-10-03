@@ -14,7 +14,7 @@ number, including a single one — the common case).
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import ColumnElement, func, select
@@ -148,6 +148,18 @@ async def _build_dashboard_context(
     if company_ids is not None:
         snapshot_query = snapshot_query.where(CompanySnapshot.company_id.in_(company_ids))
     daily_snapshots = (await db.execute(snapshot_query)).scalars().all()
+    # One point per day for the trend charts: a day's rows (one per
+    # company in view) summed, drawn at midnight UTC — the chart cards the
+    # Monitoring tab uses need datetimes.
+    by_day: dict[date, dict[str, int]] = {}
+    for snapshot in daily_snapshots:
+        day = by_day.setdefault(
+            snapshot.snapshot_date, {"events": 0, "online": 0, "needs_updates": 0}
+        )
+        day["events"] += snapshot.event_count
+        day["online"] += snapshot.honeypots_online
+        day["needs_updates"] += snapshot.needs_updates
+    trend_days = sorted(by_day)
 
     return {
         # base.html normally sets this itself (`{% set current_user =
@@ -162,6 +174,10 @@ async def _build_dashboard_context(
         "company_count": company_count,
         "company_breakdown": company_breakdown,
         "daily_snapshots": daily_snapshots,
+        "trend_timestamps": [datetime.combine(d, time.min, tzinfo=UTC) for d in trend_days],
+        "trend_events": [by_day[d]["events"] for d in trend_days],
+        "trend_online": [by_day[d]["online"] for d in trend_days],
+        "trend_needs_updates": [by_day[d]["needs_updates"] for d in trend_days],
         "dashboard_trends_retention_days": settings_row.dashboard_trends_retention_days,
         "activity": activity,
     }
