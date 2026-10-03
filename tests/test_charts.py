@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import html
+import json
+import re
 from datetime import UTC, datetime, timedelta
 
 from app.web.charts import build_chart, format_value, nice_range
@@ -170,3 +173,84 @@ async def test_monitoring_tab_renders_chart_cards_and_services_table(client, db_
     assert '<tr data-row-state="other" class="" hidden>' in page.text
     # The range picker is translated, not the raw English label.
     assert ">Last 24 hours<" in page.text
+
+
+async def test_dashboard_trend_sums_every_company_per_day(client, db_session_factory):
+    """Two companies' snapshots for the same day are one point on the trend
+    charts (their sum), not two consecutive points."""
+    from datetime import date
+
+    from app.db.models.company_snapshot import CompanySnapshot
+    from tests.conftest import create_company
+
+    acme = await create_company(db_session_factory, name="Acme")
+    beta = await create_company(db_session_factory, name="Beta")
+    today = date.today()
+    async with db_session_factory() as db:
+        for offset, (a_events, b_events) in enumerate([(10, 5), (20, 7)]):
+            day = today - timedelta(days=1 - offset)
+            for company, events in ((acme, a_events), (beta, b_events)):
+                db.add(
+                    CompanySnapshot(
+                        company_id=company.id,
+                        snapshot_date=day,
+                        honeypot_count=1,
+                        honeypots_online=1,
+                        event_count=events,
+                    )
+                )
+        await db.commit()
+
+    page = await client.get("/dashboard")
+
+    assert page.status_code == 200
+    assert ">Events per day<" in page.text and ">Honeypots online<" in page.text
+    # Two days -> two points, 15 and 27 events; both companies online -> 2.
+    series = {}
+    for raw in re.findall(r"data-chart='([^']*)'", page.text):
+        for entry in json.loads(html.unescape(raw))["s"]:
+            series[entry["label"]] = entry["v"]
+    assert series["Events per day"] == [15, 27]
+    assert series["Honeypots online"] == [2, 2]
+    assert "js/monitoring-chart.js" in page.text
+
+
+async def test_activity_tab_uses_the_same_chart_cards(client, db_session_factory):
+    from app.db.models.company import Company
+    from app.db.models.honeypot import Honeypot
+    from app.db.models.honeypot_event import HoneypotEvent
+    from tests.conftest import create_company
+
+    company = await create_company(db_session_factory)
+    now = datetime.now(UTC)
+    async with db_session_factory() as db:
+        honeypot = Honeypot(
+            companies=[await db.get(Company, company.id)],
+            name="activity-hp",
+            host_key_fingerprint="SHA256:fake",
+            opencanary_log_polled_at=now,
+        )
+        db.add(honeypot)
+        await db.flush()
+        for i in range(5):
+            db.add(
+                HoneypotEvent(
+                    honeypot_id=honeypot.id,
+                    event_type="4002",
+                    occurred_at=now - timedelta(minutes=30 * i),
+                    src_ip="203.0.113.9",
+                    raw={},
+                    source="ssh_poll",
+                )
+            )
+        await db.commit()
+        honeypot_id = honeypot.id
+
+    page = await client.get(f"/honeypots/{honeypot_id}/status")
+
+    assert page.status_code == 200
+    assert 'class="monitoring-toolbar"' in page.text
+    assert page.text.count('class="chart-card"') == 2
+    assert 'id="activity-events-table"' in page.text
+    assert ">Last 24 hours<" in page.text
+    assert "js/monitoring-chart.js" in page.text and "trend-chart" not in page.text

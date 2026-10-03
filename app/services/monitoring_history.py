@@ -50,7 +50,7 @@ DEFAULT_TIME_RANGE = "24h"
 MAX_RAW_SAMPLES = 20_000
 
 # How many points a downsampled series targets — enough resolution for a
-# ~560px-wide sparkline (see macros/charts.html) to look like a real trend
+# chart card (see macros/charts.html) to look like a real trend
 # line, not so many that the SVG itself gets heavy.
 _TARGET_POINTS = 150
 

@@ -1115,15 +1115,6 @@ async def honeypot_detail(
     return response
 
 
-#: Shared by monitoring.html/status.html and the -panel/refresh routes
-#: below that render partials/honeypot_{monitoring,activity}_content.html
-#: directly (no including template to inherit a template-level `{% set %}`
-#: from) — same rotating palette for chart series without one fixed color.
-_CHART_PALETTE = [
-    "#5b8fff", "#46bf8a", "#e0ab4a", "#f0685f", "#a970ff", "#38bdf8", "#f472b6", "#facc15",
-]
-
-
 def _normalize_range_key(range_key: str) -> str:
     valid_range_keys = {key for key, _label, _delta in monitoring_history.TIME_RANGES}
     return range_key if range_key in valid_range_keys else monitoring_history.DEFAULT_TIME_RANGE
@@ -2777,7 +2768,8 @@ async def _build_activity_context(
         "time_ranges": monitoring_history.TIME_RANGES,
         "range_key": range_key,
         "app_settings": await get_or_create_app_settings(db),
-        "palette": _CHART_PALETTE,
+        # "Refresh now" is a write action (`POST .../status/refresh`).
+        "can_refresh": can_write_honeypot(request.state.user, honeypot),
     }
 
 

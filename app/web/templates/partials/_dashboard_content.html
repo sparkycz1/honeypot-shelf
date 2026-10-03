@@ -1,5 +1,4 @@
-{% from "macros/charts.html" import sparkline, trend_chart %}
-{% set palette = ['#5b8fff', '#46bf8a', '#e0ab4a', '#f0685f', '#a970ff', '#38bdf8', '#f472b6', '#facc15'] %}
+{% from "macros/charts.html" import chart_card with context %}
 
 <section class="panel">
   <h2>
@@ -55,14 +54,28 @@
 </section>
 {% endif %}
 
-{% if daily_snapshots %}
+{# Trend and activity charts: the same chart cards as a honeypot's
+   Monitoring tab (debcontrol's Dashboard lays its fleet trends out the
+   same way). #}
+{% if trend_timestamps %}
 <section class="panel">
   <h2>{{ t(request, "dashboard.event_trend") }}</h2>
   <p class="hint">
     {{ t(request, "dashboard.event_trend_hint1", start=daily_snapshots[0].snapshot_date, end=daily_snapshots[-1].snapshot_date) }}
     <a href="/settings">{{ t(request, "nav.settings") }}</a>{{ t(request, "dashboard.event_trend_hint2") }}
   </p>
-  {{ sparkline(daily_snapshots | map(attribute='event_count') | list, '#e0ab4a', request=request) }}
+  {% set events_label = t(request, "dashboard.trend.events") %}
+  {% set online_label = t(request, "dashboard.trend.online") %}
+  {% set updates_label = t(request, "dashboard.trend.needs_updates") %}
+  <div class="monitoring-grid">
+    {{ chart_card(events_label, none,
+         chart([(events_label, trend_events)], trend_timestamps, time_format='%d.%m.', colors=(chart_palette[2],)),
+         wide=true) }}
+    {{ chart_card(online_label, none,
+         chart([(online_label, trend_online)], trend_timestamps, time_format='%d.%m.', colors=(chart_palette[1],))) }}
+    {{ chart_card(updates_label, none,
+         chart([(updates_label, trend_needs_updates)], trend_timestamps, time_format='%d.%m.', colors=(chart_palette[3],))) }}
+  </div>
 </section>
 {% endif %}
 
@@ -70,21 +83,32 @@
 <section class="panel">
   <h2>{{ t(request, "dashboard.by_type_heading") }}</h2>
   <p class="hint">{{ t(request, "dashboard.by_type_hint") }}</p>
-  {% set by_type_series = [] %}
+  {% set by_type = [] %}
   {% for label, points in activity.counts_by_type.items() %}
-    {% set _ = by_type_series.append({'label': label, 'color': palette[loop.index0 % palette|length], 'points': points}) %}
+    {% set _ = by_type.append((label, points)) %}
   {% endfor %}
-  {{ trend_chart(by_type_series, activity.bucket_timestamps) }}
-  <table class="data-table">
-    <thead>
-      <tr><th>{{ t(request, "dashboard.type") }}</th><th>{{ t(request, "dashboard.count") }}</th></tr>
-    </thead>
-    <tbody>
-      {% for label, count in activity.totals_by_type | dictsort(by='value', reverse=True) %}
-        <tr><td>{{ label }}</td><td>{{ count }}</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="monitoring-grid">
+    {{ chart_card(t(request, "dashboard.by_type_chart"), none,
+         chart(by_type, activity.bucket_timestamps, stacked=true, time_format='%H:%M'),
+         filter=(by_type | length > 4)) }}
+    <section class="chart-card">
+      <header class="chart-card-header">
+        <div><h3 class="chart-card-title">{{ t(request, "dashboard.by_type_counts") }}</h3></div>
+      </header>
+      <div class="monitoring-table-wrap">
+        <table class="data-table" id="dashboard-types-table">
+          <thead>
+            <tr><th data-sort="text">{{ t(request, "dashboard.type") }}</th><th data-sort="number">{{ t(request, "dashboard.count") }}</th></tr>
+          </thead>
+          <tbody>
+            {% for label, count in activity.totals_by_type | dictsort(by='value', reverse=True) %}
+              <tr><td>{{ label }}</td><td data-sort-value="{{ count }}">{{ count }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
   {% if activity.truncated %}
     <p class="hint">{{ t(request, "dashboard.by_type_truncated") }}</p>
   {% endif %}

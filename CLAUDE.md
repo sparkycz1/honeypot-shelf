@@ -227,6 +227,28 @@ something here works a certain way.
   `UndefinedError: 'request' is undefined` (not a syntax error — a plain
   parse check won't catch it).
 
+## Same look as debcontrol
+
+The two apps are meant to look and behave almost the same — layouts,
+toolbars, cards, tables, charts, the log viewer — differing only in
+colors and logos. debcontrol is the reference: when a page here differs
+from its debcontrol counterpart, port debcontrol's markup, CSS and JS
+rather than inventing a variant, and when a UI pattern changes in one
+app, carry it to the other. Concretely:
+
+- Charts are `app/web/charts.py` + `macros/charts.html`'s `chart_card`
+  + `static/js/monitoring-chart.js`, all ported verbatim (Monitoring and
+  Activity tabs, Dashboard). There is no second chart style — don't add
+  one.
+- A honeypot tab is a `.monitoring-toolbar`, then a `.monitoring-grid`
+  of `.chart-card`s, then full-width `.chart-card-wide` table cards
+  (`.monitoring-table-wrap`, `th[data-sort]`, `[data-table-filter]`).
+- The Logs tab is debcontrol's: source cards, the labelled
+  `.log-toolbar`, the `.log-viewer`; "Honeypot" stands where debcontrol
+  has "Docker".
+- New CSS uses only `--color-*` variables, so each app keeps its own
+  palette.
+
 ## Checklist for every change
 
 1. **Company scoping.** Any new read/write path touching a honeypot,
