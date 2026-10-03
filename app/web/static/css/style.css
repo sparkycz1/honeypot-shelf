@@ -1313,9 +1313,80 @@ pre code { background: none; padding: 0; }
    whole page. */
 .log-output { max-height: 32rem; overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
 
-/* Logs tab: one <li> per line, colored by journal priority (or a keyword
-   guess for a plain file) — see app/web/log_lines.py. */
-.log-viewer { border: 1px solid var(--color-border); border-radius: var(--radius-sm); overflow: hidden; }
+/* --- Logs tab (honeypots/logs.html, static/js/log-viewer.js) — ported from debcontrol --- */
+.log-sources {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+@media (max-width: 640px) { .log-sources { grid-template-columns: minmax(0, 1fr); } }
+.log-source {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  color: var(--color-text);
+  text-decoration: none;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+.log-source:hover { border-color: var(--color-border-strong); color: var(--color-text); }
+.log-source.is-active { border-color: var(--color-accent); background: var(--color-surface-raised); }
+.log-source-title { font-weight: 600; }
+.log-source-hint {
+  color: var(--color-muted);
+  font-size: 0.82rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  margin-bottom: var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+.log-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  color: var(--color-muted);
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+.log-field-grow { flex: 1 1 14rem; min-width: 0; }
+.log-field input,
+.log-field select {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  padding: 0.5rem 0.65rem;
+  font-family: inherit;
+  font-size: 0.92rem;
+}
+.log-field input:focus-visible,
+.log-field select:focus-visible { border-color: var(--color-accent); }
+.log-input-short { width: 7.5rem; }
+.log-field-check { flex-direction: row; align-items: center; align-self: flex-end; padding-bottom: 0.55rem; }
+.log-field-check input { padding: 0; }
+.log-toolbar .hint { margin: 0; align-self: center; }
+
+.log-viewer {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
 .log-viewer-header {
   display: flex;
   flex-wrap: wrap;
@@ -1327,7 +1398,12 @@ pre code { background: none; padding: 0; }
   background: var(--color-surface-raised);
 }
 .log-viewer-title { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.log-viewer-title code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .log-viewer-count { color: var(--color-muted); font-size: 0.82rem; }
+.log-viewer-actions { display: flex; gap: var(--space-2); }
+.log-small-button { padding: 0.3rem 0.65rem; font-size: 0.8rem; }
+.log-small-button[aria-pressed="true"] { border-color: var(--color-accent); color: var(--color-accent); }
+
 .log-lines {
   counter-reset: log-line;
   list-style: none;
@@ -1359,11 +1435,7 @@ pre code { background: none; padding: 0; }
   user-select: none;
 }
 .log-line:hover { background: var(--color-surface-raised); }
-.log-error {
-  color: var(--color-danger);
-  border-left-color: var(--color-danger);
-  background: color-mix(in srgb, var(--color-danger) 6%, transparent);
-}
+.log-error { color: var(--color-danger); border-left-color: var(--color-danger); background: color-mix(in srgb, var(--color-danger) 6%, transparent); }
 .log-warn { color: var(--color-warn); border-left-color: var(--color-warn); }
 .log-debug { color: var(--color-muted); }
 .log-notice { border-left-color: var(--color-accent); }
@@ -1373,22 +1445,12 @@ pre code { background: none; padding: 0; }
   border-radius: 2px;
   padding: 0 1px;
 }
-.log-lines:empty { display: none; }
-.log-viewer-actions { display: flex; gap: var(--space-2); }
-.log-small-button { padding: 0.3rem 0.65rem; font-size: 0.8rem; }
-.log-small-button[aria-pressed="true"] { border-color: var(--color-accent); color: var(--color-accent); }
 .log-follow-status { font-size: 0.8rem; color: var(--color-muted); }
 .log-follow-status.is-live { color: var(--color-ok); }
 .log-follow-status.is-live::before { content: "● "; }
-.log-empty { margin: 0; padding: var(--space-4); text-align: center; color: var(--color-muted); }
-.log-filters { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-2); }
-.log-filters label { display: flex; flex-direction: column; gap: 2px; font-size: 0.85rem; }
-/* Beats `.search-form input[type="text"]`'s flex-grow, which would stretch a
-   labelled input vertically inside the column-direction label. */
-.search-form.log-filters label > input,
-.search-form.log-filters label > select { flex: none; }
-.log-filters .checkbox-row { flex-direction: row; align-items: center; }
-.log-input-short { width: 12em; }
+.log-lines:empty { display: none; }
+.log-empty { margin: 0; padding: var(--space-5); text-align: center; color: var(--color-muted); }
+
 
 details {
   border: 1px solid var(--color-border);
@@ -1770,3 +1832,214 @@ a.htmx-request, .link-button.htmx-request { opacity: 0.6; cursor: progress; }
 .cron-preview { min-height: 1.2rem; margin-bottom: var(--space-3); }
 .cron-preview-list { margin: 0 0 var(--space-2); padding-left: 1.2rem; font-size: 0.88rem; }
 .cron-preview-error { color: var(--color-warn); }
+
+/* --- Monitoring tab: card grid, charts, tables ---
+   Layout modeled on Beszel's system page: a two-column grid of titled
+   chart cards (one column on narrow screens), full-width cards for the
+   tables. Chart geometry comes from app/web/charts.py, the markup from
+   macros/charts.html's `render_chart`/`chart_card`, hover/filtering from
+   static/js/monitoring-chart.js. */
+
+.monitoring-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.monitoring-toolbar .hint { margin: 0; }
+.monitoring-toolbar-spacer { flex: 1; }
+
+.monitoring-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+@media (max-width: 1000px) {
+  .monitoring-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+.chart-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: var(--space-4);
+  min-width: 0;
+}
+.chart-card-wide { grid-column: 1 / -1; }
+.monitoring-section { margin-bottom: var(--space-3); }
+
+.chart-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.chart-card-title { margin: 0; font-size: 1.05rem; }
+.chart-card-subtitle { margin: 0.15rem 0 0; color: var(--color-muted); font-size: 0.85rem; }
+.chart-card-footer { margin: var(--space-2) 0 0; color: var(--color-muted); font-size: 0.85rem; }
+.chart-empty { margin: var(--space-4) 0; }
+
+.chart-filter {
+  flex: 0 1 12rem;
+  min-width: 0;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  padding: 0.4rem 0.6rem;
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+
+.chart {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas: "y plot" ". x" "legend legend";
+  column-gap: var(--space-2);
+}
+
+.chart-y {
+  grid-area: y;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-end;
+  min-width: 2.5rem;
+}
+.chart-y span,
+.chart-x span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  white-space: nowrap;
+  color: var(--color-muted);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+.chart-y span { width: auto; justify-content: flex-end; }
+
+.chart-plot {
+  grid-area: plot;
+  position: relative;
+  height: 170px;
+}
+.chart-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  cursor: crosshair;
+  touch-action: pan-y;
+}
+
+.chart-x {
+  grid-area: x;
+  display: flex;
+  justify-content: space-between;
+  height: 1.4rem;
+  padding-top: 0.7rem;
+}
+
+.chart-grid { stroke: var(--color-border); stroke-width: 1; }
+.chart-cursor { stroke: var(--color-muted); stroke-width: 1; stroke-dasharray: 3 3; }
+.chart-threshold { stroke: var(--color-warn); stroke-width: 1.5; stroke-dasharray: 5 3; }
+.chart-series.is-hidden { display: none; }
+/* SVG elements don't honor the HTML `hidden` attribute on their own. */
+.chart-svg [hidden] { display: none; }
+
+.chart-tooltip {
+  position: absolute;
+  top: 0.25rem;
+  z-index: 2;
+  min-width: 10rem;
+  max-width: 22rem;
+  padding: 0.45rem 0.6rem;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  pointer-events: none;
+  box-shadow: var(--shadow-md);
+}
+.chart-tooltip-time { font-weight: 600; margin-bottom: 0.2rem; }
+.chart-tooltip-row { display: flex; align-items: center; gap: 0.4rem; }
+.chart-tooltip-swatch { flex: none; width: 0.55rem; height: 0.55rem; border-radius: 2px; }
+.chart-tooltip-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chart-tooltip-value { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.chart-legend {
+  grid-area: legend;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.2rem 0.4rem;
+  margin-top: var(--space-2);
+}
+.chart-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.1rem 0.35rem;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--color-muted);
+  font-family: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.chart-legend-item:hover { color: var(--color-text); background: var(--color-surface-raised); }
+.chart-legend-item.is-off { opacity: 0.4; text-decoration: line-through; }
+.chart-legend-threshold { cursor: default; color: var(--color-warn); }
+
+/* Full-width table cards (systemd services, containers, S.M.A.R.T.). */
+.monitoring-table-wrap {
+  overflow-x: auto;
+  max-height: 32rem;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+.monitoring-table-wrap .data-table { margin: 0; }
+.monitoring-table-wrap thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--color-surface-raised);
+}
+.monitoring-table-wrap td { font-variant-numeric: tabular-nums; }
+th[data-sort] { cursor: pointer; user-select: none; white-space: nowrap; }
+th[data-sort]::after { content: " \2195"; color: var(--color-muted); font-weight: 400; }
+th[data-sort][aria-sort="ascending"]::after { content: " \2191"; color: var(--color-text); }
+th[data-sort][aria-sort="descending"]::after { content: " \2193"; color: var(--color-text); }
+.table-muted { color: var(--color-muted); }
+.table-summary { margin: 0.15rem 0 0; color: var(--color-muted); font-size: 0.85rem; }
+.cell-truncate { max-width: 18rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cell-nowrap { white-space: nowrap; }
+
+/* Text for screen readers only (e.g. a table's actions column header). */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Monitoring tables: a state select next to the filter box; failed rows stand out. */
+.table-tools { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+.data-table tr.row-failed td { background: color-mix(in srgb, var(--color-danger) 8%, transparent); }
+.data-table tr.row-failed td:first-child { box-shadow: inset 3px 0 0 var(--color-danger); }
+
+
+/* Logs tab: the directory browser inside a viewer card. */
+.log-browse { padding: var(--space-3) var(--space-4); }
+.log-browse .hint { margin-top: 0; }

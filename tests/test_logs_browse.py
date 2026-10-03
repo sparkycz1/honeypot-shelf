@@ -69,9 +69,12 @@ async def test_logs_page_offers_journal_browse_and_honeypot_logs_links(
 
     response = await client.get(f"/honeypots/{honeypot.id}/logs")
     assert response.status_code == 200
-    assert ">Journal<" in response.text
-    assert ">Browse files<" in response.text
-    assert ">Honeypot logs<" in response.text
+    # Three source cards: the journal, a log file, and "Honeypot" —
+    # OpenCanary's own log, labelled with this device's log path.
+    assert ">System journal<" in response.text
+    assert ">Log file<" in response.text
+    assert ">Honeypot<" in response.text
+    assert "source=honeypot" in response.text
     assert HONEYPOT_LOG_PATH in response.text
 
 
@@ -114,9 +117,48 @@ async def test_browse_lists_directory_entries_as_links(client, db_session_factor
     assert response.status_code == 200
     assert "nginx" in response.text
     assert "syslog" in response.text
-    call = next(
-        c for c in celery_calls if c[0] == "app.tasks.jobs.list_honeypot_log_directory"
-    )
+    call = next(c for c in celery_calls if c[0] == "app.tasks.jobs.list_honeypot_log_directory")
     assert call[2] == {"path": "/var/log"}
-    # The manual "type a path" fallback stays available inside browse mode.
+    # The manual "type a path" fallback stays one click away from browse
+    # mode: the file source's own form.
+    assert ">Type a path instead<" in response.text
+    assert f"/honeypots/{honeypot.id}/logs?source=file" in response.text
+
+
+async def test_file_source_without_a_path_shows_only_the_form(
+    client, db_session_factory, celery_calls
+):
+    """Picking the "Log file" card runs nothing on the honeypot until a path
+    is entered (or picked from the browser)."""
+    company = await create_company(db_session_factory)
+    honeypot = await _create_pinned_honeypot(db_session_factory, company.id)
+
+    response = await client.get(f"/honeypots/{honeypot.id}/logs", params={"source": "file"})
+
+    assert response.status_code == 200
     assert 'name="path"' in response.text
+    assert ">Browse files<" in response.text
+    assert "data-log-viewer" not in response.text
+    assert not [c for c in celery_calls if c[0].startswith("app.tasks.jobs.view_honeypot")]
+
+
+async def test_honeypot_source_reads_this_devices_opencanary_log(
+    client, db_session_factory, celery_calls
+):
+    company = await create_company(db_session_factory)
+    honeypot = await _create_pinned_honeypot(db_session_factory, company.id)
+    celery_calls.result_for["app.tasks.jobs.view_honeypot_log_file"] = {
+        "ok": True,
+        "output": '{"logtype": 4002, "src_host": "203.0.113.9"}',
+    }
+
+    response = await client.get(f"/honeypots/{honeypot.id}/logs", params={"source": "honeypot"})
+
+    assert response.status_code == 200
+    call = next(c for c in celery_calls if c[0] == "app.tasks.jobs.view_honeypot_log_file")
+    assert call[2]["path"] == HONEYPOT_LOG_PATH
+    assert "203.0.113.9" in response.text
+    # An old-style `?path=` link to the same file lands on the same card.
+    legacy = await client.get(f"/honeypots/{honeypot.id}/logs", params={"path": HONEYPOT_LOG_PATH})
+    active = legacy.text.split('class="log-source is-active"', 1)[1].split("</a>", 1)[0]
+    assert "source=honeypot" in active and 'aria-current="page"' in active

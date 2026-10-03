@@ -85,7 +85,7 @@
 {# The Monitoring tab's interactive chart: one or more series sharing the
    same X axis (a timestamp per point — see
    app.services.monitoring_history._bucket_timestamps), with a scrubbable
-   hover readout wired up by static/js/monitoring-chart.js (which finds
+   hover readout wired up by static/js/trend-chart.js (which finds
    every `[data-chart]` element and does the rest — this macro only emits
    markup + data attributes, no inline `<script>`, to keep the CSP simple).
 
@@ -163,4 +163,96 @@
       </div>
     {% endif %}
   </div>
+{% endmacro %}
+
+{# The Monitoring tab's charts. All geometry comes from
+   `app.web.charts.build_chart` (the `chart(...)` template global) — this
+   only lays it out. The SVG carries no text (it's stretched to its box);
+   Y labels are a flex column and X labels a flex row, both
+   `justify-content: space-between` over evenly spaced ticks, so they line
+   up with the grid without any inline style. Hover, legend toggling and
+   the series filter are static/js/monitoring-chart.js, reading the
+   `data-chart` JSON. Every label/value here goes through autoescaping or
+   `tojson` — interface/disk/mount names come from the managed honeypot. #}
+{% macro render_chart(chart) %}
+  <div class="chart" data-chart='{{ chart.data | tojson }}'>
+    <div class="chart-y" aria-hidden="true">
+      {% for label in chart.y_ticks %}<span>{{ label }}</span>{% endfor %}
+    </div>
+    <div class="chart-plot">
+      <svg class="chart-svg" viewBox="0 0 1000 100" preserveAspectRatio="none"
+           role="img" aria-label="{{ chart.series | map(attribute='label') | join(', ') }}">
+        {% for y in chart.grid_y %}
+          <line class="chart-grid" x1="0" x2="1000" y1="{{ y }}" y2="{{ y }}" vector-effect="non-scaling-stroke"></line>
+        {% endfor %}
+        {% for s in chart.series %}
+          <g class="chart-series" data-series="{{ loop.index0 }}">
+            {% for d in s.area_paths %}
+              <path d="{{ d }}" fill="{{ s.color }}" fill-opacity="{{ '0.55' if chart.stacked else '0.2' }}" stroke="none"></path>
+            {% endfor %}
+            {% for d in s.line_paths %}
+              <path d="{{ d }}" fill="none" stroke="{{ s.color }}" stroke-width="1.6"
+                    stroke-linejoin="round" vector-effect="non-scaling-stroke"></path>
+            {% endfor %}
+          </g>
+        {% endfor %}
+        {% if chart.threshold_y is not none %}
+          <line class="chart-threshold" x1="0" x2="1000" y1="{{ chart.threshold_y }}" y2="{{ chart.threshold_y }}"
+                vector-effect="non-scaling-stroke"></line>
+        {% endif %}
+        <line class="chart-cursor" x1="0" x2="0" y1="0" y2="100" vector-effect="non-scaling-stroke" hidden></line>
+      </svg>
+      <div class="chart-tooltip" hidden></div>
+    </div>
+    <div class="chart-x" aria-hidden="true">
+      {% for label in chart.x_ticks %}<span>{{ label }}</span>{% endfor %}
+    </div>
+    {% if chart.series | length > 1 or chart.threshold_label %}
+      <div class="chart-legend">
+        {% if chart.series | length > 1 %}
+          {% for s in chart.series %}
+            <button type="button" class="chart-legend-item" data-series-toggle="{{ loop.index0 }}" aria-pressed="true">
+              <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><rect width="10" height="10" rx="2" fill="{{ s.color }}"></rect></svg>
+              {{ s.label }}
+            </button>
+          {% endfor %}
+        {% endif %}
+        {% if chart.hidden_count %}
+          <button type="button" class="chart-legend-item chart-legend-all" data-series-show-all aria-pressed="false"
+                  data-label-show="{{ t(request, 'honeypots.monitoring.show_all', count=chart.hidden_count) }}"
+                  data-label-hide="{{ t(request, 'honeypots.monitoring.show_fewer') }}">{{ t(request, 'honeypots.monitoring.show_all', count=chart.hidden_count) }}</button>
+        {% endif %}
+        {% if chart.threshold_label %}
+          <span class="chart-legend-item chart-legend-threshold">
+            <svg viewBox="0 0 14 10" width="14" height="10" aria-hidden="true"><line x1="0" y1="5" x2="14" y2="5" class="chart-threshold"></line></svg>
+            {{ chart.threshold_label }}
+          </span>
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+{% endmacro %}
+
+{# A titled card around one chart (see `render_chart`). `filter` adds the
+   header's series filter box (worth it once a chart has many lines); `footer` is an optional line of text under
+   the chart (the current reading, typically). #}
+{% macro chart_card(title, subtitle, chart, filter=false, footer=none, wide=false, empty_text='—') %}
+  <section class="chart-card{{ ' chart-card-wide' if wide else '' }}">
+    <header class="chart-card-header">
+      <div>
+        <h3 class="chart-card-title">{{ title }}</h3>
+        {% if subtitle %}<p class="chart-card-subtitle">{{ subtitle }}</p>{% endif %}
+      </div>
+      {% if filter %}
+        <input type="search" class="chart-filter" data-chart-filter placeholder="{{ t(request, 'honeypots.monitoring.filter_placeholder') }}"
+               aria-label="{{ t(request, 'honeypots.monitoring.filter_placeholder') }}">
+      {% endif %}
+    </header>
+    {% if chart.empty %}
+      <p class="hint chart-empty">{{ empty_text }}</p>
+    {% else %}
+      {{ render_chart(chart) }}
+    {% endif %}
+    {% if footer %}<p class="chart-card-footer">{{ footer }}</p>{% endif %}
+  </section>
 {% endmacro %}

@@ -1,13 +1,53 @@
-{% from "partials/_services_summary.html" import render as render_services_summary %}
-{% from "macros/charts.html" import trend_chart %}
+{% from "macros/charts.html" import chart_card with context %}
 
 {# Everything the Monitoring tab shows below its tab nav — pulled into its
    own partial so `GET /{id}/monitoring` (first paint), `GET /{id}/
    monitoring-panel` (the auto-poll/live-update fetch, see honeypots/
    monitoring.html's wrapper div), and `POST /{id}/monitoring/refresh`
    ("Refresh now") can all render the exact same markup rather than three
-   copies drifting apart — same "one partial, several routes" shape
-   `partials/honeypot_facts.html` already uses. #}
+   copies drifting apart.
+
+   Layout and charts are debcontrol's Monitoring tab: a toolbar, a
+   two-column grid of chart cards (`chart_card`, geometry from
+   `app.web.charts`), then a full-width services table. #}
+
+{#- The honeypot's own interval override, else the instance default. -#}
+{% macro interval_text(override) -%}
+  {%- if override -%}{{ t(request, "honeypots.monitoring.interval_seconds", seconds=override) }}
+  {%- else -%}{{ t(request, "honeypots.monitoring.instance_default") }}{%- endif -%}
+{%- endmacro %}
+
+{% set tf = '%H:%M' if range_key in ('1h', '24h') else '%d.%m.' %}
+
+<div class="monitoring-toolbar">
+  {% if honeypot.monitoring_updated_at or availability.sample_count %}
+    <form method="get" action="/honeypots/{{ honeypot.id }}/monitoring" class="inline-form">
+      <select name="range_key" class="inline-select" data-autosubmit aria-label="{{ t(request, 'honeypots.monitoring.range_label') }}">
+        {% for key, _label, _delta in time_ranges %}
+          <option value="{{ key }}" {% if key == range_key %}selected{% endif %}>{{ t(request, "honeypots.monitoring.range." ~ key) }}</option>
+        {% endfor %}
+      </select>
+      <noscript><button type="submit" class="button">{{ t(request, 'honeypots.monitoring.apply') }}</button></noscript>
+    </form>
+  {% endif %}
+  <p class="hint">
+    {{ t(request, 'honeypots.monitoring.last_checked') }}
+    {% if last_checked_at %}{{ last_checked_at | local_time('%Y-%m-%d %H:%M:%S %Z') }}{% else %}—{% endif %}
+  </p>
+  <span class="monitoring-toolbar-spacer"></span>
+  {% if can_refresh %}
+    <button
+      class="button button-secondary"
+      hx-post="/honeypots/{{ honeypot.id }}/monitoring/refresh"
+      hx-vals='{"csrf_token": "{{ csrf_token }}", "range_key": "{{ range_key }}"}'
+      hx-target="#monitoring-content"
+      hx-swap="innerHTML"
+      {% if not honeypot.host_key_fingerprint %}disabled{% endif %}
+    >
+      {{ t(request, 'honeypots.monitoring.refresh_now') }}
+    </button>
+  {% endif %}
+</div>
 
 {% if not honeypot.monitoring_updated_at and not availability.sample_count %}
   <section class="panel">
@@ -17,31 +57,6 @@
     </p>
   </section>
 {% else %}
-  <div class="page-header-actions">
-    <p class="hint">
-      {{ t(request, 'honeypots.monitoring.last_checked') }}
-      {% if last_checked_at %}{{ last_checked_at | local_time('%Y-%m-%d %H:%M %Z') }}{% else %}—{% endif %}
-    </p>
-    <button
-      class="button button-secondary"
-      hx-post="/honeypots/{{ honeypot.id }}/monitoring/refresh"
-      hx-vals='{"csrf_token": "{{ csrf_token }}", "range_key": "{{ range_key }}"}'
-      hx-target="#monitoring-content"
-      hx-swap="innerHTML"
-    >
-      {{ t(request, 'honeypots.monitoring.refresh_now') }}
-    </button>
-  </div>
-
-  <form method="get" action="/honeypots/{{ honeypot.id }}/monitoring" class="search-form">
-    <select name="range_key" data-autosubmit>
-      {% for key, label, _delta in time_ranges %}
-        <option value="{{ key }}" {% if key == range_key %}selected{% endif %}>{{ label }}</option>
-      {% endfor %}
-    </select>
-    <noscript><button type="submit" class="button">{{ t(request, 'honeypots.monitoring.apply') }}</button></noscript>
-  </form>
-
   {% if history.truncated or availability.truncated %}
     <div class="alert alert-warn">
       <p>
@@ -50,186 +65,166 @@
     </div>
   {% endif %}
 
-  <p class="hint">{{ t(request, 'honeypots.monitoring.hover_hint') }}</p>
+  {% set ts = history.bucket_timestamps %}
+  {% set no_data = t(request, 'honeypots.monitoring.no_data_in_range') %}
 
-  {% if honeypot.monitoring_updated_at %}
-    {% if history.opencanary_uptime_percent %}
-      <section class="panel">
-        <h2>{{ t(request, 'honeypots.monitoring.opencanary_service') }}</h2>
-        <p class="hint">{{ t(request, 'honeypots.monitoring.opencanary_service_hint') }}</p>
-        <h3>{{ t(request, 'honeypots.monitoring.uptime') }}</h3>
-        {{ trend_chart([{'label': 'OpenCanary', 'color': palette[1], 'points': history.opencanary_uptime_percent}], history.bucket_timestamps, fixed_max=100, unit='%') }}
-        <p class="hint">
-          {{ t(request, 'honeypots.monitoring.status') }}
-          {% if history.latest_opencanary_active is not none %}
-            <span class="badge {{ 'badge-ok' if history.latest_opencanary_active else 'badge-error' }}">
-              {{ t(request, 'honeypots.monitoring.opencanary_up') if history.latest_opencanary_active else t(request, 'honeypots.monitoring.opencanary_down') }}
-            </span>
-          {% else %}
-            —
-          {% endif %}
-        </p>
-      </section>
+  <div class="monitoring-grid">
+    {% if honeypot.monitoring_updated_at %}
+      {# --- OpenCanary service --- #}
+      {% set canary_footer = none %}
+      {% if history.latest_opencanary_active is not none %}
+        {% set canary_footer = t(request, 'honeypots.monitoring.status') ~ ' ' ~ (t(request, 'honeypots.monitoring.opencanary_up') if history.latest_opencanary_active else t(request, 'honeypots.monitoring.opencanary_down')) %}
+      {% endif %}
+      {{ chart_card(
+           t(request, 'honeypots.monitoring.opencanary_service'), t(request, 'honeypots.monitoring.card.opencanary_hint'),
+           chart([('OpenCanary', history.opencanary_uptime_percent)], ts, fmt='percent', fixed_max=100, time_format=tf, colors=(chart_palette[1],)),
+           footer=canary_footer, empty_text=no_data) }}
+
+      {# --- CPU --- #}
+      {{ chart_card(
+           t(request, 'honeypots.monitoring.card.cpu'), t(request, 'honeypots.monitoring.card.cpu_hint'),
+           chart([('CPU', history.cpu_percent)], ts, fmt='percent', time_format=tf),
+           footer=t(request, 'honeypots.monitoring.current_value', value=(history.latest_cpu_percent | chart_value('percent'))),
+           empty_text=no_data) }}
+
+      {# --- Memory --- #}
+      {% set ram_footer = none %}
+      {% if history.latest_ram_used_bytes is not none and history.latest_ram_total_bytes %}
+        {% set ram_footer = t(request, 'honeypots.monitoring.memory_current', used=(history.latest_ram_used_bytes | bytes), total=(history.latest_ram_total_bytes | bytes), percent=('%.0f' % (history.latest_ram_used_bytes / history.latest_ram_total_bytes * 100))) %}
+      {% endif %}
+      {{ chart_card(
+           t(request, 'honeypots.monitoring.card.memory'), t(request, 'honeypots.monitoring.card.memory_hint'),
+           chart([(t(request, 'honeypots.monitoring.series.ram_used'), history.ram_percent)], ts, fmt='percent', fixed_max=100, time_format=tf, colors=(chart_palette[1],)),
+           footer=ram_footer, empty_text=no_data) }}
+
+      {# --- Disk usage + I/O --- #}
+      {% set fs_series = [] %}
+      {% for mount, values in history.filesystem_usage_by_mount.items() %}
+        {% set _ = fs_series.append((mount, values)) %}
+      {% endfor %}
+      {% set fs_footer = [] %}
+      {% for mount, current in history.latest_filesystems.items() %}
+        {% set fc = (honeypot.disk_forecast or {}).get(mount) or {} %}
+        {% set eta = '' %}
+        {% if fc.days_until_full is number %}
+          {% set eta = ' — ' ~ (t(request, 'honeypots.monitoring.disk_full_now') if fc.days_until_full <= 0 else t(request, 'honeypots.monitoring.disk_full_in', days=(fc.days_until_full | round(0) | int), rate=(fc.bytes_per_day | bytes))) %}
+        {% endif %}
+        {% set _ = fs_footer.append(mount ~ ': ' ~ t(request, 'honeypots.monitoring.disk_usage_current', used=(current.used_bytes | bytes), size=(current.size_bytes | bytes)) ~ (' (' ~ current.use_percent ~ '%)' if current.use_percent is not none else '') ~ eta) %}
+      {% endfor %}
+      {{ chart_card(
+           t(request, 'honeypots.monitoring.card.disk'), t(request, 'honeypots.monitoring.card.disk_hint'),
+           chart(fs_series, ts, fmt='percent', time_format=tf),
+           footer=(fs_footer | join(' · ')) or none,
+           empty_text=t(request, 'honeypots.monitoring.no_filesystem_data')) }}
+
+      {% set disk_io = [] %}
+      {% for device, values in history.disk_read_by_device.items() %}
+        {% set _ = disk_io.append((t(request, 'honeypots.monitoring.series.read', name=device), values)) %}
+        {% set _ = disk_io.append((t(request, 'honeypots.monitoring.series.write', name=device), history.disk_write_by_device.get(device, []))) %}
+      {% endfor %}
+      {{ chart_card(t(request, 'honeypots.monitoring.card.disk_io'), t(request, 'honeypots.monitoring.card.disk_io_hint'),
+                    chart(disk_io, ts, fmt='bytes_rate', time_format=tf),
+                    filter=(disk_io | length > 4), empty_text=t(request, 'honeypots.monitoring.no_disks_found')) }}
+
+      {# --- Network --- #}
+      {# Physical NICs first; virtual interfaces (tunnels' helpers, veths)
+         start switched off (charts.noise_interfaces). #}
+      {% set net = [] %}
+      {% set net_hidden = [] %}
+      {% set noisy = noise_interfaces(history.network_rx_by_iface.keys()) %}
+      {% for iface, values in history.network_rx_by_iface.items() %}
+        {% set rx_label = t(request, 'honeypots.monitoring.series.received', name=iface) %}
+        {% set tx_label = t(request, 'honeypots.monitoring.series.sent', name=iface) %}
+        {% set _ = net.append((rx_label, values)) %}
+        {% set _ = net.append((tx_label, history.network_tx_by_iface.get(iface, []))) %}
+        {% if iface in noisy %}{% set _ = net_hidden.append(rx_label) %}{% set _ = net_hidden.append(tx_label) %}{% endif %}
+      {% endfor %}
+      {{ chart_card(t(request, 'honeypots.monitoring.card.network'), t(request, 'honeypots.monitoring.card.network_hint'),
+                    chart(net, ts, fmt='bytes_rate', time_format=tf, hidden=net_hidden),
+                    filter=(net | length > 4), empty_text=t(request, 'honeypots.monitoring.no_network_interfaces')) }}
+
+      {# --- Load --- #}
+      {{ chart_card(
+           t(request, 'honeypots.monitoring.card.load'), t(request, 'honeypots.monitoring.card.load_hint'),
+           chart([('1 min', history.load1), ('5 min', history.load5), ('15 min', history.load15)], ts, fmt='number', time_format=tf,
+                 colors=(chart_palette[4], chart_palette[0], chart_palette[2])),
+           footer=(t(request, 'honeypots.monitoring.load_current', load1=('%.2f' % history.latest_load1), load5=('%.2f' % history.latest_load5), load15=('%.2f' % history.latest_load15)) if history.latest_load1 is not none else none),
+           empty_text=no_data) }}
     {% endif %}
 
-    <section class="panel">
-      <h2>{{ t(request, 'honeypots.monitoring.cpu') }}</h2>
-      {% if history.cpu_percent %}
-        <h3>{{ t(request, 'honeypots.monitoring.utilization') }}</h3>
-        {{ trend_chart([{'label': 'CPU', 'color': palette[0], 'points': history.cpu_percent}], history.bucket_timestamps, fixed_max=100, unit='%') }}
-        <p class="hint">
-          {{ t(request, 'honeypots.monitoring.current') }} {{ '%.1f' % history.latest_cpu_percent if history.latest_cpu_percent is not none else '—' }}%
-        </p>
-        <h3>{{ t(request, 'honeypots.monitoring.load_average') }}</h3>
-        {% if history.load1 %}
-          {{ trend_chart([
-            {'label': '1 min', 'color': palette[0], 'points': history.load1},
-            {'label': '5 min', 'color': palette[1], 'points': history.load5},
-            {'label': '15 min', 'color': palette[2], 'points': history.load15},
-          ], history.bucket_timestamps) }}
-          <p class="hint">
-            {{ t(request, 'honeypots.monitoring.current') }}
-            {% if history.latest_load1 is not none %}
-              {{ '%.2f' % history.latest_load1 }} / {{ '%.2f' % history.latest_load5 }} / {{ '%.2f' % history.latest_load15 }}
-              ({{ t(request, 'honeypots.monitoring.load_average_explainer') }})
-            {% else %}
-              —
-            {% endif %}
-          </p>
-        {% endif %}
-      {% else %}
-        <p class="hint">{{ t(request, 'honeypots.monitoring.no_data_in_range') }}</p>
-      {% endif %}
-    </section>
+    {# --- Availability (its own table/cadence) --- #}
+    {% if availability.sample_count %}
+      {% set ats = availability.bucket_timestamps %}
+      {{ chart_card(
+           t(request, 'honeypots.monitoring.availability'),
+           t(request, 'honeypots.monitoring.card.availability_hint', interval=interval_text(honeypot.reachability_check_interval_seconds)),
+           chart([(t(request, 'honeypots.monitoring.uptime'), availability.uptime_percent)], ats, fmt='percent', fixed_max=100, time_format=tf, colors=(chart_palette[1],)),
+           footer=(t(request, 'honeypots.monitoring.status') ~ ' ' ~ (t(request, 'honeypots.monitoring.reachable') if availability.latest_reachable else t(request, 'honeypots.monitoring.unreachable')) if availability.latest_reachable is not none else none),
+           empty_text=no_data) }}
+      {{ chart_card(
+           t(request, 'honeypots.monitoring.connect_latency'), t(request, 'honeypots.monitoring.card.latency_hint'),
+           chart([(t(request, 'honeypots.monitoring.connect_latency'), availability.latency_ms)], ats, fmt='ms', time_format=tf, colors=(chart_palette[5],)),
+           footer=t(request, 'honeypots.monitoring.current_value', value=(availability.latest_latency_ms | chart_value('ms') if availability.latest_latency_ms is not none else t(request, 'honeypots.monitoring.unreachable_dash'))),
+           empty_text=no_data) }}
+    {% endif %}
+  </div>
 
-    <section class="panel">
-      <h2>{{ t(request, 'honeypots.monitoring.memory') }}</h2>
-      {% if history.ram_percent %}
-        {{ trend_chart([{'label': 'RAM', 'color': palette[0], 'points': history.ram_percent}], history.bucket_timestamps, fixed_max=100, unit='%') }}
-        <p class="hint">
-          {{ t(request, 'honeypots.monitoring.current') }}
-          {% if history.latest_ram_used_bytes is not none and history.latest_ram_total_bytes %}
-            {{ '%.1f GB' % (history.latest_ram_used_bytes / 1073741824) }} {{ t(request, 'honeypots.monitoring.used') }} /
-            {{ '%.1f GB' % ((history.latest_ram_total_bytes - history.latest_ram_used_bytes) / 1073741824) }} {{ t(request, 'honeypots.monitoring.available') }}
-            ({{ t(request, 'honeypots.monitoring.of') }} {{ '%.1f GB' % (history.latest_ram_total_bytes / 1073741824) }},
-            {{ '%.0f' % (history.latest_ram_used_bytes / history.latest_ram_total_bytes * 100) }}% {{ t(request, 'honeypots.monitoring.used') }})
-          {% else %}
-            —
-          {% endif %}
-        </p>
-      {% else %}
-        <p class="hint">{{ t(request, 'honeypots.monitoring.no_data_in_range') }}</p>
-      {% endif %}
-    </section>
-
-    <section class="panel">
-      <h2>{{ t(request, 'honeypots.monitoring.network') }}</h2>
-      {% if history.network_rate_by_iface %}
-        {% for iface, series in history.network_rate_by_iface.items() %}
-          {% set current = history.latest_network_io.get(iface) %}
-          <h3><code>{{ iface }}</code></h3>
-          {{ trend_chart([{'label': iface, 'color': palette[loop.index0 % palette|length], 'points': series}], history.bucket_timestamps, bytes_rate=True) }}
-          <p class="hint">
-            {% if current %}
-              {{ t(request, 'honeypots.monitoring.network_totals', rx=('%.1f GB' % (current.rx_bytes / 1073741824)), tx=('%.1f GB' % (current.tx_bytes / 1073741824))) }}
-            {% else %}
-              —
-            {% endif %}
-          </p>
-        {% endfor %}
-      {% else %}
-        <p class="hint">{{ t(request, 'honeypots.monitoring.no_network_interfaces') }}</p>
-      {% endif %}
-    </section>
-
-    <section class="panel">
-      <h2>{{ t(request, 'honeypots.monitoring.disk') }}</h2>
-      {% if history.disk_rate_by_device %}
-        <h3>{{ t(request, 'honeypots.monitoring.io_throughput') }}</h3>
-        {% for device, series in history.disk_rate_by_device.items() %}
-          {% set current = history.latest_disk_io.get(device) %}
-          <h4><code>{{ device }}</code></h4>
-          {{ trend_chart([{'label': device, 'color': palette[loop.index0 % palette|length], 'points': series}], history.bucket_timestamps, bytes_rate=True) }}
-          <p class="hint">
-            {% if current %}
-              {{ t(request, 'honeypots.monitoring.disk_totals', read=('%.1f GB' % (current.read_bytes / 1073741824)), write=('%.1f GB' % (current.write_bytes / 1073741824))) }}
-            {% else %}
-              —
-            {% endif %}
-          </p>
-        {% endfor %}
-      {% else %}
-        <p class="hint">{{ t(request, 'honeypots.monitoring.no_disks_found') }}</p>
-      {% endif %}
-
-      {% if history.filesystem_usage_by_mount %}
-        <h3>{{ t(request, 'honeypots.monitoring.usage') }}</h3>
-        {% if honeypot.disk_forecast %}<p class="hint">{{ t(request, 'honeypots.monitoring.disk_forecast_hint') }}</p>{% endif %}
-        {% for mount, series in history.filesystem_usage_by_mount.items() %}
-          {% set current = history.latest_filesystems.get(mount) %}
-          <h4><code>{{ mount }}</code></h4>
-          {{ trend_chart([{'label': mount, 'color': palette[loop.index0 % palette|length], 'points': series}], history.bucket_timestamps, fixed_max=100, unit='%') }}
-          <p class="hint">
-            {% if current %}
-              {{ '%.1f GB' % (current.used_bytes / 1073741824) }} {{ t(request, 'honeypots.monitoring.used') }} {{ t(request, 'honeypots.monitoring.of') }}
-              {{ '%.1f GB' % (current.size_bytes / 1073741824) }}
-              {% if current.use_percent is not none %}({{ current.use_percent }}%){% endif %}
-              {% set fc = (honeypot.disk_forecast or {}).get(mount) or {} %}
-              {% if fc.days_until_full is number %}
-                —
-                {% if fc.days_until_full <= 0 %}
-                  {{ t(request, 'honeypots.monitoring.disk_full_now') }}
-                {% else %}
-                  {{ t(request, 'honeypots.monitoring.disk_full_in', days=(fc.days_until_full | round(0) | int), rate=('%.2f GB' % (fc.bytes_per_day / 1073741824))) }}
-                {% endif %}
-              {% endif %}
-            {% else %}
-              —
-            {% endif %}
-          </p>
-        {% endfor %}
-      {% else %}
-        <p class="hint">{{ t(request, 'honeypots.monitoring.no_filesystem_data') }}</p>
-      {% endif %}
-    </section>
-  {% endif %}
-
-  {% if availability.sample_count %}
-    <section class="panel">
-      <h2>{{ t(request, 'honeypots.monitoring.availability') }}</h2>
-      <p class="hint">
-        {{ t(request, 'honeypots.monitoring.availability_hint_pre') }}
-        {{ honeypot.reachability_check_interval_seconds or t(request, 'honeypots.monitoring.instance_default') }}
-        {{ t(request, 'honeypots.monitoring.seconds') if honeypot.reachability_check_interval_seconds }} {{ t(request, 'honeypots.monitoring.availability_hint_post') }}
-      </p>
-      {% if availability.uptime_percent %}
-        <h3>{{ t(request, 'honeypots.monitoring.uptime') }}</h3>
-        {{ trend_chart([{'label': 'Uptime', 'color': palette[1], 'points': availability.uptime_percent}], availability.bucket_timestamps, fixed_max=100, unit='%') }}
-        <p class="hint">
-          {{ t(request, 'honeypots.monitoring.status') }}
-          {% if availability.latest_reachable is not none %}
-            <span class="badge {{ 'badge-ok' if availability.latest_reachable else 'badge-error' }}">
-              {{ t(request, 'honeypots.monitoring.reachable') if availability.latest_reachable else t(request, 'honeypots.monitoring.unreachable') }}
-            </span>
-          {% else %}
-            —
-          {% endif %}
-        </p>
-      {% endif %}
-      {% if availability.latency_ms %}
-        <h3>{{ t(request, 'honeypots.monitoring.connect_latency') }}</h3>
-        {{ trend_chart([{'label': 'Latency', 'color': palette[0], 'points': availability.latency_ms}], availability.bucket_timestamps, unit='ms') }}
-        <p class="hint">
-          {{ t(request, 'honeypots.monitoring.current') }}
-          {{ '%.0f ms' % availability.latest_latency_ms if availability.latest_latency_ms is not none else t(request, 'honeypots.monitoring.unreachable_dash') }}
-        </p>
-      {% endif %}
-    </section>
-  {% endif %}
-
+  {# --- systemd services --- #}
   {% if honeypot.monitoring_updated_at %}
-    <section class="panel">
-      {{ render_services_summary(request, honeypot, service_counts, poll=True) }}
+    <section class="chart-card chart-card-wide monitoring-section" id="services-section">
+      <header class="chart-card-header">
+        <div>
+          <h3 class="chart-card-title">{{ t(request, 'honeypots.monitoring.services_heading') }}</h3>
+          <p class="chart-card-subtitle">
+            {% if honeypot.services_updated_at %}
+              {{ t(request, 'honeypots.monitoring.services_summary', total=service_counts.total, failed=service_counts.failed, when=(honeypot.services_updated_at | local_time('%Y-%m-%d %H:%M'))) }}
+            {% else %}
+              {{ t(request, 'honeypots.monitoring.services_not_gathered') }}
+            {% endif %}
+          </p>
+        </div>
+        {% if services %}
+          <div class="table-tools">
+            <select class="chart-filter" data-row-state-filter="services-table" aria-label="{{ t(request, 'honeypots.monitoring.services_show') }}">
+              <option value="running failed" selected>{{ t(request, 'honeypots.monitoring.services_show_running_failed') }}</option>
+              <option value="failed">{{ t(request, 'honeypots.monitoring.services_show_failed') }}</option>
+              <option value="">{{ t(request, 'honeypots.monitoring.services_show_all', count=(services | length)) }}</option>
+            </select>
+            <input type="search" class="chart-filter" data-table-filter="services-table"
+                   placeholder="{{ t(request, 'honeypots.monitoring.filter_placeholder') }}" aria-label="{{ t(request, 'honeypots.monitoring.filter_placeholder') }}">
+          </div>
+        {% endif %}
+      </header>
+      {% if services %}
+        {# Failed units first, then running ones, then everything else;
+           inactive/dead units start hidden (the select above). #}
+        {% set failed_svcs = services | selectattr('active_state', 'eq', 'failed') | list %}
+        {% set running_svcs = services | rejectattr('active_state', 'eq', 'failed') | selectattr('sub_state', 'eq', 'running') | list %}
+        {% set other_svcs = services | rejectattr('active_state', 'eq', 'failed') | rejectattr('sub_state', 'eq', 'running') | list %}
+        <div class="monitoring-table-wrap">
+          <table class="data-table" id="services-table">
+            <thead>
+              <tr>
+                <th data-sort="text">{{ t(request, 'honeypots.monitoring.services_name') }}</th>
+                <th data-sort="text">{{ t(request, 'honeypots.monitoring.services_state') }}</th>
+                <th data-sort="text">{{ t(request, 'honeypots.monitoring.services_sub_state') }}</th>
+                <th data-sort="text">{{ t(request, 'honeypots.monitoring.services_description') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for svc in failed_svcs + running_svcs + other_svcs %}
+                {% set row_state = 'failed' if svc.active_state == 'failed' else ('running' if svc.sub_state == 'running' else 'other') %}
+                <tr data-row-state="{{ row_state }}" class="{{ 'row-failed' if row_state == 'failed' else '' }}" {% if row_state == 'other' %}hidden{% endif %}>
+                  <td class="cell-nowrap"><code>{{ svc.unit | replace('.service', '') }}</code></td>
+                  <td><span class="badge {{ 'badge-error' if svc.active_state == 'failed' else ('badge-ok' if svc.active_state == 'active' else 'badge-warn') }}">{{ svc.active_state }}</span></td>
+                  <td><span class="badge {{ 'badge-ok' if svc.sub_state == 'running' else ('badge-error' if svc.sub_state == 'failed' else '') }}">{{ svc.sub_state }}</span></td>
+                  <td class="cell-truncate" title="{{ svc.description }}">{{ svc.description }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
     </section>
   {% endif %}
 {% endif %}
