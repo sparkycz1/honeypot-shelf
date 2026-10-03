@@ -265,7 +265,8 @@ something here works a certain way.
    company scoping on both web and API sides, secrets only ever
    `encrypt_secret`/stored hashed, no new inline script/style (CSP).
 6. **Current, not legacy, tech.** Match what's already here (Python 3.14,
-   SQLAlchemy 2.1 async, Pydantic v2, FastAPI, htmx 2.x). `[tool.uv]
+   SQLAlchemy 2.1 async, Pydantic v2, FastAPI, htmx 2.x, `httpx2` — not
+   `httpx` — for outbound HTTP). `[tool.uv]
    prerelease = "disallow"` keeps `uv lock --upgrade` from reaching for an
    alpha (it once picked kombu 5.7.0a1 to get a newer redis-py).
    **Pinned versions stay pinned**: Docker base images by tag *and*

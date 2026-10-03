@@ -48,7 +48,7 @@ from pathlib import Path
 
 import geoip2.database
 import geoip2.errors
-import httpx
+import httpx2
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import decrypt_secret
@@ -125,7 +125,7 @@ def _validate_mmdb(data: bytes) -> None:
 
 
 async def _fetch_and_validate(url: str) -> bytes:
-    async with httpx.AsyncClient(
+    async with httpx2.AsyncClient(
         timeout=_DOWNLOAD_TIMEOUT_SECONDS, follow_redirects=True
     ) as client:
         response = await client.get(url)

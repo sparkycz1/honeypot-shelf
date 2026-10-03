@@ -9,7 +9,7 @@ import re
 import types
 from typing import Any
 
-import httpx
+import httpx2
 import pytest
 from sqlalchemy import select
 
@@ -26,8 +26,8 @@ PUBLIC = "https://93.184.216.34"
 
 
 def _fake_client(post):
-    """Stands in for `httpx.AsyncClient` inside `push_channels` only — the
-    test client itself is an `httpx.AsyncClient` too, so patching the class
+    """Stands in for `httpx2.AsyncClient` inside `push_channels` only — the
+    test client itself is an `httpx2.AsyncClient` too, so patching the class
     globally would swallow the test's own requests."""
 
     class FakeClient:
@@ -135,7 +135,7 @@ async def test_send_refuses_a_private_url_before_any_request(monkeypatch):
     async def no_network(url, **kwargs):
         raise AssertionError("no request may be made")
 
-    monkeypatch.setattr(push_channels, "httpx", _fake_client(no_network))
+    monkeypatch.setattr(push_channels, "httpx2", _fake_client(no_network))
     error = await push_channels.send(
         "slack", url="http://127.0.0.1/hook", token=None, recipient=None, subject="S", body="B"
     )
@@ -145,9 +145,9 @@ async def test_send_refuses_a_private_url_before_any_request(monkeypatch):
 @pytest.mark.asyncio
 async def test_send_masks_the_token_in_an_error(monkeypatch):
     async def boom(url, **kwargs):
-        raise httpx.ConnectError(f"cannot reach {url}")
+        raise httpx2.ConnectError(f"cannot reach {url}")
 
-    monkeypatch.setattr(push_channels, "httpx", _fake_client(boom))
+    monkeypatch.setattr(push_channels, "httpx2", _fake_client(boom))
     error = await push_channels.send(
         "telegram", url=None, token="123:secret", recipient="42", subject="S", body="B"
     )
@@ -290,9 +290,9 @@ async def test_a_push_test_send_is_logged_with_a_redacted_target(
 
     async def fake_post(url, **kwargs):
         sent.append((url, kwargs))
-        return httpx.Response(200)
+        return httpx2.Response(200)
 
-    monkeypatch.setattr(push_channels, "httpx", _fake_client(fake_post))
+    monkeypatch.setattr(push_channels, "httpx2", _fake_client(fake_post))
     monkeypatch.setattr("app.services.push_channels.validate_webhook_url", lambda url: None)
 
     secret_url = "https://chat.example.com/hooks/very-secret"
