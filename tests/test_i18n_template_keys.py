@@ -42,6 +42,27 @@ def test_every_template_key_exists_in_english():
     assert not missing_prefixes, f"no en.json key starts with: {missing_prefixes}"
 
 
+# `t(request, "...")` in Python code (routes building a flash message, a
+# form error...). Same rule; `some.key` is a docstring example.
+_PY_EXAMPLES = {"some.key"}
+_PY_CALL = re.compile(
+    r"""\bt\(\s*request\s*,\s*(["'])([A-Za-z0-9_.\-]+)\1\s*([~+%]|\.format)?"""
+)
+
+
+def test_every_python_key_exists_in_english():
+    strings = json.loads(_EN.read_text(encoding="utf-8"))["strings"]
+    missing: set[str] = set()
+    for path in (_ROOT / "app").rglob("*.py"):
+        for match in _PY_CALL.finditer(path.read_text(encoding="utf-8")):
+            key = match.group(2)
+            if match.group(3) or key in _PY_EXAMPLES:
+                continue
+            if key not in strings:
+                missing.add(f"{path.relative_to(_ROOT)}: {key}")
+    assert not missing, f"keys used in Python but missing from en.json: {sorted(missing)}"
+
+
 def test_every_channel_has_a_send_via_label():
     """The notification rule list and history build
     `notifications.rule.send_via_<channel>` for every stored channel."""

@@ -58,10 +58,13 @@ from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-_CHANNEL_PREFIX = "debcontrol:live:honeypot:"
-FLEET_CHANNEL = "debcontrol:live:fleet"
-ADMIN_CHANNEL = "debcontrol:live:admin"
-_NOTIFICATIONS_CHANNEL_PREFIX = "debcontrol:live:notifications:"
+# Namespaced to this app, so a Redis shared with another app (debcontrol,
+# which this was ported from, uses `debcontrol:live:...`) never crosses
+# their live-update doorbells.
+_CHANNEL_PREFIX = "honeypotshelf:live:honeypot:"
+FLEET_CHANNEL = "honeypotshelf:live:fleet"
+ADMIN_CHANNEL = "honeypotshelf:live:admin"
+_NOTIFICATIONS_CHANNEL_PREFIX = "honeypotshelf:live:notifications:"
 
 # The finite set of "something changed" hints a client understands — see
 # app/web/static/js/live-updates.js. Keeping this closed (rather than any

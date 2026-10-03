@@ -7,7 +7,7 @@ Guidance for Claude Code when working in this repo.
 Honeypot Shelf: FastAPI + htmx, **manages and monitors a fleet of
 [OpenCanary](https://github.com/thinkst/opencanary) honeypots** (Raspberry
 Pis at customer sites) across **multiple companies**, with per-company
-RBAC. Server-rendered Jinja2 + htmx, no SPA. Python 3.14, SQLAlchemy 2.0
+RBAC. Server-rendered Jinja2 + htmx, no SPA. Python 3.14, SQLAlchemy 2.1
 async + PostgreSQL, Celery + Redis, Docker Compose only.
 
 **Derived from a sister project, [debcontrol](https://github.com/sparkycz1/debcontrol)**
@@ -75,7 +75,16 @@ uv run mypy app alembic tests    # type check (strict for app/ and alembic/)
 uv run alembic revision --autogenerate -m "..."   # after changing a model — READ the generated file
 uv run alembic upgrade head
 uv run alembic heads             # must show exactly one head before committing a migration
+uv run python -m fuzz.run <target> -max_total_time=60   # Linux only (atheris); targets in fuzz/targets.py
+uvx pip-audit --strict -r <(uv export --frozen --no-hashes --all-groups)   # known CVEs, same as CI
 ```
+
+On Windows the suite needs `--ignore=tests/test_vpn.py` (it imports
+Linux-only `pwd`/Unix sockets), mypy reports 5 platform-only errors in
+`app/services/wireguard.py`/`vpn_control_server.py`/`tests/test_vpn.py`,
+and two `tests/test_facts.py` lscpu-parsing tests fail locally while
+passing in CI — none of these is a regression; CI (Linux) is the
+reference.
 
 No supported way to run the app outside Docker: `docker compose up -d
 --build`. See [wiki/Installation](https://github.com/sparkycz1/honeypot-shelf/wiki/Installation).
@@ -84,6 +93,13 @@ No supported way to run the app outside Docker: `docker compose up -d
 tests`, `pytest`, `alembic heads` (single head) — all clean. CI
 (`.github/workflows/ci.yml`) runs the exact same gate plus `pip-audit` on
 every push/PR.
+
+**One PR per change, always based on `main`.** Never stack a PR on
+another open PR's branch: merging the upper one first lands it in that
+branch instead of `main`, so no tag or release is cut and the change
+silently goes missing (this happened with #38 → re-opened as #41). If
+work depends on an unmerged PR, rebase onto `main` once it merges, then
+open the next PR against `main`.
 
 **Every round of changes** bumps `APP_VERSION` (`app/core/version.py`)
 **and** `version` in `pyproject.toml` together (patch for a fix, minor for
@@ -176,8 +192,28 @@ something here works a certain way.
   DB engine after forking) are copied verbatim from debcontrol — see
   [`app/tasks/celery_app.py`](app/tasks/celery_app.py)'s docstring.
 - **CSP is strict — no inline scripts or styles, no CDN.** htmx, Swagger
-  UI, and OS-badge SVGs are vendored under `app/web/static/`. New CSS
-  reads colors through `--color-*` custom properties in `style.css`.
+  UI, xterm.js (+ fit/webgl addons) and OS-badge SVGs are vendored under
+  `app/web/static/`. New CSS reads colors through `--color-*` custom
+  properties in `style.css`. htmx's own indicator `<style>` is switched
+  off in `base.html` (`htmx-config`), and the terminal's DOM-renderer
+  fallback gets its rules from `css/xterm-csp.css` — a CSP violation is
+  silent server-side, so check the browser console for anything
+  CSP-adjacent.
+- **SQLAlchemy 2.1 typing**: a select of one entity is `Select[Honeypot]`,
+  not the 2.0-style `Select[tuple[Honeypot]]` (which 2.1 reads as "one
+  column of type tuple" and breaks every `.scalars()` downstream).
+- **Maintenance windows** (`app.services.maintenance_windows`) belong to
+  one company each, like a scheduled task. While active they always mute
+  "unavailable"/"available again" notifications for covered honeypots,
+  mute new-alert notifications only when `mute_alerts` is set (an alert
+  is a security signal), and skip covered honeypots in scheduled tasks
+  when `pause_scheduled_tasks` is set. A muted send is logged with
+  `NotificationLog.muted_by`, never dropped silently.
+- **Live updates are a doorbell, not a data feed** (`app/services/
+  live_updates.py` → `app/web/routes/live_ws.py` → `static/js/
+  live-updates.js`): a push carries only `{"kind": ...}` on a
+  `honeypotshelf:live:...` Redis channel; the page then re-runs its own
+  permission-checked fetch.
 - **Audit logging** (`app.audit.log_event`) is hash-chained, called once
   per human-initiated mutation, action codes `lowercase.dot.separated`
   (e.g. `honeypot.create`, `user.access_level.update`).
@@ -217,7 +253,11 @@ something here works a certain way.
    inside whichever repo the file is actually sitting in.
 3. **i18n parity.** Any new/changed user-facing string goes through
    `t(request, "...")` and gets a key in `app/i18n/locales/en.json` *and*
-   `cs.json`.
+   `cs.json`. Guarded by tests: `tests/test_i18n_template_keys.py` fails
+   on a `t()` key (template or Python) missing from `en.json`, and
+   `tests/test_audit_labels_and_nav.py` on an audit action code without an
+   `audit.action_label.<code>` in every locale. Fix the locale files, not
+   the test.
 4. **Upgrade safety.** Real Alembic migration, deployed with real data —
    a new column must be nullable or have a safe server default, and a
    renamed/removed route or config key must not break someone silently.
@@ -225,11 +265,23 @@ something here works a certain way.
    company scoping on both web and API sides, secrets only ever
    `encrypt_secret`/stored hashed, no new inline script/style (CSP).
 6. **Current, not legacy, tech.** Match what's already here (Python 3.14,
-   SQLAlchemy 2.0 async, Pydantic v2, FastAPI, htmx 2.x).
-7. **Test it.** Add/extend a test in `tests/` — the suite runs against
+   SQLAlchemy 2.1 async, Pydantic v2, FastAPI, htmx 2.x). `[tool.uv]
+   prerelease = "disallow"` keeps `uv lock --upgrade` from reaching for an
+   alpha (it once picked kombu 5.7.0a1 to get a newer redis-py).
+   **Pinned versions stay pinned**: Docker base images by tag *and*
+   digest, GitHub Actions by commit SHA with a `# vX.Y.Z` comment,
+   Postgres/Redis/Caddy by exact patch — update tag and pin together.
+   Vendored JS/CSS is copied verbatim from the npm tarball after checking
+   its `dist.integrity` hash, never hand-edited.
+7. **CodeQL runs on every PR** and blocks on a new alert. Typical catches:
+   a regex with a nested quantifier (`py/redos` — keep it linear, one
+   character class instead of `(?:\.[a-z.]+)+`), clear-text logging of a
+   secret-looking name, an empty `except`. Fix the code (or comment an
+   intentional `except`), don't dismiss the alert.
+8. **Test it.** Add/extend a test in `tests/` — the suite runs against
    in-memory SQLite (see `tests/conftest.py`), fast, no real Postgres/
    Redis needed. Run the whole gate before considering the change done.
-8. **Tag and release.** `.github/workflows/release.yml` does this
+9. **Tag and release.** `.github/workflows/release.yml` does this
    automatically: a push to `main` that changes `app/core/version.py` gets
    tagged `vX.Y.Z` and a GitHub release (notes = each commit's subject
    *and full body* since the previous tag, minus commits that only touch
