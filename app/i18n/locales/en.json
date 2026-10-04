@@ -1676,6 +1676,14 @@
     "search.kind.notification_rules": "My notification rules",
     "search.kind.users": "Users",
     "search.kind.honeypots": "Honeypots",
-    "search.kind.companies": "Companies"
+    "search.kind.companies": "Companies",
+    "account.api_tokens.limits": "Limits",
+    "account.api_tokens.no_limits": "none",
+    "account.api_tokens.read_only_badge": "read-only",
+    "account.api_tokens.companies_badge": "{count} company(ies)",
+    "account.api_tokens.read_only": "Read-only (the token can look things up but not change anything)",
+    "account.api_tokens.companies": "Only these companies (none selected = all the account can see)",
+    "account.api_tokens.limits_hint": "A token never has more access than this account. With a company limit the token sees and manages only those companies and their honeypots, and cannot use superadmin-only parts of the API (users, settings, backup, audit). Limits can't be changed later: revoke the token and create a new one.",
+    "account.error.token_companies": "None of the selected companies can be used for this token."
   }
 }

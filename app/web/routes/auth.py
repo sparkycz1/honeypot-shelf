@@ -40,6 +40,7 @@ from app.auth.login import (
 )
 from app.auth.oidc import OidcNotConfiguredError, handle_callback, redirect_to_provider
 from app.auth.rate_limit import check_rate_limit
+from app.auth.scope import companies_visible_to
 from app.auth.security import hash_password, verify_password
 from app.auth.sessions import (
     IMPERSONATION_RETURN_COOKIE_NAME,
@@ -71,6 +72,7 @@ from app.core.security import decrypt_secret, encrypt_secret
 from app.db.models.api_token import ApiToken
 from app.db.models.app_settings import AppSettings
 from app.db.models.audit_log import AuditOutcome
+from app.db.models.company import Company
 from app.db.models.honeypot import Honeypot
 from app.db.models.totp_recovery_code import TotpRecoveryCode
 from app.db.models.user import AuthProvider, User
@@ -81,7 +83,7 @@ from app.schemas.user import MIN_PASSWORD_LENGTH, looks_like_email
 from app.ssh.identity import get_or_create_identity
 from app.tasks.jobs import push_superadmin_ssh_keys
 from app.web.redirects import safe_local_path
-from app.web.templating import templates
+from app.web.templating import t, templates
 
 router = APIRouter()
 
@@ -828,6 +830,9 @@ async def _render_account(
         "unused_recovery_codes": unused_recovery_codes,
         "min_password_length": MIN_PASSWORD_LENGTH,
         "api_tokens": list(tokens_result.scalars().all()),
+        "token_companies": list(
+            (await db.execute(companies_visible_to(user).order_by(Company.name))).scalars()
+        ),
         "available_locales": available_locales(),
         "webauthn_credentials": webauthn_credentials,
         **extra,
@@ -1266,6 +1271,8 @@ async def create_own_api_token(
     current_user: User = Depends(get_current_user),
     name: str = Form(...),
     expires_in_days: str = Form(""),
+    read_only: str = Form(""),
+    company_ids: list[str] = Form(default=[]),
 ) -> Response:
     user = await db.get(User, current_user.id)
     assert user is not None
@@ -1294,7 +1301,31 @@ async def create_own_api_token(
             )
         expires_at = datetime.now(UTC) + timedelta(days=days)
 
-    token, raw_token = await create_api_token(db, user, name=name, expires_at=expires_at)
+    # Only companies this account can see itself may be picked; anything
+    # else in the form is dropped, not an error (a company deleted in
+    # another tab).
+    visible_companies = {
+        str(company.id): company
+        for company in (await db.execute(companies_visible_to(user))).scalars()
+    }
+    chosen = [
+        visible_companies[value]
+        for value in dict.fromkeys(company_ids)
+        if value in visible_companies
+    ]
+    if company_ids and not chosen:
+        return await _render_account(
+            request, db, user, errors=[t(request, "account.error.token_companies")]
+        )
+
+    token, raw_token = await create_api_token(
+        db,
+        user,
+        name=name,
+        expires_at=expires_at,
+        read_only=bool(read_only),
+        company_ids=[company.id for company in chosen] if chosen else None,
+    )
     await log_event(
         db,
         request=request,
@@ -1303,6 +1334,7 @@ async def create_own_api_token(
         target_type="user",
         target_id=user.id,
         target_label=user.username,
+        details={"read_only": token.read_only, "companies": [c.name for c in chosen]},
     )
     return await _render_account(request, db, user, new_api_token=raw_token)
 

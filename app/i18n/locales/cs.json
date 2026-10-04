@@ -1676,6 +1676,14 @@
     "search.kind.notification_rules": "Moje notifikační pravidla",
     "search.kind.users": "Uživatelé",
     "search.kind.honeypots": "Honeypoty",
-    "search.kind.companies": "Firmy"
+    "search.kind.companies": "Firmy",
+    "account.api_tokens.limits": "Omezení",
+    "account.api_tokens.no_limits": "žádné",
+    "account.api_tokens.read_only_badge": "jen pro čtení",
+    "account.api_tokens.companies_badge": "firem: {count}",
+    "account.api_tokens.read_only": "Jen pro čtení (token může data číst, ale nic nezmění)",
+    "account.api_tokens.companies": "Jen tyto firmy (bez výběru = vše, co účet vidí)",
+    "account.api_tokens.limits_hint": "Token nikdy nemá větší přístup než tento účet. S omezením na firmy vidí a spravuje jen tyto firmy a jejich honeypoty a nemůže používat části API vyhrazené superadminovi (uživatelé, nastavení, zálohy, audit). Omezení nejde později změnit: token zrušte a vytvořte nový.",
+    "account.error.token_companies": "Žádnou z vybraných firem nelze pro tento token použít."
   }
 }

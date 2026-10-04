@@ -189,15 +189,45 @@ class User(Base):
             m.access_level == AccessLevel.READ_WRITE for m in self.memberships
         )
 
+    # Not a column: set for the length of one REST API request by
+    # `app.auth.dependencies.get_api_token_user` when the bearer token is
+    # limited to some companies (`ApiToken.company_ids`). None = the
+    # request is not token-limited (every browser session, most tokens).
+    # `is_scope_limited` is what the superadmin shortcuts must check.
+    @property
+    def token_company_scope(self) -> frozenset[uuid.UUID] | None:
+        scope: frozenset[uuid.UUID] | None = self.__dict__.get("_token_company_scope")
+        return scope
+
+    @token_company_scope.setter
+    def token_company_scope(self, value: frozenset[uuid.UUID] | None) -> None:
+        self.__dict__["_token_company_scope"] = value
+
+    @property
+    def sees_every_company(self) -> bool:
+        """A superadmin acting without a company-limited API token — the
+        only case in which "no company filter at all" is right."""
+        return self.is_superadmin and self.token_company_scope is None
+
     def company_ids(self) -> set[uuid.UUID]:
         """Every company this user holds any membership in (empty for a
         superadmin — see `app.auth.scope.visible_company_ids`, which is
         what call sites should use: it also knows to treat a superadmin's
-        empty set as "no filter", not "no access")."""
-        return {m.company_id for m in self.memberships}
+        empty set as "no filter", not "no access"). Under a company-limited
+        API token: only those companies — the token's whole list for a
+        superadmin, the overlap with the memberships for anyone else."""
+        own = {m.company_id for m in self.memberships}
+        scope = self.token_company_scope
+        if scope is None:
+            return own
+        return set(scope) if self.is_superadmin else own & scope
 
     def can_write_company(self, company_id: uuid.UUID) -> bool:
-        """Superadmin, or `READ_WRITE` membership in this exact company."""
+        """Superadmin, or `READ_WRITE` membership in this exact company —
+        and, under a company-limited API token, only within its companies."""
+        scope = self.token_company_scope
+        if scope is not None and company_id not in scope:
+            return False
         if self.is_superadmin:
             return True
         return any(

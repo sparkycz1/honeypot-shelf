@@ -20,7 +20,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, String, func
+from sqlalchemy import JSON, Boolean, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -47,6 +47,23 @@ class ApiToken(Base):
     # NULL = never expires.
     expires_at: Mapped[datetime | None] = mapped_column(nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(nullable=True)
+
+    # A token can be narrowed when it is created, never widened — see
+    # `app.auth.dependencies.get_api_token_user`.
+    # Only GET/HEAD requests are accepted with this token.
+    read_only: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+    # Company ids (as strings) this token is limited to. NULL = no limit
+    # beyond the owner's own; an empty list (every listed company since
+    # deleted) sees nothing rather than falling back to "all".
+    company_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+
+    @property
+    def company_scope(self) -> frozenset[uuid.UUID] | None:
+        if self.company_ids is None:
+            return None
+        return frozenset(uuid.UUID(value) for value in self.company_ids)
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid only
         return f"ApiToken(id={self.id!r}, name={self.name!r})"

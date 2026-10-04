@@ -147,7 +147,7 @@ async def search(db: AsyncSession, user: User, query: str) -> list[SearchGroup]:
         [SearchHit(r.name, "", f"/account/notifications/{r.id}/edit") for r in rules],
     )
 
-    if user.is_superadmin:
+    if user.sees_every_company:
         users = (
             await db.execute(
                 select(User)

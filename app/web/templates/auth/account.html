@@ -201,6 +201,7 @@
           <tr>
             <th>{{ t(request, "account.api_tokens.column_name") }}</th>
             <th>{{ t(request, "account.api_tokens.column_token") }}</th>
+            <th>{{ t(request, "account.api_tokens.limits") }}</th>
             <th>{{ t(request, "account.api_tokens.column_created") }}</th>
             <th>{{ t(request, "account.api_tokens.column_last_used") }}</th>
             <th>{{ t(request, "account.api_tokens.column_expires") }}</th>
@@ -212,6 +213,14 @@
           <tr>
             <td>{{ token.name }}</td>
             <td><code>{{ token.token_prefix }}…</code></td>
+            <td>
+              {% if token.read_only %}<span class="badge">{{ t(request, "account.api_tokens.read_only_badge") }}</span>{% endif %}
+              {% if token.company_ids is not none %}
+                {% set names = token_companies | selectattr("id", "in", token.company_scope) | map(attribute="name") | list %}
+                <span class="badge" title="{{ names | join(', ') }}">{{ t(request, "account.api_tokens.companies_badge", count=(names | length)) }}</span>
+              {% endif %}
+              {% if not token.read_only and token.company_ids is none %}{{ t(request, "account.api_tokens.no_limits") }}{% endif %}
+            </td>
             <td>{{ token.created_at | local_time('%Y-%m-%d') }}</td>
             <td>{{ token.last_used_at | local_time('%Y-%m-%d %H:%M %Z') if token.last_used_at else t(request, "account.never") }}</td>
             <td>{{ token.expires_at | local_time('%Y-%m-%d') if token.expires_at else t(request, "account.never") }}</td>
@@ -236,6 +245,19 @@
       <input type="text" id="token_name" name="name" maxlength="100" placeholder="monitoring script" required>
       <label for="expires_in_days">{{ t(request, "account.api_tokens.expires_label") }}</label>
       <input type="number" id="expires_in_days" name="expires_in_days" min="1" step="1">
+      <label class="checkbox-row">
+        <input type="checkbox" name="read_only">
+        {{ t(request, "account.api_tokens.read_only") }}
+      </label>
+      {% if token_companies %}
+        <label for="token_company_ids">{{ t(request, "account.api_tokens.companies") }}</label>
+        <select id="token_company_ids" name="company_ids" multiple size="{{ [token_companies | length, 6] | min }}">
+          {% for company in token_companies %}
+            <option value="{{ company.id }}">{{ company.name }}</option>
+          {% endfor %}
+        </select>
+      {% endif %}
+      <p class="hint">{{ t(request, "account.api_tokens.limits_hint") }}</p>
       <button type="submit" class="button">{{ t(request, "account.api_tokens.create") }}</button>
     </form>
   </section>
