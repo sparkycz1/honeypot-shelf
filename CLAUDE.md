@@ -249,6 +249,17 @@ app, carry it to the other. Concretely:
 - New CSS uses only `--color-*` variables, so each app keeps its own
   palette.
 
+**Shared files.** The files listed in `shared-ui.json` (the chart code and
+script, a few templates, the search and time-window helpers) are
+word-for-word identical to debcontrol's. `tests/test_shared_ui.py` fails
+when one changes here only, and the weekly "Shared files" workflow compares
+the two repositories directly. Change a shared file in debcontrol first,
+run `python scripts/sync_shared_ui.py --update` there and `--to <this
+checkout>`, and open a PR in both. Nothing app-specific goes into a shared
+file — translation keys under `monitoring.*`, `ack.*` and `search.*` exist
+in both apps for that reason.
+
+
 ## Checklist for every change
 
 1. **Company scoping.** Any new read/write path touching a honeypot,

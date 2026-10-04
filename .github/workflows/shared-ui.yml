@@ -1,0 +1,31 @@
+name: Shared files
+
+# debcontrol and honeypot-shelf share some files word for word
+# (shared-ui.json). Each repository's own test suite checks its files
+# against its own manifest; this compares the two repositories directly,
+# so a change that only reached debcontrol shows up here as a red run
+# rather than going unnoticed. It does not gate pull requests.
+
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+
+      - name: Check out debcontrol
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          repository: sparkycz1/debcontrol
+          path: _debcontrol
+          persist-credentials: false
+
+      - name: Compare the shared files
+        run: python3 scripts/sync_shared_ui.py --check-against _debcontrol

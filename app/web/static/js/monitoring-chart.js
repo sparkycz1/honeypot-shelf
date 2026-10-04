@@ -1,3 +1,4 @@
+// Shared word for word with the sister app — see shared-ui.json.
 // Interactivity for the Monitoring tab's charts (markup from
 // macros/charts.html's `render_chart`, geometry from app/web/charts.py).
 // (`e` in the JSON below: the same points as epoch seconds, for the
@@ -7,13 +8,13 @@
 //
 //  - hover: a cursor line plus a tooltip listing every visible series'
 //    value at that point (highest first), built with textContent — labels
-//    are interface/disk/mount names reported by the managed honeypot;
+//    are names reported by the managed host;
 //  - legend buttons toggle a series on/off;
 //  - a card's `[data-chart-filter]` box shows only series whose label
 //    contains the typed text.
 //
 // Also: `[data-table-filter]` / `th[data-sort]` for the Monitoring tab's
-// tables (services) — client-side, since the whole
+// tables — client-side, since the whole
 // table is already on the page.
 
 (function () {
@@ -309,8 +310,8 @@
     });
     tbody.append(...rows);
   });
-  // The Monitoring tab's content is an htmx panel that re-renders itself
-  // (every 30 s and on a live-update push). Carry what the visitor typed
+  // Where the charts sit in an htmx panel that re-renders itself (on a
+  // timer or a live-update push): carry what the visitor typed
   // into a filter box or picked in the services select across the swap,
   // then set up the charts the swap brought in.
   let kept = [];
