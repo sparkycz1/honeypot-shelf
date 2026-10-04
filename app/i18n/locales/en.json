@@ -1711,6 +1711,16 @@
     "events.page": "Page {page}",
     "events.none": "No events yet.",
     "events.none_filtered": "No events match these filters.",
-    "audit.action_label.event.export": "Events exported"
+    "audit.action_label.event.export": "Events exported",
+    "events.detail.open": "Open this event",
+    "events.detail.same_type": "all events of this type",
+    "events.detail.same_source": "all events from this address",
+    "events.detail.received": "Stored",
+    "events.detail.reported_heading": "What was reported",
+    "events.detail.reported_hint": "What OpenCanary recorded about the attempt: the user name and password that were tried, the client's version, the requested path and so on, depending on the service. These values come from whoever connected.",
+    "events.detail.field": "Field",
+    "events.detail.value": "Value",
+    "events.detail.nothing_reported": "OpenCanary recorded no further details for this event.",
+    "events.detail.raw_heading": "Full record"
   }
 }

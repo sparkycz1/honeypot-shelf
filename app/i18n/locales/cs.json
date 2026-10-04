@@ -1711,6 +1711,16 @@
     "events.page": "Strana {page}",
     "events.none": "Zatím žádné události.",
     "events.none_filtered": "Těmto filtrům neodpovídá žádná událost.",
-    "audit.action_label.event.export": "Export událostí"
+    "audit.action_label.event.export": "Export událostí",
+    "events.detail.open": "Otevřít tuto událost",
+    "events.detail.same_type": "všechny události tohoto typu",
+    "events.detail.same_source": "všechny události z této adresy",
+    "events.detail.received": "Uloženo",
+    "events.detail.reported_heading": "Co bylo zaznamenáno",
+    "events.detail.reported_hint": "Co OpenCanary o pokusu zaznamenal: zkoušené jméno a heslo, verzi klienta, požadovanou cestu a podobně, podle služby. Tyto hodnoty pocházejí od toho, kdo se připojil.",
+    "events.detail.field": "Pole",
+    "events.detail.value": "Hodnota",
+    "events.detail.nothing_reported": "K této události OpenCanary další podrobnosti nezaznamenal.",
+    "events.detail.raw_heading": "Celý záznam"
   }
 }

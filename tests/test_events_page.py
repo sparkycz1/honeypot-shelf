@@ -134,3 +134,58 @@ async def test_api_takes_the_same_filters(
         "/api/v1/events/export", params={"format": "json", "country": "CZ"}, headers=headers
     )
     assert len(export.json()) == 3
+
+
+async def test_event_detail_shows_what_was_reported(client: Any, db_session_factory: Any) -> None:
+    _atlas, _borealis, first_id = await _seed(db_session_factory)
+    async with db_session_factory() as db:
+        event = HoneypotEvent(
+            honeypot_id=first_id,
+            event_type="4002",
+            occurred_at=BASE,
+            src_ip="203.0.113.50",
+            src_port=51000,
+            dst_port=22,
+            raw={
+                "logtype": 4002,
+                "src_host": "203.0.113.50",
+                "logdata": {
+                    "USERNAME": "root",
+                    "PASSWORD": "<script>alert(1)</script>",
+                    "REMOTEVERSION": "SSH-2.0-Go",
+                    "EMPTY": "",
+                },
+            },
+        )
+        db.add(event)
+        await db.commit()
+        event_id = event.id
+
+    page = await client.get(f"/events/{event_id}")
+    assert page.status_code == 200
+    assert "USERNAME" in page.text and "SSH-2.0-Go" in page.text
+    assert "<code>EMPTY</code>" not in page.text and "<code>USERNAME</code>" in page.text
+    # What the attacker typed is shown as text, never as markup.
+    assert "<script>alert(1)</script>" not in page.text
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in page.text
+    assert "/events?src_ip=203.0.113.50" in page.text
+
+    listing = await client.get("/events", params={"src_ip": "203.0.113.50"})
+    assert f'href="/events/{event_id}"' in listing.text
+    activity = await client.get(f"/honeypots/{first_id}/status")
+    assert f'href="/events/{event_id}"' in activity.text or "/events/" in activity.text
+
+
+async def test_event_detail_is_scoped_and_404s(
+    client: Any, login_as: Any, db_session_factory: Any
+) -> None:
+    atlas_id, _borealis, _first = await _seed(db_session_factory)
+    async with db_session_factory() as db:
+        events = (await db.execute(select(HoneypotEvent))).scalars().all()
+        own = next(e for e in events if e.honeypot.name == "atlas-honey")
+        other = next(e for e in events if e.honeypot.name == "borealis-honey")
+    await login_as(client, username="reader", company_id=atlas_id, access_level=AccessLevel.READ)
+
+    assert (await client.get(f"/events/{own.id}")).status_code == 200
+    assert (await client.get(f"/events/{other.id}")).status_code == 404
+    assert (await client.get("/events/not-an-id")).status_code in (404, 422)

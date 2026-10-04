@@ -57,7 +57,7 @@
         <tbody>
           {% for event in events %}
             <tr>
-              <td class="cell-nowrap">{{ event.occurred_at | local_time('%Y-%m-%d %H:%M:%S %Z') }}</td>
+              <td class="cell-nowrap"><a href="/events/{{ event.id }}" title="{{ t(request, 'events.detail.open') }}">{{ event.occurred_at | local_time('%Y-%m-%d %H:%M:%S %Z') }}</a></td>
               <td><a href="/honeypots/{{ event.honeypot_id }}/status">{{ event.honeypot.name }}</a></td>
               <td><a class="badge" href="/events?event_type={{ event.event_type | urlencode }}">{{ label_of(event.event_type) }}</a></td>
               <td>

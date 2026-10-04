@@ -10,10 +10,12 @@ API has the same list and filters at `/api/v1/events`.
 
 from __future__ import annotations
 
+import json
+import uuid
 from datetime import datetime
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_event
@@ -25,8 +27,10 @@ from app.db.session import get_db
 from app.services.event_search import (
     EventFilters,
     event_types_seen,
+    get_event,
     page_of_events,
     parse_uuid,
+    reported_fields,
 )
 from app.services.opencanary_logtypes import localized_logtype_label
 from app.web.routes.api_v1_events import export_response
@@ -141,3 +145,28 @@ async def export_events(
         },
     )
     return response
+
+
+@router.get("/{event_id}")
+async def event_detail(
+    request: Request,
+    event_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Response:
+    """One event in full: what was promoted to columns, what OpenCanary
+    recorded about the attempt (`logdata` — the credentials tried, the
+    client, the path), and the untouched payload."""
+    event = await get_event(db, user, event_id)
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found.")
+    return templates.TemplateResponse(
+        request,
+        "events/detail.html",
+        {
+            "event": event,
+            "label": localized_logtype_label(lambda key: t(request, key), event.event_type),
+            "reported": reported_fields(event),
+            "raw_json": json.dumps(event.raw, indent=2, ensure_ascii=False, sort_keys=True),
+        },
+    )
