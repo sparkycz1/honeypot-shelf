@@ -1612,6 +1612,9 @@
     "notifications.event.recovered": "Opět dostupný",
     "notifications.event.test": "Test",
     "users.field.email": "Email",
-    "users.field.email_hint": "Používá se jako výchozí cíl pro notifikace tohoto uživatele. Nepoužívá se pro přihlášení."
+    "users.field.email_hint": "Používá se jako výchozí cíl pro notifikace tohoto uživatele. Nepoužívá se pro přihlášení.",
+    "notifications.rule.alert_throttle_label": "Nejvýše jedno upozornění na alert za (minut)",
+    "notifications.rule.alert_throttle_placeholder": "bez omezení",
+    "notifications.rule.alert_throttle_hint": "Prázdné pole posílá každý alert. S číslem pošle každý honeypot nejvýše jedno upozornění na alert za tolik minut a to další uvede, kolik jich bylo zadrženo. Hodí se proti skenům portů, které vyvolají desítky alertů během pár sekund."
   }
 }

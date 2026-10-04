@@ -1181,6 +1181,12 @@ img.brand-mark-lg { object-fit: contain; }
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
+/* A short number box (minutes, hours) inside a .form — same selector as
+   the rule above plus one class, so it wins over that rule's 100%. */
+.form input.input-narrow:not([type="checkbox"]):not([type="radio"]):not(.inline-text-input) {
+  width: 6rem;
+}
+
 .form input:focus-visible, .form select:focus-visible, .form textarea:focus-visible {
   border-color: var(--color-accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 30%, transparent);

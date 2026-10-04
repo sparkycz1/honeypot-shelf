@@ -1612,6 +1612,9 @@
     "notifications.event.recovered": "Reachable again",
     "notifications.event.test": "Test",
     "users.field.email": "Email",
-    "users.field.email_hint": "Used as the default destination for this user's Notifications. Not used for login."
+    "users.field.email_hint": "Used as the default destination for this user's Notifications. Not used for login.",
+    "notifications.rule.alert_throttle_label": "At most one alert notification every (minutes)",
+    "notifications.rule.alert_throttle_placeholder": "no limit",
+    "notifications.rule.alert_throttle_hint": "Leave empty to send every alert. With a number, each honeypot sends at most one alert notification in that many minutes, and the next one says how many were held back. Useful against port scans, which raise dozens of alerts within seconds."
   }
 }

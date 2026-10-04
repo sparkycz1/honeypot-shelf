@@ -85,8 +85,8 @@
         <div class="alert alert-ok"><p>{{ t(request, 'honeypots.config.saved') }}</p></div>
       {% endif %}
 
-      <form method="post" action="/honeypots/{{ honeypot.id }}/config/modules" class="form"
-            autocomplete="off" style="max-width: none">
+      <form method="post" action="/honeypots/{{ honeypot.id }}/config/modules" class="form form-wide"
+            autocomplete="off">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
         {% for module in opencanary_modules %}
