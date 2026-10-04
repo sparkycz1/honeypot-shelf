@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t(request, "nav.events") }} — Honeypot Shelf{% endblock %}
+{% block main_class %}container-wide{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>{{ t(request, "nav.events") }}</h1>
+  </div>
+  <p class="hint">{{ t(request, "events.intro") }}</p>
+
+  <form method="get" action="/events" class="search-form">
+    <input type="search" name="src_ip" value="{{ query.src_ip or '' }}" maxlength="64"
+           placeholder="{{ t(request, 'events.filter.src_ip') }}" aria-label="{{ t(request, 'events.filter.src_ip') }}">
+    <select name="honeypot_id" aria-label="{{ t(request, 'events.column.honeypot') }}">
+      <option value="">{{ t(request, "events.filter.any_honeypot") }}</option>
+      {% for honeypot in honeypots %}
+        <option value="{{ honeypot.id }}" {% if filters.honeypot_id == honeypot.id %}selected{% endif %}>{{ honeypot.name }}</option>
+      {% endfor %}
+    </select>
+    <select name="event_type" aria-label="{{ t(request, 'events.column.type') }}">
+      <option value="">{{ t(request, "events.filter.any_type") }}</option>
+      {% for value, label in event_types %}
+        <option value="{{ value }}" {% if query.event_type == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <input type="text" name="country" class="input-code" value="{{ query.country or '' }}" maxlength="2"
+           placeholder="{{ t(request, 'events.filter.country') }}" aria-label="{{ t(request, 'events.filter.country') }}">
+    <label class="search-form-label">
+      {{ t(request, "events.filter.since") }}
+      <input type="datetime-local" name="since" value="{{ filters.since | local_input if filters.since else '' }}">
+    </label>
+    <label class="search-form-label">
+      {{ t(request, "events.filter.until") }}
+      <input type="datetime-local" name="until" value="{{ filters.until | local_input if filters.until else '' }}">
+    </label>
+    <button type="submit" class="button">{{ t(request, "events.filter.apply") }}</button>
+    {% if filters.any %}
+      <a class="button button-secondary" href="/events">{{ t(request, "events.filter.clear") }}</a>
+    {% endif %}
+    <a class="button button-secondary" href="/events/export?format=csv{{ '&' ~ query_string if query_string else '' }}">{{ t(request, "events.export_csv") }}</a>
+    <a class="button button-secondary" href="/events/export?format=json{{ '&' ~ query_string if query_string else '' }}">{{ t(request, "events.export_json") }}</a>
+  </form>
+
+  {% if events %}
+    <div class="monitoring-table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>{{ t(request, "events.column.time") }}</th>
+            <th>{{ t(request, "events.column.honeypot") }}</th>
+            <th>{{ t(request, "events.column.type") }}</th>
+            <th>{{ t(request, "events.column.source") }}</th>
+            <th>{{ t(request, "events.column.port") }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for event in events %}
+            <tr>
+              <td class="cell-nowrap">{{ event.occurred_at | local_time('%Y-%m-%d %H:%M:%S %Z') }}</td>
+              <td><a href="/honeypots/{{ event.honeypot_id }}/status">{{ event.honeypot.name }}</a></td>
+              <td><a class="badge" href="/events?event_type={{ event.event_type | urlencode }}">{{ label_of(event.event_type) }}</a></td>
+              <td>
+                {% if event.src_ip %}
+                  <a href="/events?src_ip={{ event.src_ip | urlencode }}">{{ event.src_ip }}</a>{% if event.src_port %}:{{ event.src_port }}{% endif %}
+                  {% if event.src_country_code %}
+                    <span class="hint">{{ geoip_flag(event.src_country_code) }} {{ event.src_country_name or event.src_country_code }}</span>
+                  {% endif %}
+                {% else %}—{% endif %}
+              </td>
+              <td>{{ event.dst_port if event.dst_port is not none else '—' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="page-header-actions">
+      {% if page > 1 %}
+        <a class="button button-secondary" href="/events?page={{ page - 1 }}{{ '&' ~ query_string if query_string else '' }}">{{ t(request, "events.newer") }}</a>
+      {% endif %}
+      <span class="hint">{{ t(request, "events.page", page=page) }}</span>
+      {% if has_older %}
+        <a class="button button-secondary" href="/events?page={{ page + 1 }}{{ '&' ~ query_string if query_string else '' }}">{{ t(request, "events.older") }}</a>
+      {% endif %}
+    </div>
+  {% else %}
+    <div class="empty-state"><p>{{ t(request, "events.none_filtered") if filters.any else t(request, "events.none") }}</p></div>
+  {% endif %}
+{% endblock %}

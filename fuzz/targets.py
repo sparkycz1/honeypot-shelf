@@ -27,6 +27,7 @@ from typing import Any, cast
 
 from app.auth.ssh_keys import InvalidSshPublicKeyError, parse_ssh_public_keys
 from app.db.models.honeypot import Honeypot
+from app.services.event_search import parse_time as _parse_iso
 from app.services.honeypot_events import build_event
 from app.services.honeypot_tags import parse_tag_names_from_text
 from app.ssh.canary_activity import parse_read_output
@@ -50,7 +51,6 @@ from app.ssh.updates import (
     parse_upgradable_output,
 )
 from app.web.redirects import safe_local_path
-from app.web.routes.api_v1_events import _parse_iso
 
 # `build_event` only reads the honeypot's id.
 _HONEYPOT = cast(Honeypot, SimpleNamespace(id=uuid.UUID(int=1)))
