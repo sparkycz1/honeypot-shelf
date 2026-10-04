@@ -37,7 +37,7 @@ from app.schemas.company import CompanyCreate
 from app.services.company_stats import compute_company_stats
 from app.services.syslog_transport import DEFAULT_SYSLOG_PORT, SyslogProtocol
 from app.web.honeypot_search import honeypot_search_clause
-from app.web.routes.honeypots import _HONEYPOT_LIST_PAGE_SIZE
+from app.web.routes.honeypots_list import _HONEYPOT_LIST_PAGE_SIZE
 from app.web.templating import t, templates
 
 # Companies are superadmin-only end to end (create/rename/delete, and the
