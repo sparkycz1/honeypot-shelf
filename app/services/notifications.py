@@ -57,7 +57,7 @@ from app.db.models.honeypot import Honeypot
 from app.db.models.notification_log import NotificationChannel, NotificationKind, NotificationLog
 from app.db.models.notification_rule_state import NotificationRuleState
 from app.i18n import DEFAULT_LOCALE_CODE
-from app.services import maintenance_windows, push_channels
+from app.services import acknowledgements, maintenance_windows, push_channels
 from app.services.honeypot_status import as_aware_utc
 from app.services.live_updates import publish_notifications_event
 from app.services.smtp import SmtpNotConfiguredError, send_email
@@ -350,7 +350,15 @@ async def _dispatch_rule(
         # A honeypot inside an active maintenance window: nothing is sent,
         # but the delivery history says so, naming the window.
         window = await maintenance_windows.muting_window(db, honeypot, kind)
-        if window is not None:
+        muted_by = window.name if window is not None else None
+        if (
+            muted_by is None
+            and acknowledgements.withholds(kind)
+            and acknowledgements.is_active(honeypot)
+        ):
+            # Someone acknowledged the problem: same treatment, own reason.
+            muted_by = acknowledgements.muted_by(honeypot)
+        if muted_by is not None:
             shown = (
                 push_channels.delivery_target(
                     channel.value, rule.webhook_url, rule.channel_recipient
@@ -367,7 +375,7 @@ async def _dispatch_rule(
                 target=shown,
                 success=False,
                 error=None,
-                muted_by=window.name,
+                muted_by=muted_by,
             )
             return False
     subject, body = render_template(template_kind, rule, context)

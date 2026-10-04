@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "partials/_packages_summary.html" import render as render_packages_summary %}
 {% from "partials/_tabnav.html" import render as render_tabnav %}
+{% from "partials/acknowledgement.html" import ack_panel with context %}
 {% from "partials/_os_badge.html" import render as render_os_badge %}
 
 {% block title %}{{ honeypot.name }} — Honeypot Shelf{% endblock %}
@@ -17,6 +18,8 @@
   {% if maintenance_window %}
     <p><span class="badge badge-warn">{{ t(request, 'maintenance.in_progress', until=(maintenance_window.ends_at | local_time('%Y-%m-%d %H:%M %Z')), name=maintenance_window.name) }}</span></p>
   {% endif %}
+
+  {{ ack_panel(request, honeypot, "/honeypots/" ~ honeypot.id, can_acknowledge) }}
 
   {{ render_tabnav(tabs, active_tab) }}
 

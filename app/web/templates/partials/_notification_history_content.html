@@ -24,7 +24,9 @@
           <td>{{ t(request, "notifications.rule.send_via_" + entry.channel.value) }}</td>
           <td>{{ entry.target }}</td>
           <td>
-            {% if entry.muted_by %}
+            {% if entry.muted_by and entry.muted_by.startswith("acknowledged by ") %}
+              <span class="badge" title="{{ entry.muted_by }}">{{ t(request, "notifications.history.status_acknowledged", by=entry.muted_by[16:]) }}</span>
+            {% elif entry.muted_by %}
               <span class="badge" title="{{ entry.muted_by }}">{{ t(request, "notifications.history.status_muted", window=entry.muted_by) }}</span>
             {% elif entry.success %}
               <span class="badge badge-ok">{{ t(request, "notifications.history.status_ok") }}</span>

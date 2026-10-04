@@ -57,7 +57,7 @@ from app.db.models.honeypot_update_run import HoneypotUpdateRun, UpdateRunStatus
 from app.db.models.notification_log import NotificationLog
 from app.db.models.notification_rule import NotificationRule, NotificationScope
 from app.db.models.notification_rule_state import NotificationRuleState
-from app.services import auto_backup, disk_forecast
+from app.services import acknowledgements, auto_backup, disk_forecast
 from app.services.company_stats import compute_company_stats
 from app.services.geoip import GeoipDownloadError
 from app.services.geoip import get_reader as get_geoip_reader
@@ -994,6 +994,9 @@ async def _ping_all_honeypots() -> None:
                 honeypot.last_ping_at = now
                 if outcome.reachable:
                     honeypot.unreachable_since = None
+                    if was_reachable is False:
+                        # Back again: whatever was acknowledged is over.
+                        acknowledgements.clear(honeypot)
                     if was_reachable is not True or honeypot.reachable_since is None:
                         # Either the first successful check ever, or a
                         # fresh transition from unreachable — start (or
@@ -1191,6 +1194,9 @@ async def _check_honeypot_reachability(honeypot_id: str) -> dict[str, Any]:
 
         outcome = await check_reachable(honeypot.ip_address, honeypot.port)
         now = datetime.now(UTC)
+        if honeypot.is_reachable is False and outcome.reachable:
+            # Back again: whatever was acknowledged is over.
+            acknowledgements.clear(honeypot)
         honeypot.is_reachable = outcome.reachable
         honeypot.last_ping_at = now
         session.add(

@@ -51,7 +51,12 @@ from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.honeypot import HoneypotCreate, HoneypotUpdate
 from app.schemas.honeypot_config import HoneypotConfigExport
-from app.services import canary_activity_history, maintenance_windows, monitoring_history
+from app.services import (
+    acknowledgements,
+    canary_activity_history,
+    maintenance_windows,
+    monitoring_history,
+)
 from app.services.honeypot_actions import (
     send_power_to_honeypots,
     trigger_check_updates,
@@ -1080,6 +1085,7 @@ async def honeypot_detail(
         {
             "honeypot": honeypot,
             "maintenance_window": await maintenance_windows.active_window_for(db, honeypot),
+            "can_acknowledge": can_write_honeypot(current_user, honeypot),
             "csrf_token": csrf_token,
             "tabs": _honeypot_tabs(request, honeypot, current_user),
             "active_tab": "overview",
@@ -3288,3 +3294,71 @@ async def delete_honeypot(
         target_label=honeypot_name,
     )
     return RedirectResponse(url="/honeypots", status_code=status.HTTP_303_SEE_OTHER)
+
+
+# --- Acknowledging a problem (app.services.acknowledgements) ---------------
+
+
+async def _get_writable_honeypot_or_404(
+    honeypot_id: uuid.UUID, db: AsyncSession, user: User
+) -> Honeypot:
+    honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
+    if not can_write_honeypot(user, honeypot):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Read-only access.")
+    return honeypot
+
+
+@router.post("/{honeypot_id}/acknowledge", dependencies=[_manage, Depends(verify_csrf)])
+async def acknowledge_honeypot(
+    request: Request,
+    honeypot_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    duration: str = Form("until_recovered"),
+    note: str = Form(""),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """"I know about this one": withhold alert and "unavailable"
+    notifications about this honeypot until it recovers, the chosen time
+    passes or someone clears it."""
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
+    try:
+        hours = acknowledgements.hours_for(duration)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from None
+    acknowledgements.acknowledge(honeypot, by=current_user.username, note=note, hours=hours)
+    await db.commit()
+    await log_event(
+        db,
+        request=request,
+        action="honeypot.acknowledge",
+        summary=f'Acknowledged a problem on "{honeypot.name}"',
+        target_type="honeypot",
+        target_id=honeypot.id,
+        target_label=honeypot.name,
+        details={"hours": hours, "note": honeypot.acknowledged_note},
+    )
+    return RedirectResponse(url=f"/honeypots/{honeypot.id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/{honeypot_id}/acknowledge/clear", dependencies=[_manage, Depends(verify_csrf)])
+async def clear_honeypot_acknowledgement(
+    request: Request,
+    honeypot_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
+    acknowledgements.clear(honeypot)
+    await db.commit()
+    await log_event(
+        db,
+        request=request,
+        action="honeypot.acknowledge.clear",
+        summary=f'Cleared the acknowledgement on "{honeypot.name}"',
+        target_type="honeypot",
+        target_id=honeypot.id,
+        target_label=honeypot.name,
+    )
+    return RedirectResponse(url=f"/honeypots/{honeypot.id}", status_code=status.HTTP_303_SEE_OTHER)

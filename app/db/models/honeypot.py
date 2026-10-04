@@ -124,6 +124,15 @@ class Honeypot(Base):
     # --- Cheap per-minute reachability check (TCP connect to the SSH port) ---
     is_reachable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     last_ping_at: Mapped[datetime | None] = mapped_column(nullable=True)
+
+    # --- Acknowledged problem (app.services.acknowledgements) ---
+    # Set by a person ("I know about this"): alert and "unavailable"
+    # notifications about this honeypot are withheld until it recovers,
+    # `acknowledged_until` passes (NULL = no end time) or someone clears it.
+    acknowledged_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    acknowledged_until: Mapped[datetime | None] = mapped_column(nullable=True)
+    acknowledged_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    acknowledged_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
     # When this honeypot most recently *transitioned* from reachable (or
     # never-yet-checked) to unreachable — `None` while reachable. Distinct
     # from `last_ping_at`, which is overwritten on every sweep tick
