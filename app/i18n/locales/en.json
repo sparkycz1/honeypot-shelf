@@ -1736,6 +1736,11 @@
     "events.source.username": "User name",
     "events.source.password": "Password",
     "events.source.no_credentials": "No login attempts recorded from this address.",
-    "events.source.recent": "Latest events"
+    "events.source.recent": "Latest events",
+    "settings.checks.events.heading": "Events",
+    "settings.checks.events.hint": "How long OpenCanary events are kept. Older events are deleted once a day; the daily totals behind the Dashboard trend are kept regardless.",
+    "settings.checks.events.retention_label": "Keep events for (days)",
+    "settings.checks.events.retention_hint": "Leave empty to use the default from the server's configuration (EVENT_RETENTION_DAYS, now {days} days). At least 1 day.",
+    "audit.action_label.settings.event_retention.update": "Event retention changed"
   }
 }
