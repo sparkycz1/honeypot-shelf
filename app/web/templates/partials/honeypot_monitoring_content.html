@@ -1,3 +1,4 @@
+{% from "partials/range_picker.html" import range_picker with context %}
 {% from "macros/charts.html" import chart_card with context %}
 
 {# Everything the Monitoring tab shows below its tab nav — pulled into its
@@ -17,18 +18,11 @@
   {%- else -%}{{ t(request, "honeypots.monitoring.instance_default") }}{%- endif -%}
 {%- endmacro %}
 
-{% set tf = '%H:%M' if range_key in ('1h', '24h') else '%d.%m.' %}
+{% set tf = window.axis_format %}
 
-<div class="monitoring-toolbar">
+<div class="monitoring-toolbar" data-chart-zoom>
   {% if honeypot.monitoring_updated_at or availability.sample_count %}
-    <form method="get" action="/honeypots/{{ honeypot.id }}/monitoring" class="inline-form">
-      <select name="range_key" class="inline-select" data-autosubmit aria-label="{{ t(request, 'honeypots.monitoring.range_label') }}">
-        {% for key, _label, _delta in time_ranges %}
-          <option value="{{ key }}" {% if key == range_key %}selected{% endif %}>{{ t(request, "honeypots.monitoring.range." ~ key) }}</option>
-        {% endfor %}
-      </select>
-      <noscript><button type="submit" class="button">{{ t(request, 'honeypots.monitoring.apply') }}</button></noscript>
-    </form>
+    {{ range_picker(request, "/honeypots/" ~ honeypot.id ~ "/monitoring", window, time_ranges) }}
   {% endif %}
   <p class="hint">
     {{ t(request, 'honeypots.monitoring.last_checked') }}
@@ -39,7 +33,7 @@
     <button
       class="button button-secondary"
       hx-post="/honeypots/{{ honeypot.id }}/monitoring/refresh"
-      hx-vals='{"csrf_token": "{{ csrf_token }}", "range_key": "{{ range_key }}"}'
+      hx-vals='{"csrf_token": "{{ csrf_token }}", "range_key": "{{ range_key }}", "start": "{{ window_start }}", "end": "{{ window_end }}"}'
       hx-target="#monitoring-content"
       hx-swap="innerHTML"
       {% if not honeypot.host_key_fingerprint %}disabled{% endif %}

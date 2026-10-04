@@ -9,7 +9,7 @@ import io
 import json
 import re
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlencode
 
@@ -69,6 +69,7 @@ from app.services.honeypot_tags import (
     set_honeypot_tags,
     sync_module_tags,
 )
+from app.services.monitoring_history import TimeWindow
 from app.services.opencanary_logtypes import localized_logtype_label, logtype_label
 from app.services.saved_views import (
     DuplicateViewNameError,
@@ -99,6 +100,7 @@ from app.web.log_lines import journal_log_lines, parse_log_lines
 from app.web.redirects import safe_local_path
 from app.web.routes.audit import _csv_safe
 from app.web.templating import t, templates
+from app.web.time_window import window_from_query, window_query
 
 # Typed phrase to confirm a power action against an arbitrary ad-hoc
 # selection from the honeypot list — unlike a group or "All honeypots", a
@@ -1109,25 +1111,39 @@ async def honeypot_detail(
     return response
 
 
-def _normalize_range_key(range_key: str) -> str:
-    valid_range_keys = {key for key, _label, _delta in monitoring_history.TIME_RANGES}
-    return range_key if range_key in valid_range_keys else monitoring_history.DEFAULT_TIME_RANGE
+def _window_context(window: TimeWindow) -> dict[str, Any]:
+    """What the chart templates need to stay on the same time window: the
+    picker's state, the query string for links and the panel's own poll
+    URL, and the two values the "Refresh now" POST sends back."""
+    custom = window.is_custom and window.until is not None
+    return {
+        "time_ranges": monitoring_history.TIME_RANGES,
+        "range_key": window.range_key,
+        "window": window,
+        "window_query": window_query(window),
+        "window_start": window.since.isoformat() if custom else "",
+        "window_end": window.until.isoformat() if custom and window.until else "",
+    }
 
 
 async def _build_monitoring_context(
-    honeypot: Honeypot, range_key: str, db: AsyncSession, user: User
+    honeypot: Honeypot, window: TimeWindow, db: AsyncSession, user: User
 ) -> dict[str, Any]:
     """The Monitoring tab's own data, shared by the first-paint route, the
     auto-refresh/live-update panel route, and the "Refresh now" route —
     see partials/honeypot_monitoring_content.html's own comment for why
     these three routes all funnel through the one partial."""
-    range_key = _normalize_range_key(range_key)
-    since = datetime.now(UTC) - monitoring_history.time_range_delta(range_key)
+    range_key = window.range_key
+    since = window.since
+    # `until` is None for a preset ("up to now"), so far in the future is
+    # the same thing without a second code path.
+    until = window.until or datetime.now(UTC) + timedelta(days=1)
     result = await db.execute(
         select(HoneypotMonitoringSample)
         .where(
             HoneypotMonitoringSample.honeypot_id == honeypot.id,
             HoneypotMonitoringSample.sampled_at >= since,
+            HoneypotMonitoringSample.sampled_at <= until,
         )
         .order_by(HoneypotMonitoringSample.sampled_at)
         .limit(monitoring_history.MAX_RAW_SAMPLES)
@@ -1140,6 +1156,7 @@ async def _build_monitoring_context(
         .where(
             HoneypotReachabilitySample.honeypot_id == honeypot.id,
             HoneypotReachabilitySample.checked_at >= since,
+            HoneypotReachabilitySample.checked_at <= until,
         )
         .order_by(HoneypotReachabilitySample.checked_at)
         .limit(monitoring_history.MAX_RAW_SAMPLES)
@@ -1165,8 +1182,7 @@ async def _build_monitoring_context(
         "honeypot": honeypot,
         "history": history,
         "availability": availability,
-        "time_ranges": monitoring_history.TIME_RANGES,
-        "range_key": range_key,
+        **_window_context(window),
         "service_counts": await _get_service_counts(honeypot.id, db),
         # The whole services table is on the page (filtered and sorted
         # client-side, static/js/monitoring-chart.js) — a honeypot runs a
@@ -1192,6 +1208,8 @@ async def honeypot_monitoring(
     honeypot_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     range_key: str = monitoring_history.DEFAULT_TIME_RANGE,
+    start: str = "",
+    end: str = "",
     current_user: User = Depends(get_current_user),
 ) -> Response:
     """CPU/RAM/disk-usage trend graphs (see `app.services.monitoring_history`
@@ -1201,7 +1219,8 @@ async def honeypot_monitoring(
     erroring, same tolerance `status_filter` on the Updates tab already has
     for a bad query param."""
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    context = await _build_monitoring_context(honeypot, range_key, db, current_user)
+    window = window_from_query(range_key, start, end)
+    context = await _build_monitoring_context(honeypot, window, db, current_user)
 
     csrf_token, new_cookie = get_or_create_csrf_token(request)
     response = templates.TemplateResponse(
@@ -1225,6 +1244,8 @@ async def honeypot_monitoring_panel(
     honeypot_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     range_key: str = monitoring_history.DEFAULT_TIME_RANGE,
+    start: str = "",
+    end: str = "",
     current_user: User = Depends(get_current_user),
 ) -> Response:
     """The `#monitoring-content` div's own auto-poll/live-update fetch
@@ -1232,7 +1253,8 @@ async def honeypot_monitoring_panel(
     currently in the DB, no SSH round trip. Distinct from `POST .../
     monitoring/refresh` below, which forces a fresh sample first."""
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    context = await _build_monitoring_context(honeypot, range_key, db, current_user)
+    window = window_from_query(range_key, start, end)
+    context = await _build_monitoring_context(honeypot, window, db, current_user)
     csrf_token, _ = get_or_create_csrf_token(request)
     return templates.TemplateResponse(
         request, "partials/honeypot_monitoring_content.html", {**context, "csrf_token": csrf_token}
@@ -1247,6 +1269,8 @@ async def refresh_monitoring_endpoint(
     honeypot_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     range_key: str = Form(monitoring_history.DEFAULT_TIME_RANGE),
+    start: str = Form(""),
+    end: str = Form(""),
     current_user: User = Depends(get_current_user),
 ) -> Response:
     """"Refresh now" on the Monitoring tab — forces an immediate
@@ -1295,7 +1319,8 @@ async def refresh_monitoring_endpoint(
     )
 
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    context = await _build_monitoring_context(honeypot, range_key, db, current_user)
+    window = window_from_query(range_key, start, end)
+    context = await _build_monitoring_context(honeypot, window, db, current_user)
     csrf_token, _ = get_or_create_csrf_token(request)
     return templates.TemplateResponse(
         request, "partials/honeypot_monitoring_content.html", {**context, "csrf_token": csrf_token}
@@ -2636,20 +2661,25 @@ async def honeypot_logs(
 
 
 async def _build_activity_context(
-    request: Request, honeypot: Honeypot, range_key: str, db: AsyncSession
+    request: Request, honeypot: Honeypot, window: TimeWindow, db: AsyncSession
 ) -> dict[str, Any]:
     """The Activity tab's own data — same "shared by first-paint/panel/
     refresh routes" shape as `_build_monitoring_context`."""
-    range_key = _normalize_range_key(range_key)
-    now = datetime.now(UTC)
-    since = now - monitoring_history.time_range_delta(range_key)
+    range_key = window.range_key
+    # A custom window ends at its own `until`; a preset ends now.
+    now = window.until or datetime.now(UTC)
+    since = window.since
 
     def label_of(logtype: object) -> str:
         return localized_logtype_label(lambda key: t(request, key), logtype)
 
     windowed_result = await db.execute(
         select(HoneypotEvent)
-        .where(HoneypotEvent.honeypot_id == honeypot.id, HoneypotEvent.occurred_at >= since)
+        .where(
+            HoneypotEvent.honeypot_id == honeypot.id,
+            HoneypotEvent.occurred_at >= since,
+            HoneypotEvent.occurred_at <= now,
+        )
         .order_by(HoneypotEvent.occurred_at)
         .limit(canary_activity_history.MAX_RAW_EVENTS)
     )
@@ -2658,6 +2688,7 @@ async def _build_activity_context(
         windowed_events,
         range_key,
         now=now,
+        start=since if window.is_custom else None,
         label_of=label_of,
         other_label=t(request, "dashboard.activity_other"),
     )
@@ -2676,8 +2707,7 @@ async def _build_activity_context(
         "honeypot": honeypot,
         "activity": activity,
         "recent_events": recent_events,
-        "time_ranges": monitoring_history.TIME_RANGES,
-        "range_key": range_key,
+        **_window_context(window),
         "app_settings": await get_or_create_app_settings(db),
         # "Refresh now" is a write action (`POST .../status/refresh`).
         "can_refresh": can_write_honeypot(request.state.user, honeypot),
@@ -2690,6 +2720,8 @@ async def honeypot_status_tab(
     honeypot_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     range_key: str = monitoring_history.DEFAULT_TIME_RANGE,
+    start: str = "",
+    end: str = "",
     current_user: User = Depends(get_current_user),
 ) -> Response:
     """Activity tab — what OpenCanary has actually seen on this honeypot,
@@ -2700,7 +2732,8 @@ async def honeypot_status_tab(
     this one honeypot and with a time-range picker like the Monitoring
     tab's."""
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    context = await _build_activity_context(request, honeypot, range_key, db)
+    window = window_from_query(range_key, start, end)
+    context = await _build_activity_context(request, honeypot, window, db)
 
     csrf_token, new_cookie = get_or_create_csrf_token(request)
     response = templates.TemplateResponse(
@@ -2724,13 +2757,16 @@ async def honeypot_activity_panel(
     honeypot_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     range_key: str = monitoring_history.DEFAULT_TIME_RANGE,
+    start: str = "",
+    end: str = "",
     current_user: User = Depends(get_current_user),
 ) -> Response:
     """The `#activity-content` div's own auto-poll/live-update fetch
     target (see honeypots/status.html) — a plain re-read of whatever's
     currently in the DB, no SSH round trip."""
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    context = await _build_activity_context(request, honeypot, range_key, db)
+    window = window_from_query(range_key, start, end)
+    context = await _build_activity_context(request, honeypot, window, db)
     csrf_token, _ = get_or_create_csrf_token(request)
     return templates.TemplateResponse(
         request, "partials/honeypot_activity_content.html", {**context, "csrf_token": csrf_token}
@@ -2743,6 +2779,8 @@ async def refresh_activity_endpoint(
     honeypot_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     range_key: str = Form(monitoring_history.DEFAULT_TIME_RANGE),
+    start: str = Form(""),
+    end: str = Form(""),
     current_user: User = Depends(get_current_user),
 ) -> Response:
     """"Refresh now" on the Activity tab — forces an immediate OpenCanary
@@ -2777,7 +2815,8 @@ async def refresh_activity_endpoint(
     )
 
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    context = await _build_activity_context(request, honeypot, range_key, db)
+    window = window_from_query(range_key, start, end)
+    context = await _build_activity_context(request, honeypot, window, db)
     csrf_token, _ = get_or_create_csrf_token(request)
     return templates.TemplateResponse(
         request, "partials/honeypot_activity_content.html", {**context, "csrf_token": csrf_token}
@@ -2804,6 +2843,8 @@ async def export_honeypot_activity(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     range_key: str = "",
+    start: str = "",
+    end: str = "",
     format: str = "csv",
 ) -> Response:
     """Every `HoneypotEvent` for this honeypot, as CSV or JSON — same
@@ -2815,9 +2856,11 @@ async def export_honeypot_activity(
 
     query = select(HoneypotEvent).where(HoneypotEvent.honeypot_id == honeypot_id)
     valid_range_keys = {key for key, _label, _delta in monitoring_history.TIME_RANGES}
-    if range_key in valid_range_keys:
-        since = datetime.now(UTC) - monitoring_history.time_range_delta(range_key)
-        query = query.where(HoneypotEvent.occurred_at >= since)
+    window = window_from_query(range_key, start, end)
+    if window.is_custom or range_key in valid_range_keys:
+        query = query.where(HoneypotEvent.occurred_at >= window.since)
+        if window.until is not None:
+            query = query.where(HoneypotEvent.occurred_at <= window.until)
     result = await db.execute(query.order_by(HoneypotEvent.occurred_at.asc()))
     events = list(result.scalars().all())
 

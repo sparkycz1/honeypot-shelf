@@ -1,3 +1,4 @@
+{% from "partials/range_picker.html" import range_picker with context %}
 {% from "macros/charts.html" import chart_card with context %}
 
 {# Everything the Activity tab shows below its tab nav — same "one
@@ -7,29 +8,22 @@
    now") all render this exact markup. Same toolbar, chart cards and table
    cards as the Monitoring tab (debcontrol's layout). #}
 
-{% set tf = '%H:%M' if range_key in ('1h', '24h') else '%d.%m.' %}
+{% set tf = window.axis_format %}
 
-<div class="monitoring-toolbar">
-  <form method="get" action="/honeypots/{{ honeypot.id }}/status" class="inline-form">
-    <select name="range_key" class="inline-select" data-autosubmit aria-label="{{ t(request, 'honeypots.monitoring.range_label') }}">
-      {% for key, _label, _delta in time_ranges %}
-        <option value="{{ key }}" {% if key == range_key %}selected{% endif %}>{{ t(request, "honeypots.monitoring.range." ~ key) }}</option>
-      {% endfor %}
-    </select>
-    <noscript><button type="submit" class="button">{{ t(request, "honeypots.activity.apply") }}</button></noscript>
-  </form>
+<div class="monitoring-toolbar" data-chart-zoom>
+  {{ range_picker(request, "/honeypots/" ~ honeypot.id ~ "/status", window, time_ranges) }}
   <p class="hint">
     {{ t(request, "honeypots.activity.last_checked") }}
     {% if honeypot.opencanary_log_polled_at %}{{ honeypot.opencanary_log_polled_at | local_time('%Y-%m-%d %H:%M:%S %Z') }}{% else %}—{% endif %}
   </p>
   <span class="monitoring-toolbar-spacer"></span>
-  <a class="button button-secondary" href="/honeypots/{{ honeypot.id }}/status/export?format=csv&range_key={{ range_key }}">{{ t(request, "honeypots.activity.export_csv") }}</a>
-  <a class="button button-secondary" href="/honeypots/{{ honeypot.id }}/status/export?format=json&range_key={{ range_key }}">{{ t(request, "honeypots.activity.export_json") }}</a>
+  <a class="button button-secondary" href="/honeypots/{{ honeypot.id }}/status/export?format=csv&{{ window_query }}">{{ t(request, "honeypots.activity.export_csv") }}</a>
+  <a class="button button-secondary" href="/honeypots/{{ honeypot.id }}/status/export?format=json&{{ window_query }}">{{ t(request, "honeypots.activity.export_json") }}</a>
   {% if can_refresh %}
     <button
       class="button button-secondary"
       hx-post="/honeypots/{{ honeypot.id }}/status/refresh"
-      hx-vals='{"csrf_token": "{{ csrf_token }}", "range_key": "{{ range_key }}"}'
+      hx-vals='{"csrf_token": "{{ csrf_token }}", "range_key": "{{ range_key }}", "start": "{{ window_start }}", "end": "{{ window_end }}"}'
       hx-target="#activity-content"
       hx-swap="innerHTML"
       {% if not honeypot.host_key_fingerprint %}disabled{% endif %}

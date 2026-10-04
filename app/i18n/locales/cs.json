@@ -1684,6 +1684,9 @@
     "account.api_tokens.read_only": "Jen pro čtení (token může data číst, ale nic nezmění)",
     "account.api_tokens.companies": "Jen tyto firmy (bez výběru = vše, co účet vidí)",
     "account.api_tokens.limits_hint": "Token nikdy nemá větší přístup než tento účet. S omezením na firmy vidí a spravuje jen tyto firmy a jejich honeypoty a nemůže používat části API vyhrazené superadminovi (uživatelé, nastavení, zálohy, audit). Omezení nejde později změnit: token zrušte a vytvořte nový.",
-    "account.error.token_companies": "Žádnou z vybraných firem nelze pro tento token použít."
+    "account.error.token_companies": "Žádnou z vybraných firem nelze pro tento token použít.",
+    "honeypots.monitoring.range.custom": "Vlastní rozsah",
+    "honeypots.monitoring.range.from": "Od",
+    "honeypots.monitoring.range.to": "Do"
   }
 }

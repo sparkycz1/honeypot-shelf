@@ -66,6 +66,7 @@ def build_activity_history(
     range_key: str,
     *,
     now: datetime,
+    start: datetime | None = None,
     label_of: Callable[[object], str] = logtype_label,
     other_label: str = "Other",
 ) -> ActivityHistory:
@@ -76,7 +77,9 @@ def build_activity_history(
     request's `t`, so the chart legend/table read in whichever language
     the viewer's session is in (found live: this was hardcoded English
     even on an otherwise fully-translated Czech page)."""
-    delta = time_range_delta(range_key)
+    # A custom window (`start` given, `now` being its end) is bucketed over
+    # its own length; a preset over the preset's.
+    delta = now - start if start is not None else time_range_delta(range_key)
     start = now - delta
     bucket_width = delta / BUCKET_COUNT
 

@@ -23,7 +23,7 @@
      30s and reacts instantly to a `live-activity` push. #}
   <div
     id="activity-content"
-    hx-get="/honeypots/{{ honeypot.id }}/activity-panel?range_key={{ range_key }}"
+    hx-get="/honeypots/{{ honeypot.id }}/activity-panel?{{ window_query }}"
     hx-trigger="every 30s, live-activity from:body"
     hx-swap="innerHTML settle:600ms"
   >

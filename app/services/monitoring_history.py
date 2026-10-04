@@ -25,7 +25,7 @@ for that point rather than a nonsensical negative or infinite rate.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.db.models.honeypot_monitoring_sample import HoneypotMonitoringSample
@@ -58,6 +58,68 @@ _TARGET_POINTS = 150
 def time_range_delta(range_key: str) -> timedelta:
     by_key = {key: delta for key, _label, delta in TIME_RANGES}
     return by_key.get(range_key, by_key[DEFAULT_TIME_RANGE])
+
+
+def normalize_range_key(range_key: str) -> str:
+    """`range_key` if it's one of `TIME_RANGES`'s keys, else the default —
+    an unrecognized value quietly falls back rather than erroring."""
+    valid = {key for key, _label, _delta in TIME_RANGES}
+    return range_key if range_key in valid else DEFAULT_TIME_RANGE
+
+
+# `TimeWindow.range_key` for a from-to window that is not one of TIME_RANGES.
+CUSTOM_RANGE = "custom"
+# A custom window shorter than this shows nothing useful (samples are at
+# least a minute apart); longer than the longest preset has no data left.
+MIN_CUSTOM_SPAN = timedelta(minutes=5)
+MAX_CUSTOM_SPAN = timedelta(days=366)
+
+
+@dataclass(frozen=True)
+class TimeWindow:
+    """What stretch of history a chart page shows: one of `TIME_RANGES`
+    ending now, or a custom from-to window (the from/to boxes, or a drag
+    across a chart)."""
+
+    range_key: str
+    since: datetime
+    # None = "up to now" (a preset), so a refresh keeps moving forward.
+    until: datetime | None = None
+
+    @property
+    def is_custom(self) -> bool:
+        return self.range_key == CUSTOM_RANGE
+
+    @property
+    def axis_format(self) -> str:
+        """strftime format for the X axis: clock times within two days,
+        dates beyond."""
+        end = self.until or datetime.now(UTC)
+        return "%H:%M" if end - self.since <= timedelta(hours=48) else "%d.%m."
+
+
+def resolve_window(
+    range_key: str,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    *,
+    now: datetime | None = None,
+) -> TimeWindow:
+    """The window a request asks for. `start` and `end` together (aware
+    datetimes) make a custom window — clamped to not end in the future and
+    to span `MIN_CUSTOM_SPAN`..`MAX_CUSTOM_SPAN`; a pair in the wrong order
+    is swapped. Otherwise `range_key`, falling back to the default like
+    `normalize_range_key`."""
+    now = now or datetime.now(UTC)
+    if start is not None and end is not None:
+        if end < start:
+            start, end = end, start
+        end = min(end, now)
+        start = min(start, end - MIN_CUSTOM_SPAN)
+        start = max(start, end - MAX_CUSTOM_SPAN)
+        return TimeWindow(CUSTOM_RANGE, start, end)
+    key = normalize_range_key(range_key)
+    return TimeWindow(key, now - time_range_delta(key))
 
 
 def _bucket_timestamps(timestamps: list[datetime], target_points: int) -> list[datetime]:
