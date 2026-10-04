@@ -10,7 +10,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
@@ -161,3 +161,126 @@ def reported_fields(event: HoneypotEvent) -> list[tuple[str, str]]:
         text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
         rows.append((str(key)[:100], text[:_MAX_VALUE_LENGTH]))
     return rows
+
+
+# How many of an address's newest events are read for the "what it tried"
+# tables — enough to show a pattern, bounded for an address with millions.
+SOURCE_SAMPLE = 1000
+_TOP = 15
+
+
+@dataclass(frozen=True)
+class SourceSummary:
+    """Everything one source address did, across the honeypots the account
+    may see."""
+
+    src_ip: str
+    total: int
+    first_seen: datetime | None
+    last_seen: datetime | None
+    country_code: str | None
+    country_name: str | None
+    city_name: str | None
+    # (honeypot id, honeypot name, events), busiest first.
+    honeypots: list[tuple[uuid.UUID, str, int]]
+    # (event type, events), most frequent first.
+    event_types: list[tuple[str, int]]
+    # (user name, password, times tried) among the newest SOURCE_SAMPLE
+    # events, most tried first.
+    credentials: list[tuple[str, str, int]]
+    recent: list[HoneypotEvent]
+    sampled: bool
+
+
+def _text(value: object) -> str:
+    return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+
+
+async def source_summary(db: AsyncSession, user: User, src_ip: str) -> SourceSummary | None:
+    """None when the account can see no event from `src_ip` (exact match)."""
+    src_ip = src_ip.strip()
+    visible = apply_filters(select(HoneypotEvent), user, EventFilters()).where(
+        HoneypotEvent.src_ip == src_ip
+    )
+    total, first_seen, last_seen = (
+        await db.execute(
+            visible.with_only_columns(
+                func.count(),
+                func.min(HoneypotEvent.occurred_at),
+                func.max(HoneypotEvent.occurred_at),
+                maintain_column_froms=True,
+            )
+        )
+    ).one()
+    if not total:
+        return None
+
+    by_type = (
+        await db.execute(
+            visible.with_only_columns(
+                HoneypotEvent.event_type, func.count(), maintain_column_froms=True
+            )
+            .group_by(HoneypotEvent.event_type)
+            .order_by(func.count().desc())
+        )
+    ).all()
+    by_honeypot = (
+        await db.execute(
+            visible.with_only_columns(
+                HoneypotEvent.honeypot_id, func.count(), maintain_column_froms=True
+            )
+            .group_by(HoneypotEvent.honeypot_id)
+            .order_by(func.count().desc())
+        )
+    ).all()
+    names = dict(
+        (
+            await db.execute(
+                select(Honeypot.id, Honeypot.name).where(
+                    Honeypot.id.in_([honeypot_id for honeypot_id, _count in by_honeypot])
+                )
+            )
+        ).all()
+    )
+
+    sample = list(
+        (
+            await db.execute(
+                visible.order_by(HoneypotEvent.occurred_at.desc()).limit(SOURCE_SAMPLE)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    tried: dict[tuple[str, str], int] = {}
+    for event in sample:
+        logdata = event.raw.get("logdata") if isinstance(event.raw, dict) else None
+        if not isinstance(logdata, dict):
+            continue
+        username, password = logdata.get("USERNAME"), logdata.get("PASSWORD")
+        if username is None and password is None:
+            continue
+        key = (_text(username or "")[:200], _text(password or "")[:200])
+        tried[key] = tried.get(key, 0) + 1
+    newest = sample[0]
+    return SourceSummary(
+        src_ip=src_ip,
+        total=total,
+        first_seen=first_seen,
+        last_seen=last_seen,
+        country_code=newest.src_country_code,
+        country_name=newest.src_country_name,
+        city_name=newest.src_city_name,
+        honeypots=[
+            (honeypot_id, names.get(honeypot_id, "?"), count) for honeypot_id, count in by_honeypot
+        ],
+        event_types=[(event_type, count) for event_type, count in by_type],
+        credentials=[
+            (username, password, count)
+            for (username, password), count in sorted(
+                tried.items(), key=lambda item: (-item[1], item[0])
+            )[:_TOP]
+        ],
+        recent=sample[:_TOP],
+        sampled=total > len(sample),
+    )

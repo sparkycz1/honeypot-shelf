@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+
+{% block title %}{{ source.src_ip }} — {{ t(request, "nav.events") }} — Honeypot Shelf{% endblock %}
+{% block main_class %}container-wide{% endblock %}
+
+{% block content %}
+  <p class="hint"><a href="/events">← {{ t(request, "nav.events") }}</a></p>
+  <div class="page-header">
+    <h1>{{ source.src_ip }}</h1>
+    <div class="page-header-actions">
+      <a class="button button-secondary" href="/events?src_ip={{ source.src_ip | urlencode }}">{{ t(request, "events.source.show_in_list") }}</a>
+      <a class="button button-secondary" href="/events/export?format=csv&src_ip={{ source.src_ip | urlencode }}">{{ t(request, "events.export_csv") }}</a>
+    </div>
+  </div>
+
+  <section class="panel">
+    <dl class="detail-list">
+      <dt>{{ t(request, "events.source.total") }}</dt>
+      <dd>{{ source.total }}</dd>
+      <dt>{{ t(request, "events.source.first_seen") }}</dt>
+      <dd>{{ source.first_seen | local_time('%Y-%m-%d %H:%M:%S %Z') }}</dd>
+      <dt>{{ t(request, "events.source.last_seen") }}</dt>
+      <dd>{{ source.last_seen | local_time('%Y-%m-%d %H:%M:%S %Z') }}</dd>
+      <dt>{{ t(request, "events.source.location") }}</dt>
+      <dd>
+        {% if source.country_code %}
+          {{ geoip_flag(source.country_code) }} {{ source.country_name or source.country_code }}{% if source.city_name %}, {{ source.city_name }}{% endif %}
+        {% else %}—{% endif %}
+      </dd>
+    </dl>
+  </section>
+
+  <div class="monitoring-grid">
+    <section class="chart-card">
+      <header class="chart-card-header"><div><h3 class="chart-card-title">{{ t(request, "events.source.honeypots") }}</h3></div></header>
+      <div class="monitoring-table-wrap">
+        <table class="data-table">
+          <thead><tr><th>{{ t(request, "events.column.honeypot") }}</th><th>{{ t(request, "events.source.count") }}</th></tr></thead>
+          <tbody>
+            {% for honeypot_id, name, count in source.honeypots %}
+              <tr>
+                <td><a href="/events?src_ip={{ source.src_ip | urlencode }}&honeypot_id={{ honeypot_id }}">{{ name }}</a></td>
+                <td>{{ count }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+    <section class="chart-card">
+      <header class="chart-card-header"><div><h3 class="chart-card-title">{{ t(request, "events.source.types") }}</h3></div></header>
+      <div class="monitoring-table-wrap">
+        <table class="data-table">
+          <thead><tr><th>{{ t(request, "events.column.type") }}</th><th>{{ t(request, "events.source.count") }}</th></tr></thead>
+          <tbody>
+            {% for event_type, count in source.event_types %}
+              <tr>
+                <td><a class="badge" href="/events?src_ip={{ source.src_ip | urlencode }}&event_type={{ event_type | urlencode }}">{{ label_of(event_type) }}</a></td>
+                <td>{{ count }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <section class="chart-card chart-card-wide monitoring-section">
+    <header class="chart-card-header">
+      <div>
+        <h3 class="chart-card-title">{{ t(request, "events.source.credentials") }}</h3>
+        <p class="chart-card-subtitle">{{ t(request, "events.source.credentials_hint") }}{% if source.sampled %} {{ t(request, "events.source.sampled") }}{% endif %}</p>
+      </div>
+    </header>
+    {% if source.credentials %}
+      <div class="monitoring-table-wrap">
+        <table class="data-table">
+          <thead><tr><th>{{ t(request, "events.source.username") }}</th><th>{{ t(request, "events.source.password") }}</th><th>{{ t(request, "events.source.count") }}</th></tr></thead>
+          <tbody>
+            {% for username, password, count in source.credentials %}
+              <tr>
+                <td class="cell-wrap">{{ username or '—' }}</td>
+                <td class="cell-wrap">{{ password or '—' }}</td>
+                <td>{{ count }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="hint">{{ t(request, "events.source.no_credentials") }}</p>
+    {% endif %}
+  </section>
+
+  <section class="chart-card chart-card-wide monitoring-section">
+    <header class="chart-card-header"><div><h3 class="chart-card-title">{{ t(request, "events.source.recent") }}</h3></div></header>
+    <div class="monitoring-table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>{{ t(request, "events.column.time") }}</th>
+            <th>{{ t(request, "events.column.honeypot") }}</th>
+            <th>{{ t(request, "events.column.type") }}</th>
+            <th>{{ t(request, "events.column.port") }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for event in source.recent %}
+            <tr>
+              <td class="cell-nowrap"><a href="/events/{{ event.id }}">{{ event.occurred_at | local_time('%Y-%m-%d %H:%M:%S %Z') }}</a></td>
+              <td><a href="/honeypots/{{ event.honeypot_id }}/status">{{ event.honeypot.name }}</a></td>
+              <td><span class="badge">{{ label_of(event.event_type) }}</span></td>
+              <td>{{ event.dst_port if event.dst_port is not none else '—' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}

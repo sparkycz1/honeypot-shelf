@@ -36,6 +36,7 @@ PAGES = [
     "/honeypots",
     "/events",
     "/events?src_ip=203.0.113.",
+    "/events/source/203.0.113.1",
     "/map",
     "/account/notifications",
     "/account/notifications/history",

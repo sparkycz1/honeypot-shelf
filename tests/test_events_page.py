@@ -168,7 +168,7 @@ async def test_event_detail_shows_what_was_reported(client: Any, db_session_fact
     # What the attacker typed is shown as text, never as markup.
     assert "<script>alert(1)</script>" not in page.text
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in page.text
-    assert "/events?src_ip=203.0.113.50" in page.text
+    assert "/events/source/203.0.113.50" in page.text
 
     listing = await client.get("/events", params={"src_ip": "203.0.113.50"})
     assert f'href="/events/{event_id}"' in listing.text
@@ -189,3 +189,41 @@ async def test_event_detail_is_scoped_and_404s(
     assert (await client.get(f"/events/{own.id}")).status_code == 200
     assert (await client.get(f"/events/{other.id}")).status_code == 404
     assert (await client.get("/events/not-an-id")).status_code in (404, 422)
+
+
+async def test_source_page_sums_up_one_address(client: Any, db_session_factory: Any) -> None:
+    _atlas, _borealis, first_id = await _seed(db_session_factory)
+    async with db_session_factory() as db:
+        for password in ("admin", "admin", "toor"):
+            db.add(
+                HoneypotEvent(
+                    honeypot_id=first_id,
+                    event_type="4002",
+                    occurred_at=BASE + timedelta(hours=5),
+                    src_ip="203.0.113.7",
+                    raw={"logdata": {"USERNAME": "root", "PASSWORD": password}},
+                )
+            )
+        await db.commit()
+
+    page = await client.get("/events/source/203.0.113.7")
+    assert page.status_code == 200
+    # Two seeded events plus three login attempts, on both honeypots.
+    assert "<dd>5</dd>" in page.text
+    assert "atlas-honey" in page.text and "borealis-honey" in page.text
+    assert page.text.index("admin") < page.text.index("toor")
+
+    assert (await client.get("/events/source/192.0.2.99")).status_code == 404
+    listing = await client.get("/events")
+    assert 'href="/events/source/203.0.113.7"' in listing.text
+
+
+async def test_source_page_counts_only_the_accounts_companies(
+    client: Any, login_as: Any, db_session_factory: Any
+) -> None:
+    atlas_id, _borealis, _first = await _seed(db_session_factory)
+    await login_as(client, username="reader", company_id=atlas_id, access_level=AccessLevel.READ)
+
+    page = await client.get("/events/source/203.0.113.7")
+    assert page.status_code == 200
+    assert "<dd>1</dd>" in page.text and "borealis-honey" not in page.text
