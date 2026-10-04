@@ -20,15 +20,17 @@ from typing import Any
 from fastapi import APIRouter, Depends, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.sql import Select
 
 from app.auth.dependencies import get_api_token_user
-from app.auth.scope import visible_company_ids
-from app.db.models.company import Company
-from app.db.models.honeypot import Honeypot
 from app.db.models.honeypot_event import HoneypotEvent
 from app.db.models.user import User
 from app.db.session import get_db
+from app.services.event_search import (
+    EventFilters,
+    apply_filters,
+    page_of_events,
+    parse_time,
+)
 from app.services.opencanary_logtypes import logtype_label
 from app.web.routes.audit import _csv_safe
 
@@ -51,49 +53,6 @@ _EXPORT_FIELDS = (
     "dst_port",
     "source",
 )
-
-
-def _parse_iso(value: str) -> datetime | None:
-    """Tolerant ISO-8601 parse — an unparseable `since`/`until` is ignored
-    rather than rejected, same "a bad filter never 400s the whole request"
-    convention `range_key` and friends already use elsewhere in this app."""
-    if not value.strip():
-        return None
-    try:
-        parsed = datetime.fromisoformat(value.strip())
-    except ValueError:
-        return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
-
-
-def _apply_filters[S: Select[HoneypotEvent]](
-    query: S,
-    user: User,
-    *,
-    honeypot_id: uuid.UUID | None,
-    event_type: str,
-    source: str,
-    since: str,
-    until: str,
-) -> S:
-    company_ids = visible_company_ids(user)
-    if company_ids is not None:
-        query = query.where(
-            HoneypotEvent.honeypot.has(Honeypot.companies.any(Company.id.in_(company_ids)))
-        )
-    if honeypot_id is not None:
-        query = query.where(HoneypotEvent.honeypot_id == honeypot_id)
-    if event_type.strip():
-        query = query.where(HoneypotEvent.event_type == event_type.strip())
-    if source.strip():
-        query = query.where(HoneypotEvent.source == source.strip())
-    since_dt = _parse_iso(since)
-    if since_dt is not None:
-        query = query.where(HoneypotEvent.occurred_at >= since_dt)
-    until_dt = _parse_iso(until)
-    if until_dt is not None:
-        query = query.where(HoneypotEvent.occurred_at <= until_dt)
-    return query
 
 
 def _event_to_dict(event: HoneypotEvent) -> dict[str, Any]:
@@ -136,28 +95,26 @@ async def list_events_api(
     honeypot_id: uuid.UUID | None = None,
     event_type: str = "",
     source: str = "",
+    src_ip: str = "",
+    country: str = "",
     since: str = "",
     until: str = "",
     page: int = 1,
 ) -> dict[str, object]:
+    """Events the token's account may see, newest first, 50 per page.
+    `src_ip` matches a part of the source address, `country` an ISO
+    3166-1 alpha-2 code; `since`/`until` are ISO 8601."""
     page = max(page, 1)
-    query = _apply_filters(
-        select(HoneypotEvent),
-        user,
+    filters = EventFilters(
         honeypot_id=honeypot_id,
         event_type=event_type,
         source=source,
-        since=since,
-        until=until,
+        src_ip=src_ip,
+        country=country,
+        since=parse_time(since),
+        until=parse_time(until),
     )
-
-    offset = (page - 1) * _PAGE_SIZE
-    result = await db.execute(
-        query.order_by(HoneypotEvent.occurred_at.desc()).offset(offset).limit(_PAGE_SIZE + 1)
-    )
-    events = list(result.scalars().all())
-    has_older = len(events) > _PAGE_SIZE
-    events = events[:_PAGE_SIZE]
+    events, has_older = await page_of_events(db, user, filters, page)
     return {
         "events": [_event_to_dict(e) for e in events],
         "page": page,
@@ -172,6 +129,8 @@ async def export_events_api(
     honeypot_id: uuid.UUID | None = None,
     event_type: str = "",
     source: str = "",
+    src_ip: str = "",
+    country: str = "",
     since: str = "",
     until: str = "",
     format: str = "csv",
@@ -180,15 +139,24 @@ async def export_events_api(
     (same tradeoff `app/web/routes/audit.py`'s export makes: fine for an
     infrequent, filtered, script-triggered export; could be slow
     unfiltered on a very active fleet)."""
-    query = _apply_filters(
-        select(HoneypotEvent),
-        user,
+    filters = EventFilters(
         honeypot_id=honeypot_id,
         event_type=event_type,
         source=source,
-        since=since,
-        until=until,
+        src_ip=src_ip,
+        country=country,
+        since=parse_time(since),
+        until=parse_time(until),
     )
+    return await export_response(db, user, filters, format)
+
+
+async def export_response(
+    db: AsyncSession, user: User, filters: EventFilters, format: str
+) -> Response:
+    """The export itself — shared with the web Events page's export
+    links, which pass the filters of the page they are on."""
+    query = apply_filters(select(HoneypotEvent), user, filters)
     result = await db.execute(query.order_by(HoneypotEvent.occurred_at.asc()))
     events = list(result.scalars().all())
 

@@ -34,6 +34,8 @@ playwright_api = pytest.importorskip("playwright.sync_api")
 PAGES = [
     "/dashboard",
     "/honeypots",
+    "/events",
+    "/events?src_ip=203.0.113.",
     "/map",
     "/account/notifications",
     "/account/notifications/history",

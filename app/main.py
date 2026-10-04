@@ -45,6 +45,7 @@ from app.web.routes import (
     branding,
     companies,
     dashboard,
+    events,
     honeypots,
     impersonation,
     inform,
@@ -290,6 +291,7 @@ def create_app() -> FastAPI:
     app.include_router(dashboard.router)
     app.include_router(map_routes.router)
     app.include_router(honeypots.router)
+    app.include_router(events.router)
     app.include_router(companies.router)
     app.include_router(initialize.router)
     app.include_router(maintenance.router)
