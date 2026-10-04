@@ -119,8 +119,9 @@ async def page_of_events(
 async def event_types_seen(db: AsyncSession, user: User) -> list[str]:
     """Every event type among the events `user` may see — the choices of
     the Events page's type filter."""
+    visible = apply_filters(select(HoneypotEvent), user, EventFilters())
     result = await db.execute(
-        apply_filters(select(HoneypotEvent.event_type), user, EventFilters())
+        visible.with_only_columns(HoneypotEvent.event_type, maintain_column_froms=True)
         .distinct()
         .order_by(HoneypotEvent.event_type)
     )
