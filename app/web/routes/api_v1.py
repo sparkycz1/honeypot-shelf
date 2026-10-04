@@ -66,6 +66,7 @@ from sqlalchemy.orm import selectinload
 from app.audit import log_event
 from app.auth.dependencies import get_api_token_user, require_api_superadmin, require_api_write
 from app.auth.scope import (
+    can_write_honeypot,
     companies_visible_to,
     has_company_access,
     honeypots_visible_to,
@@ -81,9 +82,11 @@ from app.db.models.honeypot_update_run import HoneypotUpdateRun, UpdateRunStatus
 from app.db.models.pending_honeypot import PendingHoneypot
 from app.db.models.user import User
 from app.db.session import get_db
+from app.schemas.acknowledgement import AcknowledgeRequest
 from app.schemas.company import CompanyCreate
 from app.schemas.honeypot import HoneypotCreate, HoneypotUpdate
 from app.schemas.honeypot_config import HoneypotConfigExport
+from app.services import acknowledgements
 from app.services.honeypot_actions import (
     send_power_to_honeypots,
     trigger_check_updates,
@@ -167,6 +170,7 @@ def _honeypot_to_dict(honeypot: Honeypot) -> dict[str, object]:
         "tags": [tag.name for tag in honeypot.tags],
         "is_active": honeypot.is_active,
         "is_reachable": honeypot.is_reachable,
+        "acknowledgement": acknowledgements.as_dict(honeypot),
         "last_ping_at": _isoformat(honeypot.last_ping_at),
         "host_key_fingerprint": honeypot.host_key_fingerprint,
         "os_version": honeypot.os_version,
@@ -1755,3 +1759,62 @@ async def update_batch_detail_api(
     if not runs:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found.")
     return {"batch_id": str(batch_id), "runs": [_update_run_to_dict(r) for r in runs]}
+
+
+@router.post("/honeypots/{honeypot_id}/acknowledge", dependencies=[_manage_honeypots])
+async def acknowledge_honeypot_api(
+    payload: AcknowledgeRequest,
+    request: Request,
+    honeypot_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_token_user),
+) -> dict[str, object]:
+    """Acknowledge a problem on a honeypot: its alert and "unavailable"
+    notifications are withheld until it is reachable again, `hours` pass or
+    the acknowledgement is deleted — see `app.services.acknowledgements`."""
+    honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
+    if not can_write_honeypot(user, honeypot):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Read-only access.")
+    acknowledgements.acknowledge(
+        honeypot, by=user.username, note=payload.note, hours=payload.hours
+    )
+    await db.commit()
+    await log_event(
+        db,
+        request=request,
+        action="honeypot.acknowledge",
+        summary=f'Acknowledged a problem on "{honeypot.name}" (REST API)',
+        target_type="honeypot",
+        target_id=honeypot.id,
+        target_label=honeypot.name,
+        details={"hours": payload.hours, "note": honeypot.acknowledged_note},
+    )
+    return {"acknowledgement": acknowledgements.as_dict(honeypot)}
+
+
+@router.delete(
+    "/honeypots/{honeypot_id}/acknowledge",
+    dependencies=[_manage_honeypots],
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def clear_honeypot_acknowledgement_api(
+    request: Request,
+    honeypot_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_token_user),
+) -> Response:
+    honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
+    if not can_write_honeypot(user, honeypot):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Read-only access.")
+    acknowledgements.clear(honeypot)
+    await db.commit()
+    await log_event(
+        db,
+        request=request,
+        action="honeypot.acknowledge.clear",
+        summary=f'Cleared the acknowledgement on "{honeypot.name}" (REST API)',
+        target_type="honeypot",
+        target_id=honeypot.id,
+        target_label=honeypot.name,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

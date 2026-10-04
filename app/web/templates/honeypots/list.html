@@ -5,6 +5,7 @@
 
 {% block main_class %}container-wide{% endblock %}
 
+{% from "partials/acknowledgement.html" import ack_badge with context %}
 {% macro status_badge(request, honeypot) %}
   {% if honeypot.is_reachable is none %}
     <span class="badge badge-warn">{{ t(request, 'honeypots.list.status_unknown') }}</span>
@@ -13,6 +14,7 @@
   {% else %}
     <span class="badge badge-error">{{ t(request, 'honeypots.list.status_offline') }}</span>
   {% endif %}
+  {{ ack_badge(request, honeypot) }}
 {% endmacro %}
 
 {% macro host_key_badge(request, honeypot) %}

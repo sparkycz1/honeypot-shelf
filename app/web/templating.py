@@ -22,6 +22,7 @@ from app.core.config import get_settings
 from app.core.version import APP_VERSION, get_git_commit
 from app.i18n import DEFAULT_LOCALE_CODE, get_locale
 from app.i18n import translate as _translate
+from app.services import acknowledgements
 from app.services.geoip_display import country_flag
 from app.services.opencanary_logtypes import localized_logtype_label, logtype_label
 from app.web import branding, charts
@@ -90,6 +91,8 @@ def _chart(*args: Any, **kwargs: Any) -> charts.Chart:
 
 templates.env.globals["chart"] = _chart
 templates.env.globals["chart_palette"] = charts.PALETTE
+templates.env.globals["ack_active"] = acknowledgements.is_active
+templates.env.globals["ack_durations"] = acknowledgements.DURATION_CHOICES
 templates.env.globals["noise_interfaces"] = charts.noise_interfaces
 templates.env.filters["chart_value"] = charts.format_value
 templates.env.filters["bytes"] = charts.format_bytes
