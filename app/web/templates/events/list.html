@@ -7,7 +7,7 @@
   <div class="page-header">
     <h1>{{ t(request, "nav.events") }}</h1>
   </div>
-  <p class="hint">{{ t(request, "events.intro") }}</p>
+  <p class="hint">{{ t(request, "events.intro") }} <a href="/events/ignored">{{ t(request, "events.ignored.title") }}</a></p>
 
   <form method="get" action="/events" class="search-form">
     <input type="search" name="src_ip" value="{{ query.src_ip or '' }}" maxlength="64"
@@ -34,6 +34,10 @@
       {{ t(request, "events.filter.until") }}
       <input type="datetime-local" name="until" value="{{ filters.until | local_input if filters.until else '' }}">
     </label>
+    <label class="search-form-label">
+      <input type="checkbox" name="include_ignored" value="1" {{ 'checked' if filters.include_ignored else '' }}>
+      {{ t(request, "events.filter.include_ignored") }}
+    </label>
     <button type="submit" class="button">{{ t(request, "events.filter.apply") }}</button>
     {% if filters.any %}
       <a class="button button-secondary" href="/events">{{ t(request, "events.filter.clear") }}</a>
@@ -59,7 +63,10 @@
             <tr>
               <td class="cell-nowrap"><a href="/events/{{ event.id }}" title="{{ t(request, 'events.detail.open') }}">{{ event.occurred_at | local_time('%Y-%m-%d %H:%M:%S %Z') }}</a></td>
               <td><a href="/honeypots/{{ event.honeypot_id }}/status">{{ event.honeypot.name }}</a></td>
-              <td><a class="badge" href="/events?event_type={{ event.event_type | urlencode }}">{{ label_of(event.event_type) }}</a></td>
+              <td>
+                <a class="badge" href="/events?event_type={{ event.event_type | urlencode }}">{{ label_of(event.event_type) }}</a>
+                {% if event.ignored %}<span class="badge badge-warn">{{ t(request, "events.ignored.badge") }}</span>{% endif %}
+              </td>
               <td>
                 {% if event.src_ip %}
                   <a href="/events/source/{{ event.src_ip | urlencode }}">{{ event.src_ip }}</a>{% if event.src_port %}:{{ event.src_port }}{% endif %}

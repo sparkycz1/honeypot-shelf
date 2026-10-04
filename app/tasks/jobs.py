@@ -57,7 +57,7 @@ from app.db.models.honeypot_update_run import HoneypotUpdateRun, UpdateRunStatus
 from app.db.models.notification_log import NotificationLog
 from app.db.models.notification_rule import NotificationRule, NotificationScope
 from app.db.models.notification_rule_state import NotificationRuleState
-from app.services import acknowledgements, auto_backup, disk_forecast
+from app.services import acknowledgements, auto_backup, disk_forecast, ignored_sources
 from app.services.company_stats import compute_company_stats
 from app.services.geoip import GeoipDownloadError
 from app.services.geoip import get_reader as get_geoip_reader
@@ -1645,6 +1645,13 @@ async def _poll_honeypot_canary_log(honeypot_id: str) -> dict[str, Any]:
             if not is_internal_logtype(payload.get("logtype"))
         ]
         new_rows = [build_event(honeypot, payload) for payload in alert_events]
+        # Sources on the ignore list are stored but stay quiet — no
+        # notification, no syslog forward, no part in any count.
+        await session.refresh(honeypot, attribute_names=["companies"])
+        ignored_networks = await ignored_sources.networks_for(session, honeypot)
+        for row in new_rows:
+            row.ignored = ignored_sources.matches(row.src_ip, ignored_networks)
+        loud_rows = [row for row in new_rows if not row.ignored]
         # Best-effort, resolved once at ingestion time — see
         # app.services.geoip's module docstring. A reader shared across
         # this whole batch rather than one `resolve()` call per row: no
@@ -1679,15 +1686,15 @@ async def _poll_honeypot_canary_log(honeypot_id: str) -> dict[str, Any]:
             honeypot.last_seen_ip = honeypot.ip_address
         await session.commit()
         await publish_honeypot_event(honeypot_id, KIND_ACTIVITY)
-        if new_rows:
+        if loud_rows:
             # Dashboard/Map only care once there's actually something new
             # to show — no point waking every viewer's socket on a poll
             # that ingested nothing.
             await publish_fleet_event(KIND_ACTIVITY)
-        for row in new_rows:
+        for row in loud_rows:
             await forward_honeypot_event_to_syslog(session, honeypot, row)
 
-        if new_rows:
+        if loud_rows:
             # Not gated on `app_settings.smtp_enabled` here — a webhook
             # rule fires regardless (see `notify_alert`); each rule's own
             # delivery channel decides whether SMTP being off should skip it.
@@ -1697,7 +1704,7 @@ async def _poll_honeypot_canary_log(honeypot_id: str) -> dict[str, Any]:
             )
             rules = rules_by_honeypot.get(honeypot.id, [])
             if rules:
-                for row in new_rows:
+                for row in loud_rows:
                     await notify_alert(
                         app_settings,
                         rules=rules,
@@ -1747,6 +1754,21 @@ async def _poll_all_honeypot_canary_logs() -> None:
 @celery_app.task(name="app.tasks.jobs.poll_all_honeypot_canary_logs")
 def poll_all_honeypot_canary_logs() -> None:
     asyncio.run(_poll_all_honeypot_canary_logs())
+
+
+async def _reapply_ignored_sources() -> dict[str, Any]:
+    """After the ignore list changed: mark or unmark the events already
+    stored (`app.services.ignored_sources.reapply`)."""
+    async with db_session.AsyncSessionLocal() as session:
+        changed = await ignored_sources.reapply(session)
+    if changed:
+        await publish_fleet_event(KIND_ACTIVITY)
+    return {"ok": True, "changed": changed}
+
+
+@celery_app.task(name="app.tasks.jobs.reapply_ignored_sources")
+def reapply_ignored_sources() -> dict[str, Any]:
+    return asyncio.run(_reapply_ignored_sources())
 
 
 _EVENT_PURGE_ACTOR = "retention policy (automatic)"
@@ -2358,6 +2380,7 @@ async def _record_company_snapshots() -> int:
                 .where(
                     HoneypotEvent.honeypot.has(Honeypot.companies.any(Company.id == company.id)),
                     func.date(HoneypotEvent.occurred_at) == today,
+                    HoneypotEvent.ignored.is_(False),
                 )
             )
             event_count = event_count_result.scalar_one()

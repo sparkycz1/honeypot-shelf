@@ -1741,6 +1741,27 @@
     "settings.checks.events.hint": "Jak dlouho se uchovávají události z OpenCanary. Starší se jednou denně mažou; denní součty pro trend na Dashboardu zůstávají.",
     "settings.checks.events.retention_label": "Uchovávat události (dní)",
     "settings.checks.events.retention_hint": "Prázdné pole použije výchozí hodnotu z konfigurace serveru (EVENT_RETENTION_DAYS, nyní {days} dní). Nejméně 1 den.",
-    "audit.action_label.settings.event_retention.update": "Změna doby uchování událostí"
+    "audit.action_label.settings.event_retention.update": "Změna doby uchování událostí",
+    "events.filter.include_ignored": "Včetně ignorovaných",
+    "events.ignored.title": "Ignorované zdroje",
+    "events.ignored.intro": "Adresy, jejichž události jsou očekávané: váš skener zranitelností, monitoring, vlastní pracovní stanice. Jejich události se dál ukládají, ale neposílají upozornění a nezapočítávají se do Dashboardu, grafů Aktivity, mapy ani denních součtů. Zobrazíte je volbou „Včetně ignorovaných“ na stránce Události.",
+    "events.ignored.add_heading": "Přidat adresu",
+    "events.ignored.network": "Adresa nebo síť",
+    "events.ignored.network_hint": "Jedna adresa (203.0.113.7) nebo síť v zápisu CIDR (203.0.113.0/24). Nic širšího než /8, u IPv6 /32.",
+    "events.ignored.applies_to": "Platí pro",
+    "events.ignored.every_honeypot": "Všechny honeypoty",
+    "events.ignored.note": "Poznámka",
+    "events.ignored.note_placeholder": "Co je to za adresu",
+    "events.ignored.add": "Přidat mezi ignorované",
+    "events.ignored.added": "Přidáno",
+    "events.ignored.remove": "Odebrat",
+    "events.ignored.remove_confirm": "Odebrat {network} ze seznamu ignorovaných? Její události se začnou znovu počítat.",
+    "events.ignored.none": "Nic se neignoruje.",
+    "events.ignored.duplicate": "{network} už na tomto seznamu je.",
+    "events.ignored.badge": "ignorováno",
+    "events.ignored.ignore_this": "Ignorovat tuto adresu",
+    "events.ignored.on_list": "Tato adresa je na seznamu ignorovaných: její události neposílají upozornění a nezapočítávají se.",
+    "audit.action_label.event.ignore.add": "Zdroj přidán mezi ignorované",
+    "audit.action_label.event.ignore.remove": "Zdroj odebrán z ignorovaných"
   }
 }

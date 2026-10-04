@@ -38,6 +38,8 @@ class EventFilters:
     country: str = ""
     since: datetime | None = None
     until: datetime | None = None
+    # Events from a source on the ignore list are left out unless asked for.
+    include_ignored: bool = False
 
     @property
     def any(self) -> bool:
@@ -49,6 +51,7 @@ class EventFilters:
             or self.country
             or self.since
             or self.until
+            or self.include_ignored
         )
 
 
@@ -99,6 +102,8 @@ def apply_filters[S: Select[HoneypotEvent]](query: S, user: User, filters: Event
         query = query.where(HoneypotEvent.occurred_at >= filters.since)
     if filters.until is not None:
         query = query.where(HoneypotEvent.occurred_at <= filters.until)
+    if not filters.include_ignored:
+        query = query.where(HoneypotEvent.ignored.is_(False))
     return query
 
 
@@ -133,7 +138,7 @@ async def get_event(db: AsyncSession, user: User, event_id: uuid.UUID) -> Honeyp
     """One event, or None when it does not exist or belongs to a company
     the account may not see (the caller answers 404 either way)."""
     result = await db.execute(
-        apply_filters(select(HoneypotEvent), user, EventFilters()).where(
+        apply_filters(select(HoneypotEvent), user, EventFilters(include_ignored=True)).where(
             HoneypotEvent.id == event_id
         )
     )
@@ -199,7 +204,7 @@ def _text(value: object) -> str:
 async def source_summary(db: AsyncSession, user: User, src_ip: str) -> SourceSummary | None:
     """None when the account can see no event from `src_ip` (exact match)."""
     src_ip = src_ip.strip()
-    visible = apply_filters(select(HoneypotEvent), user, EventFilters()).where(
+    visible = apply_filters(select(HoneypotEvent), user, EventFilters(include_ignored=True)).where(
         HoneypotEvent.src_ip == src_ip
     )
     total, first_seen, last_seen = (

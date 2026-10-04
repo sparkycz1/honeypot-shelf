@@ -8,10 +8,16 @@
   <div class="page-header">
     <h1>{{ source.src_ip }}</h1>
     <div class="page-header-actions">
-      <a class="button button-secondary" href="/events?src_ip={{ source.src_ip | urlencode }}">{{ t(request, "events.source.show_in_list") }}</a>
-      <a class="button button-secondary" href="/events/export?format=csv&src_ip={{ source.src_ip | urlencode }}">{{ t(request, "events.export_csv") }}</a>
+      <a class="button button-secondary" href="/events?include_ignored=1&src_ip={{ source.src_ip | urlencode }}">{{ t(request, "events.source.show_in_list") }}</a>
+      <a class="button button-secondary" href="/events/export?format=csv&include_ignored=1&src_ip={{ source.src_ip | urlencode }}">{{ t(request, "events.export_csv") }}</a>
+      {% if can_ignore and not on_ignore_list %}
+        <a class="button button-secondary" href="/events/ignored?network={{ source.src_ip | urlencode }}">{{ t(request, "events.ignored.ignore_this") }}</a>
+      {% endif %}
     </div>
   </div>
+  {% if on_ignore_list %}
+    <div class="alert alert-warn"><p>{{ t(request, "events.ignored.on_list") }} <a href="/events/ignored">{{ t(request, "events.ignored.title") }}</a></p></div>
+  {% endif %}
 
   <section class="panel">
     <dl class="detail-list">
