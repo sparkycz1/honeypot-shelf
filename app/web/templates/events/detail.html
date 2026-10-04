@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}{{ label }} — {{ t(request, "nav.events") }} — Honeypot Shelf{% endblock %}
+
+{% block content %}
+  <p class="hint"><a href="/events">← {{ t(request, "nav.events") }}</a></p>
+  <div class="page-header">
+    <h1>{{ label }}</h1>
+  </div>
+
+  <section class="panel">
+    <dl class="detail-list">
+      <dt>{{ t(request, "events.column.time") }}</dt>
+      <dd>{{ event.occurred_at | local_time('%Y-%m-%d %H:%M:%S %Z') }}</dd>
+      <dt>{{ t(request, "events.column.honeypot") }}</dt>
+      <dd><a href="/honeypots/{{ event.honeypot_id }}/status">{{ event.honeypot.name }}</a></dd>
+      <dt>{{ t(request, "events.column.type") }}</dt>
+      <dd>
+        <span class="badge">{{ label }}</span> <code>{{ event.event_type }}</code>
+        · <a href="/events?event_type={{ event.event_type | urlencode }}">{{ t(request, "events.detail.same_type") }}</a>
+      </dd>
+      <dt>{{ t(request, "events.column.source") }}</dt>
+      <dd>
+        {% if event.src_ip %}
+          <code>{{ event.src_ip }}</code>{% if event.src_port %}:{{ event.src_port }}{% endif %}
+          {% if event.src_country_code %}
+            <span class="hint">{{ geoip_flag(event.src_country_code) }} {{ event.src_country_name or event.src_country_code }}{% if event.src_city_name %}, {{ event.src_city_name }}{% endif %}</span>
+          {% endif %}
+          · <a href="/events?src_ip={{ event.src_ip | urlencode }}">{{ t(request, "events.detail.same_source") }}</a>
+        {% else %}—{% endif %}
+      </dd>
+      <dt>{{ t(request, "events.column.port") }}</dt>
+      <dd>{{ event.dst_port if event.dst_port is not none else '—' }}</dd>
+      <dt>{{ t(request, "events.detail.received") }}</dt>
+      <dd>{{ event.received_at | local_time('%Y-%m-%d %H:%M:%S %Z') }}</dd>
+    </dl>
+  </section>
+
+  <section class="panel">
+    <h2>{{ t(request, "events.detail.reported_heading") }}</h2>
+    <p class="hint">{{ t(request, "events.detail.reported_hint") }}</p>
+    {% if reported %}
+      <div class="monitoring-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>{{ t(request, "events.detail.field") }}</th>
+              <th>{{ t(request, "events.detail.value") }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for name, value in reported %}
+              <tr>
+                <td class="cell-nowrap"><code>{{ name }}</code></td>
+                <td class="cell-wrap">{{ value }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="hint">{{ t(request, "events.detail.nothing_reported") }}</p>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <h2>{{ t(request, "events.detail.raw_heading") }}</h2>
+    <pre class="log-viewer"><code>{{ raw_json }}</code></pre>
+  </section>
+{% endblock %}

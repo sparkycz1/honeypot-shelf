@@ -177,6 +177,7 @@ def test_honeypot_tabs_load_without_browser_errors(page: Any) -> None:
 
 def test_detail_pages_load_without_browser_errors(page: Any) -> None:
     _open(page, _first_href(page, "/companies", "/companies/"))
+    _open(page, _first_href(page, "/events", "/events/"))
 
 
 def test_slash_focuses_the_header_search(page: Any) -> None:

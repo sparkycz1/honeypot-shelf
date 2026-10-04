@@ -11,6 +11,7 @@ one definition of what "Last 24 hours" means across both tabs.
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -129,6 +130,7 @@ def build_activity_history(
 
 @dataclass
 class RecentActivityEvent:
+    id: uuid.UUID
     occurred_at: datetime
     label: str
     module: str | None
@@ -142,6 +144,7 @@ def summarize_recent_events(
 ) -> list[RecentActivityEvent]:
     return [
         RecentActivityEvent(
+            id=event.id,
             occurred_at=event.occurred_at,
             label=label_of(event.event_type),
             module=module_key(event.event_type),

@@ -5,6 +5,7 @@ accept the same filters and both stay inside the account's companies.
 
 from __future__ import annotations
 
+import json
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -126,3 +127,37 @@ async def event_types_seen(db: AsyncSession, user: User) -> list[str]:
         .order_by(HoneypotEvent.event_type)
     )
     return [value for value in result.scalars().all() if value]
+
+
+async def get_event(db: AsyncSession, user: User, event_id: uuid.UUID) -> HoneypotEvent | None:
+    """One event, or None when it does not exist or belongs to a company
+    the account may not see (the caller answers 404 either way)."""
+    result = await db.execute(
+        apply_filters(select(HoneypotEvent), user, EventFilters()).where(
+            HoneypotEvent.id == event_id
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+# Longest value shown in the "what was reported" table; the full payload is
+# on the page as JSON anyway.
+_MAX_VALUE_LENGTH = 2000
+
+
+def reported_fields(event: HoneypotEvent) -> list[tuple[str, str]]:
+    """What OpenCanary recorded about the attempt — the `logdata` part of
+    the payload (the user name and password tried, the client version, the
+    requested path...) as `(name, value)` pairs in a stable order. Values
+    come from whoever connected to the honeypot: text only, never trusted."""
+    logdata = event.raw.get("logdata") if isinstance(event.raw, dict) else None
+    if not isinstance(logdata, dict):
+        return []
+    rows: list[tuple[str, str]] = []
+    for key in sorted(logdata, key=str):
+        value = logdata[key]
+        if value is None or value == "":
+            continue
+        text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+        rows.append((str(key)[:100], text[:_MAX_VALUE_LENGTH]))
+    return rows
