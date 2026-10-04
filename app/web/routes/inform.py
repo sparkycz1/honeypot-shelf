@@ -30,7 +30,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_event
-from app.auth.api_tokens import get_user_for_api_token
+from app.auth.api_tokens import get_valid_api_token
 from app.core.config import get_settings
 from app.db.models.audit_log import AuditOutcome
 from app.db.models.pending_honeypot import PendingHoneypot
@@ -47,8 +47,15 @@ async def _verify_inform_token(request: Request, db: AsyncSession = Depends(get_
         return
 
     if provided.startswith("Bearer "):
-        user = await get_user_for_api_token(db, provided.removeprefix("Bearer ").strip())
-        if user is not None and user.can_write():
+        token = await get_valid_api_token(db, provided.removeprefix("Bearer ").strip())
+        # A read-only token can't add a honeypot, and a company-limited one
+        # can't either: a new honeypot belongs to no company yet.
+        if (
+            token is not None
+            and not token.read_only
+            and token.company_ids is None
+            and token.user.can_write()
+        ):
             return
 
     await log_event(

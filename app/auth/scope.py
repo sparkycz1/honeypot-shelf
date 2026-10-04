@@ -53,7 +53,7 @@ from app.db.models.user import User
 
 
 def has_company_access(user: User, company_id: uuid.UUID, *, write: bool = False) -> bool:
-    if user.is_superadmin:
+    if user.sees_every_company:
         return True
     if write:
         return user.can_write_company(company_id)
@@ -73,7 +73,7 @@ def visible_company_ids(user: User) -> set[uuid.UUID] | None:
     than trying to express "no filter" as a finite set). An empty set for
     a non-superadmin with zero memberships is a real, valid result — it
     means "sees nothing," not "unscoped"."""
-    return None if user.is_superadmin else user.company_ids()
+    return None if user.sees_every_company else user.company_ids()
 
 
 def honeypots_visible_to(user: User) -> Select[Honeypot]:
@@ -106,7 +106,7 @@ async def count_visible_honeypots(db: AsyncSession, user: User) -> int:
 
 
 def can_see_honeypot(user: User, honeypot: Honeypot) -> bool:
-    if user.is_superadmin:
+    if user.sees_every_company:
         return True
     return bool(user.company_ids() & {c.id for c in honeypot.companies})
 
@@ -115,7 +115,7 @@ def can_write_honeypot(user: User, honeypot: Honeypot) -> bool:
     """`True` if the user can write this honeypot through **any** of the
     companies it's attached to — a honeypot shared across companies is
     manageable by anyone with `READ_WRITE` on at least one of them."""
-    if user.is_superadmin:
+    if user.sees_every_company:
         return True
     return any(user.can_write_company(c.id) for c in honeypot.companies)
 
@@ -125,7 +125,7 @@ def filter_honeypots(user: User, honeypots: Iterable[Honeypot]) -> list[Honeypot
     for any endpoint acting on an ad-hoc, client-submitted selection of
     honeypot ids: out-of-scope ids are dropped silently rather than
     rejected loudly, for the same 404-not-403 reasoning as detail routes."""
-    if user.is_superadmin:
+    if user.sees_every_company:
         return list(honeypots)
     my_companies = user.company_ids()
     return [h for h in honeypots if my_companies & {c.id for c in h.companies}]

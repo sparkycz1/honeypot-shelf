@@ -16,7 +16,7 @@ import uuid
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.api_tokens import get_user_for_api_token
+from app.auth.api_tokens import get_valid_api_token
 from app.db.models.user import User
 from app.db.session import get_db
 
@@ -53,6 +53,9 @@ def require_superadmin(user: User = Depends(get_current_user)) -> User:
     return user
 
 
+_READ_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
 async def get_api_token_user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
     """Like `get_current_user`, but for routes under `/api/` — those are on
     `app.auth.middleware`'s public-prefix allowlist (no session cookie), so
@@ -62,11 +65,22 @@ async def get_api_token_user(request: Request, db: AsyncSession = Depends(get_db
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token.")
-    user = await get_user_for_api_token(db, auth_header.removeprefix("Bearer ").strip())
-    if user is None:
+    token = await get_valid_api_token(db, auth_header.removeprefix("Bearer ").strip())
+    if token is None:
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED, detail="Invalid, expired, or revoked API token."
         )
+    user = token.user
+    # The token's own limits, on top of what the account may do.
+    if token.read_only and request.method not in _READ_METHODS:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            detail="This API token is read-only.",
+        )
+    # Read by `User.company_ids`/`can_write_company` and `app.auth.scope`
+    # for the rest of this request (the instance belongs to this request's
+    # session only).
+    user.token_company_scope = token.company_scope
     # `app.auth.middleware` never sets `request.state.user` for `/api/`
     # requests (they're on its public-prefix allowlist, authenticated here
     # instead of by session cookie) — set it ourselves so `app.audit.
@@ -89,6 +103,13 @@ async def require_api_superadmin(user: User = Depends(get_api_token_user)) -> Us
     if not user.is_superadmin:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN, detail="This API token's account isn't a superadmin."
+        )
+    # Superadmin-only endpoints (users, settings, backup, audit) reach
+    # across every company — not something a company-limited token may do.
+    if user.token_company_scope is not None:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            detail="This API token is limited to some companies.",
         )
     return user
 
