@@ -116,7 +116,7 @@
               <tr>
                 <td class="cell-nowrap"><a href="/events/{{ event.id }}" title="{{ t(request, 'events.detail.open') }}">{{ event.occurred_at | local_time('%Y-%m-%d %H:%M:%S %Z') }}</a></td>
                 <td><span class="badge">{{ event.label }}</span></td>
-                <td>{{ event.src_ip or '—' }}{% if event.src_port %}:{{ event.src_port }}{% endif %}</td>
+                <td>{% if event.src_ip %}<a href="/events/source/{{ event.src_ip | urlencode }}">{{ event.src_ip }}</a>{% else %}—{% endif %}{% if event.src_port %}:{{ event.src_port }}{% endif %}</td>
                 <td>
                   {{ t(request, "honeypots.activity.source_ssh_poll") if event.source == 'ssh_poll' else t(request, "honeypots.activity.source_push") }}
                 </td>

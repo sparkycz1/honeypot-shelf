@@ -1721,6 +1721,21 @@
     "events.detail.field": "Field",
     "events.detail.value": "Value",
     "events.detail.nothing_reported": "OpenCanary recorded no further details for this event.",
-    "events.detail.raw_heading": "Full record"
+    "events.detail.raw_heading": "Full record",
+    "events.source.show_in_list": "Show in the event list",
+    "events.source.total": "Events",
+    "events.source.first_seen": "First seen",
+    "events.source.last_seen": "Last seen",
+    "events.source.location": "Location",
+    "events.source.honeypots": "Honeypots it reached",
+    "events.source.types": "What it did",
+    "events.source.count": "Events",
+    "events.source.credentials": "Credentials it tried",
+    "events.source.credentials_hint": "User names and passwords this address sent, most tried first.",
+    "events.source.sampled": "Counted over its newest 1000 events.",
+    "events.source.username": "User name",
+    "events.source.password": "Password",
+    "events.source.no_credentials": "No login attempts recorded from this address.",
+    "events.source.recent": "Latest events"
   }
 }

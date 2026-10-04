@@ -31,6 +31,7 @@ from app.services.event_search import (
     page_of_events,
     parse_uuid,
     reported_fields,
+    source_summary,
 )
 from app.services.opencanary_logtypes import localized_logtype_label
 from app.web.routes.api_v1_events import export_response
@@ -145,6 +146,27 @@ async def export_events(
         },
     )
     return response
+
+
+@router.get("/source/{src_ip:path}")
+async def event_source(
+    request: Request,
+    src_ip: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Response:
+    """Everything one source address did on the honeypots the account may
+    see: when, where, what kinds of events, which credentials it tried."""
+    summary = await source_summary(db, user, src_ip[:64])
+    if summary is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No such source.")
+
+    def label_of(logtype: object) -> str:
+        return localized_logtype_label(lambda key: t(request, key), logtype)
+
+    return templates.TemplateResponse(
+        request, "events/source.html", {"source": summary, "label_of": label_of}
+    )
 
 
 @router.get("/{event_id}")

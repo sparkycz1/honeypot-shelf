@@ -1721,6 +1721,21 @@
     "events.detail.field": "Pole",
     "events.detail.value": "Hodnota",
     "events.detail.nothing_reported": "K této události OpenCanary další podrobnosti nezaznamenal.",
-    "events.detail.raw_heading": "Celý záznam"
+    "events.detail.raw_heading": "Celý záznam",
+    "events.source.show_in_list": "Zobrazit v seznamu událostí",
+    "events.source.total": "Událostí",
+    "events.source.first_seen": "Poprvé viděno",
+    "events.source.last_seen": "Naposledy viděno",
+    "events.source.location": "Poloha",
+    "events.source.honeypots": "Zasažené honeypoty",
+    "events.source.types": "Co dělala",
+    "events.source.count": "Událostí",
+    "events.source.credentials": "Zkoušené přihlašovací údaje",
+    "events.source.credentials_hint": "Jména a hesla, která tato adresa poslala, od nejčastějších.",
+    "events.source.sampled": "Počítáno z jejích posledních 1000 událostí.",
+    "events.source.username": "Jméno",
+    "events.source.password": "Heslo",
+    "events.source.no_credentials": "Z této adresy nejsou zaznamenané žádné pokusy o přihlášení.",
+    "events.source.recent": "Poslední události"
   }
 }
