@@ -44,7 +44,7 @@ from app.core.app_settings import get_or_create_app_settings
 from app.core.config import get_settings
 from app.db import session as db_session
 from app.db.models.app_settings import AppSettings
-from app.db.models.audit_log import AuditLogEntry
+from app.db.models.audit_log import AuditLogEntry, AuditOutcome
 from app.db.models.company import Company
 from app.db.models.company_snapshot import CompanySnapshot
 from app.db.models.honeypot import AuthMethod, Honeypot
@@ -57,7 +57,7 @@ from app.db.models.honeypot_update_run import HoneypotUpdateRun, UpdateRunStatus
 from app.db.models.notification_log import NotificationLog
 from app.db.models.notification_rule import NotificationRule, NotificationScope
 from app.db.models.notification_rule_state import NotificationRuleState
-from app.services import disk_forecast
+from app.services import auto_backup, disk_forecast
 from app.services.company_stats import compute_company_stats
 from app.services.geoip import GeoipDownloadError
 from app.services.geoip import get_reader as get_geoip_reader
@@ -2519,6 +2519,51 @@ async def _purge_old_notification_logs() -> None:
 @celery_app.task(name="app.tasks.jobs.purge_old_notification_logs")
 def purge_old_notification_logs() -> None:
     asyncio.run(_purge_old_notification_logs())
+
+
+_AUTO_BACKUP_ACTOR = "Automatic backup"
+
+
+async def _run_due_app_backup(*, force: bool = False) -> dict[str, Any]:
+    """Write a scheduled full backup when one is due (`force`: now, for
+    "Back up now") — see `app.services.auto_backup`. A failure is recorded
+    on the settings row and in the audit log."""
+    async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
+        now = datetime.now(UTC)
+        if not force and not auto_backup.is_due(app_settings, now):
+            return {"ok": True, "skipped": True}
+        error: str | None = None
+        stored: auto_backup.StoredBackup | None = None
+        try:
+            stored = await auto_backup.run_backup(session, app_settings, now)
+        except Exception as exc:
+            logger.warning("Automatic backup failed", exc_info=True)
+            await session.rollback()
+            app_settings = await get_or_create_app_settings(session)
+            error = (str(exc) or exc.__class__.__name__)[:1000]
+        app_settings.auto_backup_last_at = now
+        app_settings.auto_backup_last_error = error
+        await session.commit()
+
+        await log_event(
+            session,
+            actor=_AUTO_BACKUP_ACTOR,
+            action="backup.auto.run",
+            summary=(
+                f"Automatic backup failed: {error}"
+                if error
+                else f"Automatic backup written: {stored.name if stored else ''}"
+            ),
+            outcome=AuditOutcome.FAILURE if error else AuditOutcome.SUCCESS,
+            details={"error": error} if error else {"file": stored.name if stored else None},
+        )
+        return {"ok": error is None, "error": error, "file": stored.name if stored else None}
+
+
+@celery_app.task(name="app.tasks.jobs.run_due_app_backup")
+def run_due_app_backup(force: bool = False) -> dict[str, Any]:
+    return asyncio.run(_run_due_app_backup(force=force))
 
 
 async def _refresh_geoip_database() -> dict[str, Any]:

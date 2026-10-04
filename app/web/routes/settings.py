@@ -12,7 +12,17 @@ import contextlib
 import shutil
 
 from celery.exceptions import TimeoutError as CeleryTimeoutError
-from fastapi import APIRouter, Depends, File, Form, Request, Response, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,7 +50,7 @@ from app.db.models.geoip_database import SINGLETON_ID as GEOIP_SINGLETON_ID
 from app.db.models.geoip_database import GeoipDatabase
 from app.db.models.honeypot import AuthMethod, Honeypot
 from app.db.session import get_db
-from app.services import full_backup, netbird, wireguard
+from app.services import auto_backup, full_backup, netbird, wireguard
 from app.services.syslog_transport import DEFAULT_SYSLOG_PORT, SyslogProtocol
 from app.ssh.identity import (
     activate_pending_identity,
@@ -48,7 +58,7 @@ from app.ssh.identity import (
     generate_pending_identity,
     get_or_create_identity,
 )
-from app.tasks.jobs import push_pending_ssh_key, refresh_geoip_database
+from app.tasks.jobs import push_pending_ssh_key, refresh_geoip_database, run_due_app_backup
 from app.web.templating import t, templates
 
 router = APIRouter(prefix="/settings", dependencies=[Depends(require_superadmin)])
@@ -115,6 +125,10 @@ async def _render_settings(
         )
         context["netbird_log"] = netbird.tail_log()
         context["wireguard_log"] = wireguard.tail_log()
+    if tab == "backup":
+        context["stored_backups"] = auto_backup.list_backups()
+        context["auto_backup_limits"] = auto_backup
+        context["notice"] = request.query_params.get("notice", "")
     if tab == "geoip" and "geoip_status" not in context:
         context["geoip_status"] = await db.get(GeoipDatabase, GEOIP_SINGLETON_ID)
     response = templates.TemplateResponse(request, "settings/index.html", context)
@@ -1345,3 +1359,126 @@ async def restore_full_backup(
     response = RedirectResponse(url="/login?restored=1", status_code=status.HTTP_303_SEE_OTHER)
     clear_session_cookie(response)
     return response
+
+
+# --- Settings -> Backup & restore: automatic backups
+# (app.services.auto_backup) ---
+
+_BACKUP_TAB = "/settings?tab=backup"
+
+
+def parse_auto_backup_numbers(interval_hours: str, keep: str) -> tuple[int, int]:
+    """The two numbers of the automatic-backup form, range-checked. Raises
+    ValueError with a message for the user."""
+    try:
+        interval, kept = int(interval_hours), int(keep)
+    except ValueError:
+        raise ValueError("The interval and the number of backups must be whole numbers.") from None
+    if not auto_backup.MIN_INTERVAL_HOURS <= interval <= auto_backup.MAX_INTERVAL_HOURS:
+        raise ValueError(
+            f"The interval must be {auto_backup.MIN_INTERVAL_HOURS} to "
+            f"{auto_backup.MAX_INTERVAL_HOURS} hours."
+        )
+    if not auto_backup.MIN_KEEP <= kept <= auto_backup.MAX_KEEP:
+        raise ValueError(
+            f"The number of backups to keep must be {auto_backup.MIN_KEEP} to "
+            f"{auto_backup.MAX_KEEP}."
+        )
+    return interval, kept
+
+
+@router.post("/backup/auto", dependencies=[Depends(verify_csrf)])
+async def save_auto_backup(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    enabled: str = Form(""),
+    interval_hours: str = Form("24"),
+    keep: str = Form("7"),
+    passphrase: str = Form(""),
+) -> Response:
+    app_settings = await get_or_create_app_settings(db)
+    try:
+        interval, kept = parse_auto_backup_numbers(interval_hours, keep)
+    except ValueError as exc:
+        return await _render_settings(request, db, [str(exc)], tab="backup")
+    if passphrase and len(passphrase) < full_backup.MIN_PASSPHRASE_LENGTH:
+        return await _render_settings(
+            request,
+            db,
+            [t(request, "backup.full.too_short", count=full_backup.MIN_PASSPHRASE_LENGTH)],
+            tab="backup",
+        )
+    if enabled and not passphrase and not app_settings.auto_backup_passphrase_encrypted:
+        return await _render_settings(
+            request, db, [t(request, "backup.auto.passphrase_needed")], tab="backup"
+        )
+    app_settings.auto_backup_enabled = bool(enabled)
+    app_settings.auto_backup_interval_hours = interval
+    app_settings.auto_backup_keep = kept
+    if passphrase:
+        app_settings.auto_backup_passphrase_encrypted = encrypt_secret(passphrase)
+    await db.commit()
+    await log_event(
+        db,
+        request=request,
+        action="backup.auto.update",
+        summary="Changed the automatic backup settings",
+        details={
+            "enabled": bool(enabled),
+            "interval_hours": interval,
+            "keep": kept,
+            "passphrase_changed": bool(passphrase),
+        },
+    )
+    return RedirectResponse(
+        url=f"{_BACKUP_TAB}&notice=saved", status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
+@router.post("/backup/auto/run", dependencies=[Depends(verify_csrf)])
+async def run_auto_backup_now(request: Request, db: AsyncSession = Depends(get_db)) -> Response:
+    """Queue a backup now; the page shows it once the worker has written it."""
+    app_settings = await get_or_create_app_settings(db)
+    if not app_settings.auto_backup_passphrase_encrypted:
+        return await _render_settings(
+            request, db, [t(request, "backup.auto.passphrase_needed")], tab="backup"
+        )
+    run_due_app_backup.delay(True)
+    return RedirectResponse(
+        url=f"{_BACKUP_TAB}&notice=started", status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
+@router.get("/backup/auto/files/{name}")
+async def download_stored_backup(
+    name: str, request: Request, db: AsyncSession = Depends(get_db)
+) -> Response:
+    path = auto_backup.backup_path(name)
+    if path is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No such backup.")
+    await log_event(
+        db,
+        request=request,
+        action="backup.auto.download",
+        summary=f"Downloaded the stored backup {name}",
+        details={"file": name},
+    )
+    return FileResponse(path, media_type="application/octet-stream", filename=name)
+
+
+@router.post("/backup/auto/files/{name}/delete", dependencies=[Depends(verify_csrf)])
+async def delete_stored_backup(
+    name: str, request: Request, db: AsyncSession = Depends(get_db)
+) -> Response:
+    if not auto_backup.delete_backup(name):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No such backup.")
+    await log_event(
+        db,
+        request=request,
+        action="backup.auto.delete",
+        summary=f"Deleted the stored backup {name}",
+        details={"file": name},
+    )
+    return RedirectResponse(
+        url=f"{_BACKUP_TAB}&notice=deleted", status_code=status.HTTP_303_SEE_OTHER
+    )

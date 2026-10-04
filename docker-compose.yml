@@ -139,11 +139,14 @@ services:
       # its own container should join this compose project's network
       # instead of going through the published port at all.
       - "${APP_BIND_ADDRESS:-0.0.0.0}:${APP_PORT:-8080}:8080"
-    # Uncomment to point LOGO_SOURCE/FAVICON_SOURCE (in .env) at a local
-    # file — e.g. LOGO_SOURCE=/app/branding/logo.svg — rather than a URL.
-    # See wiki/Installation.md#custom-logo--favicon.
-    # volumes:
-    #   - ./branding:/app/branding:ro
+    volumes:
+      # Automatic backups (Settings → Backup & restore): written by the
+      # worker, listed and served by web — both need the same volume.
+      - app_data:/app/data
+      # Uncomment to point LOGO_SOURCE/FAVICON_SOURCE (in .env) at a local
+      # file — e.g. LOGO_SOURCE=/app/branding/logo.svg — rather than a URL.
+      # See wiki/Installation.md#custom-logo--favicon.
+      # - ./branding:/app/branding:ro
     depends_on:
       db:
         condition: service_healthy
@@ -167,6 +170,8 @@ services:
     <<: *app-image
     command:
       ["celery", "-A", "app.tasks.celery_app", "worker", "--loglevel=info", "--concurrency=4"]
+    volumes:
+      - app_data:/app/data
     depends_on:
       db:
         condition: service_healthy
@@ -233,3 +238,4 @@ services:
 volumes:
   pg_data:
   redis_data:
+  app_data:

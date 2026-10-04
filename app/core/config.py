@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ipaddress
 from functools import lru_cache
+from pathlib import Path
 from urllib.parse import quote
 
 from pydantic import Field, SecretStr, field_validator
@@ -130,6 +131,9 @@ class Settings(BaseSettings):
     # housekeeping job purges them. Daily/company summary rollups are kept
     # indefinitely (see wiki/Architecture.md).
     event_retention_days: int = Field(default=90, alias="EVENT_RETENTION_DAYS")
+    # Files the web and worker containers share (the `app_data` volume,
+    # /app/data in the image): the automatic backups live in `backups/`.
+    data_dir: Path = Field(default=Path("./data"), alias="DATA_DIR")
 
     # A honeypot with no ingested event for this many seconds is shown as
     # "offline" on the dashboard/honeypot list.

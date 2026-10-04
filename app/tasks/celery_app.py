@@ -271,6 +271,12 @@ celery_app.conf.beat_schedule = {
     # matter). Staggered a few minutes apart — same reasoning debcontrol's
     # own daily jobs are staggered — so two purges never contend for the
     # same tables' locks at once.
+    # Cheap when nothing is due: one settings read (see
+    # `app.services.auto_backup.is_due`).
+    "run-due-app-backup": {
+        "task": "app.tasks.jobs.run_due_app_backup",
+        "schedule": crontab(minute="*/10"),
+    },
     "purge-old-events": {
         "task": "app.tasks.jobs.purge_old_events",
         "schedule": crontab(hour=2, minute=0),
