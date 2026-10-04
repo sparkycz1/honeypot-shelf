@@ -1,6 +1,6 @@
-{# "I know about this one" for a honeypot — see
-   app.services.acknowledgements. `action` is the honeypot's own URL;
-   the two POST routes hang off it. Same partial as debcontrol's. #}
+{# "I know about this one" — see app.services.acknowledgements. `action`
+   is the target's own URL; the two POST routes hang off it. Shared word
+   for word with the sister app — see shared-ui.json. #}
 {% macro ack_panel(request, target, action, can_manage) %}
   {% if ack_active(target) %}
     <div class="alert alert-warn">
@@ -16,7 +16,7 @@
       {% if target.acknowledged_note %}<p>{{ target.acknowledged_note }}</p>{% endif %}
       {% if can_manage %}
         <form method="post" action="{{ action }}/acknowledge/clear" class="inline-form">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
           <button type="submit" class="button button-secondary log-small-button">{{ t(request, "ack.clear") }}</button>
         </form>
       {% endif %}
@@ -25,7 +25,7 @@
     <details class="form-advanced">
       <summary>{{ t(request, "ack.heading") }}</summary>
       <form method="post" action="{{ action }}/acknowledge" class="form">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
         <p class="hint">{{ t(request, "ack.hint") }}</p>
         <label for="ack-duration">{{ t(request, "ack.duration") }}</label>
         <select id="ack-duration" name="duration">

@@ -2,9 +2,8 @@
    this app's CSP forbids external chart libraries (no external CDN, and
    generated markup here only ever uses SVG presentation attributes and
    classes, never a `style=` attribute or a `<style>` block, so nothing
-   here needs `style-src` to allow anything beyond 'self'). Ported from
-   debcontrol; used by the Monitoring and Activity tabs and the
-   Dashboard. #}
+   here needs `style-src` to allow anything beyond 'self'). Shared word
+   for word with the sister app — see shared-ui.json. #}
 
 {# One chart. All geometry comes from
    `app.web.charts.build_chart` (the `chart(...)` template global) — this
@@ -14,7 +13,7 @@
    up with the grid without any inline style. Hover, legend toggling and
    the series filter are static/js/monitoring-chart.js, reading the
    `data-chart` JSON. Every label/value here goes through autoescaping or
-   `tojson` — interface/disk/mount names come from the managed honeypot. #}
+   `tojson` — series names come from the managed host. #}
 {% macro render_chart(chart) %}
   <div class="chart" data-chart='{{ chart.data | tojson }}'>
     <div class="chart-y" aria-hidden="true">
@@ -60,8 +59,8 @@
         {% endif %}
         {% if chart.hidden_count %}
           <button type="button" class="chart-legend-item chart-legend-all" data-series-show-all aria-pressed="false"
-                  data-label-show="{{ t(request, 'honeypots.monitoring.show_all', count=chart.hidden_count) }}"
-                  data-label-hide="{{ t(request, 'honeypots.monitoring.show_fewer') }}">{{ t(request, 'honeypots.monitoring.show_all', count=chart.hidden_count) }}</button>
+                  data-label-show="{{ t(request, 'monitoring.show_all', count=chart.hidden_count) }}"
+                  data-label-hide="{{ t(request, 'monitoring.show_fewer') }}">{{ t(request, 'monitoring.show_all', count=chart.hidden_count) }}</button>
         {% endif %}
         {% if chart.threshold_label %}
           <span class="chart-legend-item chart-legend-threshold">
@@ -75,7 +74,8 @@
 {% endmacro %}
 
 {# A titled card around one chart (see `render_chart`). `filter` adds the
-   header's series filter box (worth it once a chart has many lines); `footer` is an optional line of text under
+   header's series filter box (worth it once a chart has many lines);
+   `footer` is an optional line of text under
    the chart (the current reading, typically). #}
 {% macro chart_card(title, subtitle, chart, filter=false, footer=none, wide=false, empty_text='—') %}
   <section class="chart-card{{ ' chart-card-wide' if wide else '' }}">
@@ -85,8 +85,8 @@
         {% if subtitle %}<p class="chart-card-subtitle">{{ subtitle }}</p>{% endif %}
       </div>
       {% if filter %}
-        <input type="search" class="chart-filter" data-chart-filter placeholder="{{ t(request, 'honeypots.monitoring.filter_placeholder') }}"
-               aria-label="{{ t(request, 'honeypots.monitoring.filter_placeholder') }}">
+        <input type="search" class="chart-filter" data-chart-filter placeholder="{{ t(request, 'monitoring.filter_placeholder') }}"
+               aria-label="{{ t(request, 'monitoring.filter_placeholder') }}">
       {% endif %}
     </header>
     {% if chart.empty %}

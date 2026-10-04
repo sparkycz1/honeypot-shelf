@@ -11,8 +11,8 @@ labels are plain HTML laid out by flexbox (`space-between` over evenly
 spaced ticks lines them up with the grid exactly, with no inline style the
 CSP would block).
 
-Ported verbatim from debcontrol (`app/web/charts.py`) — keep the two in
-step rather than letting them drift.
+Shared word for word with the sister app (debcontrol / honeypot-shelf) —
+see `shared-ui.json`.
 """
 
 from __future__ import annotations
@@ -248,7 +248,7 @@ def _round_for_json(value: float | None) -> float | None:
     return round(value, digits)
 
 
-def build_chart(  # noqa: C901 - kept identical to debcontrol's (max-complexity 19 there)
+def build_chart(
     series: Sequence[tuple[str, Sequence[float | None]]],
     timestamps: Sequence[datetime],
     *,

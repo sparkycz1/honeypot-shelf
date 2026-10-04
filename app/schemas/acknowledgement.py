@@ -1,4 +1,4 @@
-"""Request body for acknowledging a problem on a honeypot
+"""Request body for acknowledging a problem (shared with the sister app)
 (`app.services.acknowledgements`)."""
 
 from __future__ import annotations
