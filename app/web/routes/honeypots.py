@@ -302,18 +302,6 @@ async def _get_service_counts(honeypot_id: uuid.UUID, db: AsyncSession) -> dict[
     return {"total": total, "failed": failed_result.scalar_one()}
 
 
-async def _get_services(
-    honeypot_id: uuid.UUID, db: AsyncSession, *, svc_q: str, svc_state: str
-) -> list[HoneypotService]:
-    query = select(HoneypotService).where(HoneypotService.honeypot_id == honeypot_id)
-    if svc_q.strip():
-        query = query.where(HoneypotService.unit.ilike(f"%{svc_q.strip()}%"))
-    if svc_state:
-        query = query.where(HoneypotService.active_state == svc_state)
-    result = await db.execute(query.order_by(HoneypotService.unit))
-    return list(result.scalars().all())
-
-
 _UPDATE_HISTORY_PAGE_SIZE = 50
 
 # The honeypots list used to load every row unconditionally — fine at a
@@ -1201,7 +1189,7 @@ async def honeypot_monitoring(
     current_user: User = Depends(get_current_user),
 ) -> Response:
     """CPU/RAM/disk-usage trend graphs (see `app.services.monitoring_history`
-    for the downsampling) plus the services summary/modal trigger.
+    for the downsampling) plus the systemd services table.
     `range_key` is one of `monitoring_history.TIME_RANGES`'s keys — an
     unrecognized value quietly falls back to the default rather than
     erroring, same tolerance `status_filter` on the Updates tab already has
@@ -1399,47 +1387,20 @@ async def honeypot_packages_panel(
     return response
 
 
-@router.get("/{honeypot_id}/services-summary-panel")
-async def honeypot_services_summary_panel(
-    request: Request, honeypot_id: uuid.UUID, db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> Response:
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    return templates.TemplateResponse(
-        request,
-        "partials/_services_summary_inner.html",
-        {"honeypot": honeypot, "service_counts": await _get_service_counts(honeypot_id, db)},
-    )
-
-
 @router.get("/{honeypot_id}/services")
-async def honeypot_services_panel(
-    request: Request,
+async def honeypot_services_redirect(
     honeypot_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    svc_q: str = "",
-    svc_state: str = "",
     current_user: User = Depends(get_current_user),
 ) -> Response:
-    """The modal body for "Show services" on the Monitoring tab — same
-    lazily-loaded-on-open pattern as `honeypot_packages_panel`."""
+    """The services pop-up is gone (0.56.0 moved the table onto the Monitoring
+    tab); an old link lands there instead of on a 404."""
+    # Redirect to the stored honeypot's own id, not to the value from the
+    # URL — and only for a honeypot this account may see.
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    csrf_token, new_cookie = get_or_create_csrf_token(request)
-    response = templates.TemplateResponse(
-        request,
-        "partials/honeypot_services.html",
-        {
-            "honeypot": honeypot,
-            "csrf_token": csrf_token,
-            "services": await _get_services(honeypot_id, db, svc_q=svc_q, svc_state=svc_state),
-            "service_counts": await _get_service_counts(honeypot_id, db),
-            "svc_q": svc_q,
-            "svc_state": svc_state,
-        },
+    return RedirectResponse(
+        url=f"/honeypots/{honeypot.id}/monitoring", status_code=status.HTTP_303_SEE_OTHER
     )
-    if new_cookie:
-        set_csrf_cookie(response, new_cookie)
-    return response
 
 
 @router.get("/{honeypot_id}/edit", dependencies=[_manage])
@@ -2115,62 +2076,6 @@ async def refresh_packages_endpoint(
             "pkg_q": pkg_q,
             "pkg_source": pkg_source,
             "held_only": held_only,
-        },
-    )
-
-
-@router.post("/{honeypot_id}/refresh-services", dependencies=[_manage, Depends(verify_csrf)])
-async def refresh_services_endpoint(
-    request: Request,
-    honeypot_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
-    svc_q: str = Form(""),
-    svc_state: str = Form(""),
-    current_user: User = Depends(get_current_user),
-) -> Response:
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-    app_settings = await get_or_create_app_settings(db)
-
-    async_result = tasks.refresh_honeypot_services.delay(str(honeypot.id))
-    error: str | None = None
-    try:
-        result = await asyncio.to_thread(
-            async_result.get, timeout=app_settings.ssh_connect_timeout + 15
-        )
-        if isinstance(result, dict) and not result.get("ok"):
-            error = str(result.get("error") or "Unknown error.")
-    except CeleryTimeoutError:
-        error = "The background job did not respond in time."
-    except Exception as exc:
-        error = str(exc)
-
-    if error is None:
-        honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
-
-    await log_event(
-        db,
-        request=request,
-        action="honeypot.services.refresh",
-        summary=f'Refreshed services for "{honeypot.name}"',
-        outcome=AuditOutcome.SUCCESS if error is None else AuditOutcome.FAILURE,
-        target_type="honeypot",
-        target_id=honeypot.id,
-        target_label=honeypot.name,
-        details={"error": error} if error else None,
-    )
-
-    csrf_token, _ = get_or_create_csrf_token(request)
-    return templates.TemplateResponse(
-        request,
-        "partials/honeypot_services.html",
-        {
-            "honeypot": honeypot,
-            "error": error,
-            "csrf_token": csrf_token,
-            "services": await _get_services(honeypot_id, db, svc_q=svc_q, svc_state=svc_state),
-            "service_counts": await _get_service_counts(honeypot_id, db),
-            "svc_q": svc_q,
-            "svc_state": svc_state,
         },
     )
 
