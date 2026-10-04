@@ -1662,6 +1662,20 @@
     "ack.badge": "acknowledged",
     "notifications.history.status_acknowledged": "Acknowledged ({by})",
     "audit.action_label.honeypot.acknowledge": "Problem on a honeypot acknowledged",
-    "audit.action_label.honeypot.acknowledge.clear": "Honeypot acknowledgement cleared"
+    "audit.action_label.honeypot.acknowledge.clear": "Honeypot acknowledgement cleared",
+    "search.title": "Search",
+    "search.placeholder": "Search…",
+    "search.submit": "Search",
+    "search.shortcut_hint": "Press / to search",
+    "search.hint": "Finds honeypots (name, address, hostname, tag, company), companies, scheduled tasks, your notification rules and users by name. You only see what your account can open.",
+    "search.too_short": "Type at least {count} characters.",
+    "search.nothing": "Nothing matches “{query}”.",
+    "search.more": "More results are not shown.",
+    "search.show_all": "Show all",
+    "search.kind.scheduled_tasks": "Scheduled tasks",
+    "search.kind.notification_rules": "My notification rules",
+    "search.kind.users": "Users",
+    "search.kind.honeypots": "Honeypots",
+    "search.kind.companies": "Companies"
   }
 }
