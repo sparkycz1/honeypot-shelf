@@ -70,7 +70,7 @@ async def _build_map_context(db: AsyncSession, user: User) -> dict[str, object]:
     # attached to zero companies, same as the Dashboard's own
     # `honeypot_query` - so this filter is only ever added at all for a
     # non-superadmin.
-    scope_filters = (
+    scope_filters = [HoneypotEvent.ignored.is_(False)] + (
         [HoneypotEvent.honeypot.has(Honeypot.companies.any(Company.id.in_(company_ids)))]
         if company_ids is not None
         else []

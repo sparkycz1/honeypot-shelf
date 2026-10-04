@@ -17,6 +17,7 @@
       <dt>{{ t(request, "events.column.type") }}</dt>
       <dd>
         <span class="badge">{{ label }}</span> <code>{{ event.event_type }}</code>
+        {% if event.ignored %}<span class="badge badge-warn">{{ t(request, "events.ignored.badge") }}</span>{% endif %}
         · <a href="/events?event_type={{ event.event_type | urlencode }}">{{ t(request, "events.detail.same_type") }}</a>
       </dd>
       <dt>{{ t(request, "events.column.source") }}</dt>

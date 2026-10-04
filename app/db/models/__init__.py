@@ -19,6 +19,7 @@ from app.db.models.honeypot_reachability_sample import HoneypotReachabilitySampl
 from app.db.models.honeypot_service import HoneypotService
 from app.db.models.honeypot_tag import Tag
 from app.db.models.honeypot_update_run import HoneypotUpdateRun
+from app.db.models.ignored_source import IgnoredSource
 from app.db.models.initialize_run import InitializeRun
 from app.db.models.maintenance_window import MaintenanceWindow, maintenance_window_honeypots
 from app.db.models.notification_log import NotificationChannel, NotificationKind, NotificationLog
@@ -50,6 +51,7 @@ __all__ = [
     "HoneypotReachabilitySample",
     "HoneypotService",
     "HoneypotUpdateRun",
+    "IgnoredSource",
     "InitializeRun",
     "MaintenanceWindow",
     "NotificationChannel",

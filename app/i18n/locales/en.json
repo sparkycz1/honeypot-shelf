@@ -1741,6 +1741,27 @@
     "settings.checks.events.hint": "How long OpenCanary events are kept. Older events are deleted once a day; the daily totals behind the Dashboard trend are kept regardless.",
     "settings.checks.events.retention_label": "Keep events for (days)",
     "settings.checks.events.retention_hint": "Leave empty to use the default from the server's configuration (EVENT_RETENTION_DAYS, now {days} days). At least 1 day.",
-    "audit.action_label.settings.event_retention.update": "Event retention changed"
+    "audit.action_label.settings.event_retention.update": "Event retention changed",
+    "events.filter.include_ignored": "Include ignored",
+    "events.ignored.title": "Ignored sources",
+    "events.ignored.intro": "Addresses whose events are expected: your vulnerability scanner, a monitoring probe, your own workstation. Their events are still stored, but they send no notification and are left out of the Dashboard, the Activity charts, the map and the daily totals. Tick “Include ignored” on the Events page to see them.",
+    "events.ignored.add_heading": "Add an address",
+    "events.ignored.network": "Address or network",
+    "events.ignored.network_hint": "One address (203.0.113.7) or a network in CIDR form (203.0.113.0/24). Nothing wider than /8, or /32 for IPv6.",
+    "events.ignored.applies_to": "Applies to",
+    "events.ignored.every_honeypot": "Every honeypot",
+    "events.ignored.note": "Note",
+    "events.ignored.note_placeholder": "What this address is",
+    "events.ignored.add": "Add to the ignore list",
+    "events.ignored.added": "Added",
+    "events.ignored.remove": "Remove",
+    "events.ignored.remove_confirm": "Remove {network} from the ignore list? Its events will count again.",
+    "events.ignored.none": "Nothing is ignored.",
+    "events.ignored.duplicate": "{network} is already on that list.",
+    "events.ignored.badge": "ignored",
+    "events.ignored.ignore_this": "Ignore this address",
+    "events.ignored.on_list": "This address is on the ignore list: its events send no notification and are not counted.",
+    "audit.action_label.event.ignore.add": "Source added to the ignore list",
+    "audit.action_label.event.ignore.remove": "Source removed from the ignore list"
   }
 }

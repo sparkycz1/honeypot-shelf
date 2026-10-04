@@ -64,7 +64,9 @@ async def _build_dashboard_context(
     }
 
     now = datetime.now(UTC)
-    event_query = select(func.count()).select_from(HoneypotEvent)
+    event_query = (
+        select(func.count()).select_from(HoneypotEvent).where(HoneypotEvent.ignored.is_(False))
+    )
     if company_ids is not None:
         event_query = event_query.where(_event_company_filter(company_ids))
     last_24h = (
@@ -77,6 +79,7 @@ async def _build_dashboard_context(
 
     recent_query = (
         select(HoneypotEvent)
+        .where(HoneypotEvent.ignored.is_(False))
         .options(selectinload(HoneypotEvent.honeypot))
         .order_by(HoneypotEvent.occurred_at.desc())
         .limit(_RECENT_EVENTS_LIMIT)
@@ -94,7 +97,10 @@ async def _build_dashboard_context(
     # across many honeypots at once could still be a lot of rows.
     activity_window_query = (
         select(HoneypotEvent)
-        .where(HoneypotEvent.occurred_at >= now - timedelta(days=1))
+        .where(
+            HoneypotEvent.occurred_at >= now - timedelta(days=1),
+            HoneypotEvent.ignored.is_(False),
+        )
         .order_by(HoneypotEvent.occurred_at)
         .limit(MAX_RAW_EVENTS)
     )
@@ -131,6 +137,7 @@ async def _build_dashboard_context(
                     .where(
                         _event_company_filter({company.id}),
                         HoneypotEvent.occurred_at >= now - timedelta(days=1),
+                        HoneypotEvent.ignored.is_(False),
                     )
                 )
             ).scalar_one()

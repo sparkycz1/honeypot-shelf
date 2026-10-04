@@ -72,6 +72,7 @@ async def _build_activity_context(
             HoneypotEvent.honeypot_id == honeypot.id,
             HoneypotEvent.occurred_at >= since,
             HoneypotEvent.occurred_at <= now,
+            HoneypotEvent.ignored.is_(False),
         )
         .order_by(HoneypotEvent.occurred_at)
         .limit(canary_activity_history.MAX_RAW_EVENTS)
@@ -88,7 +89,7 @@ async def _build_activity_context(
 
     recent_result = await db.execute(
         select(HoneypotEvent)
-        .where(HoneypotEvent.honeypot_id == honeypot.id)
+        .where(HoneypotEvent.honeypot_id == honeypot.id, HoneypotEvent.ignored.is_(False))
         .order_by(HoneypotEvent.occurred_at.desc())
         .limit(canary_activity_history.RECENT_EVENTS_LIMIT)
     )

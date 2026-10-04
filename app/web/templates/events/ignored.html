@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t(request, "events.ignored.title") }} — Honeypot Shelf{% endblock %}
+
+{% block content %}
+  <p class="hint"><a href="/events">← {{ t(request, "nav.events") }}</a></p>
+  <div class="page-header">
+    <h1>{{ t(request, "events.ignored.title") }}</h1>
+  </div>
+  <p class="hint">{{ t(request, "events.ignored.intro") }}</p>
+
+  {% if errors %}
+    <div class="alert alert-error">
+      {% for error in errors %}<p>{{ error }}</p>{% endfor %}
+    </div>
+  {% endif %}
+
+  {% if companies or can_ignore_everywhere %}
+    <section class="panel">
+      <h2>{{ t(request, "events.ignored.add_heading") }}</h2>
+      <form method="post" action="/events/ignored" class="form" autocomplete="off">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label for="ignore-network">{{ t(request, "events.ignored.network") }}</label>
+        <input type="text" id="ignore-network" name="network" maxlength="64" required
+               value="{{ network }}" placeholder="203.0.113.7">
+        <p class="hint">{{ t(request, "events.ignored.network_hint") }}</p>
+        <label for="ignore-company">{{ t(request, "events.ignored.applies_to") }}</label>
+        <select id="ignore-company" name="company_id">
+          {% if can_ignore_everywhere %}
+            <option value="">{{ t(request, "events.ignored.every_honeypot") }}</option>
+          {% endif %}
+          {% for company in companies %}
+            <option value="{{ company.id }}">{{ company.name }}</option>
+          {% endfor %}
+        </select>
+        <label for="ignore-note">{{ t(request, "events.ignored.note") }}</label>
+        <input type="text" id="ignore-note" name="note" maxlength="255" value="{{ note }}"
+               placeholder="{{ t(request, 'events.ignored.note_placeholder') }}">
+        <button type="submit" class="button">{{ t(request, "events.ignored.add") }}</button>
+      </form>
+    </section>
+  {% endif %}
+
+  {% if entries %}
+    <div class="monitoring-table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>{{ t(request, "events.ignored.network") }}</th>
+            <th>{{ t(request, "events.ignored.applies_to") }}</th>
+            <th>{{ t(request, "events.ignored.note") }}</th>
+            <th>{{ t(request, "events.ignored.added") }}</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for entry, manageable in entries %}
+            <tr>
+              <td><code>{{ entry.network }}</code></td>
+              <td>{{ entry.company.name if entry.company else t(request, "events.ignored.every_honeypot") }}</td>
+              <td>{{ entry.note or '—' }}</td>
+              <td class="cell-nowrap">{{ entry.created_at | local_time('%Y-%m-%d') }}{% if entry.created_by %} · {{ entry.created_by }}{% endif %}</td>
+              <td>
+                {% if manageable %}
+                  <form method="post" action="/events/ignored/{{ entry.id }}/delete" class="inline-form"
+                        data-confirm="{{ t(request, 'events.ignored.remove_confirm', network=entry.network) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="button button-danger log-small-button">{{ t(request, "events.ignored.remove") }}</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="empty-state"><p>{{ t(request, "events.ignored.none") }}</p></div>
+  {% endif %}
+{% endblock %}

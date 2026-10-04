@@ -20,7 +20,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import JSON, Float, ForeignKey, Integer, String, func
+from sqlalchemy import JSON, Boolean, Float, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -81,6 +81,13 @@ class HoneypotEvent(Base):
     # reason — kept simple even though there's only ever one value written
     # going forward.
     source: Mapped[str] = mapped_column(String(20), nullable=False, server_default="ssh_poll")
+
+    # From a source on the ignore list (`app.db.models.ignored_source`):
+    # kept, but it sent no notification and is left out of every count and
+    # chart. Set at ingestion and again whenever the list changes.
+    ignored: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid only
         return (

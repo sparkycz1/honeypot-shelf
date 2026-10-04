@@ -15,15 +15,21 @@ import uuid
 from datetime import datetime
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, status
+from fastapi.responses import RedirectResponse
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_event
 from app.auth.dependencies import get_current_user
-from app.auth.scope import honeypots_visible_to
+from app.auth.scope import companies_visible_to, honeypots_visible_to
+from app.core.csrf import verify_csrf
+from app.db.models.company import Company
 from app.db.models.honeypot import Honeypot
+from app.db.models.ignored_source import IgnoredSource
 from app.db.models.user import User
 from app.db.session import get_db
+from app.services import ignored_sources
 from app.services.event_search import (
     EventFilters,
     event_types_seen,
@@ -34,6 +40,7 @@ from app.services.event_search import (
     source_summary,
 )
 from app.services.opencanary_logtypes import localized_logtype_label
+from app.tasks import jobs as tasks
 from app.web.routes.api_v1_events import export_response
 from app.web.templating import parse_local_input, t, templates
 
@@ -52,7 +59,13 @@ def _local_time(raw: str) -> datetime | None:
 
 
 def _filters(
-    honeypot_id: str, event_type: str, src_ip: str, country: str, since: str, until: str
+    honeypot_id: str,
+    event_type: str,
+    src_ip: str,
+    country: str,
+    since: str,
+    until: str,
+    include_ignored: str = "",
 ) -> EventFilters:
     return EventFilters(
         honeypot_id=parse_uuid(honeypot_id),
@@ -61,6 +74,7 @@ def _filters(
         country=country,
         since=_local_time(since),
         until=_local_time(until),
+        include_ignored=bool(include_ignored),
     )
 
 
@@ -75,10 +89,11 @@ async def events_page(
     country: str = "",
     since: str = "",
     until: str = "",
+    include_ignored: str = "",
     page: int = 1,
 ) -> Response:
     page = max(page, 1)
-    filters = _filters(honeypot_id, event_type, src_ip, country, since, until)
+    filters = _filters(honeypot_id, event_type, src_ip, country, since, until, include_ignored)
     events, has_older = await page_of_events(db, user, filters, page)
     honeypots = (
         await db.execute(honeypots_visible_to(user).order_by(Honeypot.name))
@@ -98,6 +113,7 @@ async def events_page(
             ("country", country.strip().upper()),
             ("since", since.strip() if filters.since else ""),
             ("until", until.strip() if filters.until else ""),
+            ("include_ignored", "1" if filters.include_ignored else ""),
         )
         if value
     }
@@ -129,11 +145,12 @@ async def export_events(
     country: str = "",
     since: str = "",
     until: str = "",
+    include_ignored: str = "",
     format: str = "csv",
 ) -> Response:
     """The events the page shows with these filters — all of them, not one
     page — as CSV or JSON. A plain download link, like the audit log's."""
-    filters = _filters(honeypot_id, event_type, src_ip, country, since, until)
+    filters = _filters(honeypot_id, event_type, src_ip, country, since, until, include_ignored)
     response = await export_response(db, user, filters, format)
     await log_event(
         db,
@@ -146,6 +163,131 @@ async def export_events(
         },
     )
     return response
+
+
+# --- The ignore list (app.services.ignored_sources) -------------------------
+
+
+async def _ignore_page(
+    request: Request,
+    db: AsyncSession,
+    user: User,
+    *,
+    errors: list[str] | None = None,
+    network: str = "",
+    note: str = "",
+    status_code: int = 200,
+) -> Response:
+    companies = list(
+        (await db.execute(companies_visible_to(user).order_by(Company.name))).scalars()
+    )
+    entries = await ignored_sources.entries_visible_to(db, user)
+    return templates.TemplateResponse(
+        request,
+        "events/ignored.html",
+        {
+            "entries": [
+                (entry, ignored_sources.can_manage(user, entry.company_id)) for entry in entries
+            ],
+            "companies": [c for c in companies if user.can_write_company(c.id)],
+            "can_ignore_everywhere": user.sees_every_company,
+            "errors": errors or [],
+            "network": network,
+            "note": note,
+            "csrf_token": request.state.csrf_token,
+        },
+        status_code=status_code,
+    )
+
+
+@router.get("/ignored")
+async def ignored_sources_page(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+    network: str = "",
+) -> Response:
+    """The ignore list. `?network=` pre-fills the form — the "Ignore this
+    address" link on a source's page."""
+    return await _ignore_page(request, db, user, network=network[:64])
+
+
+@router.post("/ignored", dependencies=[Depends(verify_csrf)])
+async def add_ignored_source(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+    network: str = Form(""),
+    company_id: str = Form(""),
+    note: str = Form(""),
+) -> Response:
+    scope = parse_uuid(company_id)
+    if company_id.strip() and scope is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found.")
+    if not ignored_sources.can_manage(user, scope):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Read-only access.")
+    try:
+        normalized = ignored_sources.parse_network(network)
+    except ValueError as exc:
+        return await _ignore_page(
+            request, db, user, errors=[str(exc)], network=network, note=note, status_code=422
+        )
+    entry = IgnoredSource(
+        company_id=scope,
+        network=normalized,
+        note=note.strip()[: ignored_sources.MAX_NOTE_LENGTH] or None,
+        created_by=user.username,
+    )
+    db.add(entry)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        return await _ignore_page(
+            request,
+            db,
+            user,
+            errors=[t(request, "events.ignored.duplicate", network=normalized)],
+            network=network,
+            note=note,
+            status_code=422,
+        )
+    tasks.reapply_ignored_sources.delay()
+    await log_event(
+        db,
+        request=request,
+        action="event.ignore.add",
+        summary=f"Added {normalized} to the ignore list",
+        details={"network": normalized, "company_id": str(scope) if scope else None},
+    )
+    return RedirectResponse(url="/events/ignored", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/ignored/{entry_id}/delete", dependencies=[Depends(verify_csrf)])
+async def delete_ignored_source(
+    request: Request,
+    entry_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Response:
+    entry = await db.get(IgnoredSource, entry_id)
+    visible = {e.id for e in await ignored_sources.entries_visible_to(db, user)}
+    if entry is None or entry.id not in visible:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found.")
+    if not ignored_sources.can_manage(user, entry.company_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Read-only access.")
+    network = entry.network
+    await db.delete(entry)
+    await db.commit()
+    tasks.reapply_ignored_sources.delay()
+    await log_event(
+        db,
+        request=request,
+        action="event.ignore.remove",
+        summary=f"Removed {network} from the ignore list",
+        details={"network": network},
+    )
+    return RedirectResponse(url="/events/ignored", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/source/{src_ip:path}")
@@ -164,8 +306,16 @@ async def event_source(
     def label_of(logtype: object) -> str:
         return localized_logtype_label(lambda key: t(request, key), logtype)
 
+    networks = ignored_sources._as_networks(await ignored_sources.entries_visible_to(db, user))
     return templates.TemplateResponse(
-        request, "events/source.html", {"source": summary, "label_of": label_of}
+        request,
+        "events/source.html",
+        {
+            "source": summary,
+            "label_of": label_of,
+            "on_ignore_list": ignored_sources.matches(summary.src_ip, networks),
+            "can_ignore": user.can_write(),
+        },
     )
 
 
