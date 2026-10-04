@@ -34,7 +34,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import require_api_superadmin
-from app.core.app_settings import get_or_create_app_settings
+from app.core.app_settings import effective_event_retention_days, get_or_create_app_settings
 from app.core.version import APP_VERSION, commit_url, get_git_commit
 from app.db.session import get_db
 from app.ssh.identity import get_or_create_identity
@@ -60,6 +60,8 @@ async def get_settings_api(db: AsyncSession = Depends(get_db)) -> dict[str, obje
         "update_timeout_seconds": app_settings.update_timeout_seconds,
         "ssh_connect_timeout": app_settings.ssh_connect_timeout,
         "audit_log_retention_days": app_settings.audit_log_retention_days,
+        # The value in force: Settings when set there, else EVENT_RETENTION_DAYS.
+        "event_retention_days": effective_event_retention_days(app_settings),
         "session_idle_timeout_minutes": app_settings.session_idle_timeout_minutes,
         "session_absolute_max_hours": app_settings.session_absolute_max_hours,
         "login_max_failed_attempts": app_settings.login_max_failed_attempts,

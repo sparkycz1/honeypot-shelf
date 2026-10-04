@@ -144,6 +144,10 @@ async def show_settings(
     return await _render_settings(request, db, [], tab=_normalize_tab(tab))
 
 
+# Ten years: far beyond any sensible setting, small enough to rule out a typo.
+MAX_EVENT_RETENTION_DAYS = 3650
+
+
 def _parse_retention_days(raw: str) -> tuple[int | None, str | None]:
     """Shared by every `update_*_retention` handler below — all four fields
     mean the same thing (empty = keep forever, otherwise a non-negative
@@ -484,6 +488,40 @@ async def update_monitoring_retention(
             f"Set monitoring history retention to {new_value} day(s)"
             if new_value is not None
             else "Set monitoring history retention to keep forever"
+        ),
+    )
+
+    return RedirectResponse(url="/settings?tab=checks", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/event-retention", dependencies=[Depends(verify_csrf)])
+async def update_event_retention(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    retention_days: str = Form(""),
+) -> Response:
+    """How long OpenCanary events are kept — see
+    `app.tasks.jobs.purge_old_events`. Unlike the other retention fields
+    there is no "forever": empty goes back to `EVENT_RETENTION_DAYS` from
+    `.env`, and a number must be at least one day."""
+    app_settings = await get_or_create_app_settings(db)
+    new_value, error = _parse_retention_days(retention_days)
+    if error is None and new_value is not None and not 1 <= new_value <= MAX_EVENT_RETENTION_DAYS:
+        error = f"Event retention must be 1 to {MAX_EVENT_RETENTION_DAYS} days."
+    if error:
+        return await _render_settings(request, db, [error], tab="checks")
+
+    app_settings.event_retention_days = new_value
+    await db.commit()
+
+    await log_event(
+        db,
+        request=request,
+        action="settings.event_retention.update",
+        summary=(
+            f"Set event retention to {new_value} day(s)"
+            if new_value is not None
+            else "Set event retention back to the EVENT_RETENTION_DAYS default"
         ),
     )
 

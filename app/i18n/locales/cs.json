@@ -1736,6 +1736,11 @@
     "events.source.username": "Jméno",
     "events.source.password": "Heslo",
     "events.source.no_credentials": "Z této adresy nejsou zaznamenané žádné pokusy o přihlášení.",
-    "events.source.recent": "Poslední události"
+    "events.source.recent": "Poslední události",
+    "settings.checks.events.heading": "Události",
+    "settings.checks.events.hint": "Jak dlouho se uchovávají události z OpenCanary. Starší se jednou denně mažou; denní součty pro trend na Dashboardu zůstávají.",
+    "settings.checks.events.retention_label": "Uchovávat události (dní)",
+    "settings.checks.events.retention_hint": "Prázdné pole použije výchozí hodnotu z konfigurace serveru (EVENT_RETENTION_DAYS, nyní {days} dní). Nejméně 1 den.",
+    "audit.action_label.settings.event_retention.update": "Změna doby uchování událostí"
   }
 }

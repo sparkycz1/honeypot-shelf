@@ -40,7 +40,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.audit import log_event
-from app.core.app_settings import get_or_create_app_settings
+from app.core.app_settings import effective_event_retention_days, get_or_create_app_settings
 from app.core.config import get_settings
 from app.db import session as db_session
 from app.db.models.app_settings import AppSettings
@@ -1753,7 +1753,9 @@ _EVENT_PURGE_ACTOR = "retention policy (automatic)"
 
 
 async def _purge_old_events() -> None:
-    """Delete `HoneypotEvent` rows older than `Settings.event_retention_days`
+    """Delete `HoneypotEvent` rows older than the event retention (Settings →
+    Checks & retention, falling back to `EVENT_RETENTION_DAYS` from `.env` —
+    `app.core.app_settings.effective_event_retention_days`)
     — a fixed daily sweep referenced by `app.tasks.celery_app`'s
     `beat_schedule` since this project's very first commit, but never
     actually implemented until now: nothing ever purged old events, so
@@ -1763,7 +1765,9 @@ async def _purge_old_events() -> None:
     unlike `_purge_old_audit_log_entries` there's no "unset = keep forever"
     case to skip here."""
     async with db_session.AsyncSessionLocal() as session:
-        retention_days = get_settings().event_retention_days
+        retention_days = effective_event_retention_days(
+            await get_or_create_app_settings(session)
+        )
         cutoff = datetime.now(UTC) - timedelta(days=retention_days)
 
         count_result = await session.execute(

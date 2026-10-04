@@ -177,6 +177,11 @@ class AppSettings(Base):
     monitoring_history_retention_days: Mapped[int | None] = mapped_column(
         Integer, nullable=True, default=90
     )
+    # How long `HoneypotEvent` rows are kept (app.tasks.jobs.purge_old_events).
+    # NULL = not set here: the `.env` value `EVENT_RETENTION_DAYS` applies,
+    # as it did before this could be set in Settings — see
+    # `effective_event_retention_days`.
+    event_retention_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # --- LDAP login (app.auth.ldap) ---
     ldap_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

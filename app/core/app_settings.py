@@ -7,6 +7,7 @@ from __future__ import annotations
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.db.models.app_settings import SINGLETON_ID, AppSettings
 
 
@@ -29,3 +30,12 @@ async def get_or_create_app_settings(db: AsyncSession) -> AppSettings:
         settings_row = await db.get(AppSettings, SINGLETON_ID)
         assert settings_row is not None
     return settings_row
+
+
+def effective_event_retention_days(app_settings: AppSettings) -> int:
+    """How many days OpenCanary events are kept: the value from Settings →
+    Checks & retention when one is set, otherwise `EVENT_RETENTION_DAYS`
+    from `.env` (the only place it could be set before 0.67.0)."""
+    if app_settings.event_retention_days is not None:
+        return app_settings.event_retention_days
+    return get_settings().event_retention_days
