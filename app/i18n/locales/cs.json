@@ -1662,6 +1662,20 @@
     "ack.badge": "potvrzeno",
     "notifications.history.status_acknowledged": "Potvrzeno ({by})",
     "audit.action_label.honeypot.acknowledge": "Potvrzen problém na honeypotu",
-    "audit.action_label.honeypot.acknowledge.clear": "Zrušeno potvrzení u honeypotu"
+    "audit.action_label.honeypot.acknowledge.clear": "Zrušeno potvrzení u honeypotu",
+    "search.title": "Hledání",
+    "search.placeholder": "Hledat…",
+    "search.submit": "Hledat",
+    "search.shortcut_hint": "Hledání otevřete klávesou /",
+    "search.hint": "Najde honeypoty (název, adresa, hostname, štítek, firma), firmy, naplánované úlohy, vaše notifikační pravidla a uživatele podle názvu. Vidíte jen to, co váš účet smí otevřít.",
+    "search.too_short": "Zadejte aspoň {count} znaky.",
+    "search.nothing": "Výrazu „{query}“ nic neodpovídá.",
+    "search.more": "Další výsledky nejsou zobrazené.",
+    "search.show_all": "Zobrazit vše",
+    "search.kind.scheduled_tasks": "Naplánované úlohy",
+    "search.kind.notification_rules": "Moje notifikační pravidla",
+    "search.kind.users": "Uživatelé",
+    "search.kind.honeypots": "Honeypoty",
+    "search.kind.companies": "Firmy"
   }
 }

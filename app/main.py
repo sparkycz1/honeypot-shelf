@@ -37,6 +37,7 @@ from app.web.routes import (
     api_v1_events,
     api_v1_maintenance,
     api_v1_scheduling,
+    api_v1_search,
     api_v1_settings,
     api_v1_users,
     audit,
@@ -54,6 +55,7 @@ from app.web.routes import (
     maintenance,
     notifications,
     scheduling,
+    search,
     terminal_ws,
     theme,
     users,
@@ -292,6 +294,7 @@ def create_app() -> FastAPI:
     app.include_router(initialize.router)
     app.include_router(maintenance.router)
     app.include_router(scheduling.router)
+    app.include_router(search.router)
     app.include_router(audit.router)
     app.include_router(inform.router)
     app.include_router(api_v1.router)
@@ -303,6 +306,7 @@ def create_app() -> FastAPI:
     app.include_router(api_v1_backup.router)
     app.include_router(api_v1_dashboard.router)
     app.include_router(api_v1_events.router)
+    app.include_router(api_v1_search.router)
     app.include_router(api_v1_account.router)
     app.include_router(users.router)
     app.include_router(impersonation.router)
