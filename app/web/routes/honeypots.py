@@ -1388,10 +1388,19 @@ async def honeypot_packages_panel(
 
 
 @router.get("/{honeypot_id}/services")
-async def honeypot_services_redirect(honeypot_id: uuid.UUID) -> Response:
+async def honeypot_services_redirect(
+    honeypot_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
     """The services pop-up is gone (0.56.0 moved the table onto the Monitoring
     tab); an old link lands there instead of on a 404."""
-    return RedirectResponse(f"/honeypots/{honeypot_id}/monitoring", status_code=303)
+    # Redirect to the stored honeypot's own id, not to the value from the
+    # URL — and only for a honeypot this account may see.
+    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    return RedirectResponse(
+        url=f"/honeypots/{honeypot.id}/monitoring", status_code=status.HTTP_303_SEE_OTHER
+    )
 
 
 @router.get("/{honeypot_id}/edit", dependencies=[_manage])
