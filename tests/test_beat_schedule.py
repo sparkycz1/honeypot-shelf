@@ -30,6 +30,7 @@ _EXPECTED_SCHEDULE_TASKS = {
     "refresh-geoip-database": "app.tasks.jobs.refresh_geoip_database",
     "run-due-scheduled-tasks": "app.scheduling.jobs.run_due_scheduled_tasks",
     "purge-old-events": "app.tasks.jobs.purge_old_events",
+    "run-due-app-backup": "app.tasks.jobs.run_due_app_backup",
     "purge-old-audit-log-entries": "app.tasks.jobs.purge_old_audit_log_entries",
     "purge-old-monitoring-samples": "app.tasks.jobs.purge_old_monitoring_samples",
     "purge-old-honeypot-update-runs": "app.tasks.jobs.purge_old_honeypot_update_runs",
