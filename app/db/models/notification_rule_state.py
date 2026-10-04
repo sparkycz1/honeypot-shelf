@@ -23,6 +23,8 @@ for where this is actually driven):
   right before it was cleared), and cleared back to `None` the moment the
   honeypot goes unreachable again, ready for the next outage/recovery
   cycle.
+- `alert_notified_at` / `alerts_held_back` are the rule's alert throttle
+  window for this honeypot (`app.services.notifications.notify_alert`).
 """
 
 from __future__ import annotations
@@ -31,7 +33,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, UniqueConstraint
+from sqlalchemy import ForeignKey, Integer, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -52,6 +54,13 @@ class NotificationRuleState(Base):
     )
     unavailable_notified_at: Mapped[datetime | None] = mapped_column(nullable=True)
     recovered_notified_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    # The rule's alert throttle window for this honeypot: when the last
+    # alert notification went out, and how many alerts were held back
+    # since (see `NotificationRule.alert_throttle_minutes`).
+    alert_notified_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    alerts_held_back: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
 
     rule: Mapped[NotificationRule] = relationship()
     honeypot: Mapped[Honeypot] = relationship()

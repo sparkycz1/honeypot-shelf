@@ -31,6 +31,7 @@ from app.db.models.honeypot import Honeypot
 from app.db.models.notification_log import NotificationChannel, NotificationLog
 from app.db.models.notification_rule import (
     MAX_DEBOUNCE_MINUTES,
+    MAX_THROTTLE_MINUTES,
     MIN_DEBOUNCE_MINUTES,
     NotificationRule,
     NotificationScope,
@@ -345,6 +346,20 @@ def _parse_rule_form(
     unavailable_after_minutes = _minutes("unavailable_after_minutes", 10)
     recovered_after_minutes = _minutes("recovered_after_minutes", 5)
 
+    # Empty = every alert is sent; otherwise at most one per this many minutes.
+    alert_throttle_minutes: int | None = None
+    raw_throttle = str(get("alert_throttle_minutes") or "").strip()
+    if raw_throttle:
+        try:
+            alert_throttle_minutes = int(raw_throttle)
+        except ValueError:
+            errors.append("The alert throttle window must be a whole number of minutes.")
+        else:
+            if not 1 <= alert_throttle_minutes <= MAX_THROTTLE_MINUTES:
+                errors.append(
+                    f"The alert throttle window must be 1 to {MAX_THROTTLE_MINUTES} minutes."
+                )
+
     def _text_override(field: str) -> str | None:
         return str(get(field) or "").strip() or None
 
@@ -357,6 +372,7 @@ def _parse_rule_form(
         "unavailable_after_minutes": unavailable_after_minutes,
         "notify_on_recovered": notify_on_recovered,
         "recovered_after_minutes": recovered_after_minutes,
+        "alert_throttle_minutes": alert_throttle_minutes,
         "alert_subject": _text_override("alert_subject"),
         "alert_body": _text_override("alert_body"),
         "unavailable_subject": _text_override("unavailable_subject"),

@@ -44,9 +44,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -54,8 +55,10 @@ from app.core.security import DecryptionError, decrypt_secret
 from app.db.models.app_settings import AppSettings
 from app.db.models.honeypot import Honeypot
 from app.db.models.notification_log import NotificationChannel, NotificationKind, NotificationLog
+from app.db.models.notification_rule_state import NotificationRuleState
 from app.i18n import DEFAULT_LOCALE_CODE
 from app.services import maintenance_windows, push_channels
+from app.services.honeypot_status import as_aware_utc
 from app.services.live_updates import publish_notifications_event
 from app.services.smtp import SmtpNotConfiguredError, send_email
 from app.services.webhook import UnsafeWebhookTargetError, redact_url, send_webhook
@@ -333,13 +336,16 @@ async def _dispatch_rule(
     template_kind: str,
     context: dict[str, Any],
     webhook_payload: dict[str, Any],
-) -> None:
+    body_suffix: str = "",
+) -> bool:
+    """Send one rule's notification. False when nothing was attempted (no
+    target, SMTP off, or muted by a maintenance window)."""
     channel = rule.delivery_channel
     target = resolve_target(rule)
     if not target:
-        return
+        return False
     if channel == NotificationChannel.EMAIL and not db_app_settings.smtp_enabled:
-        return
+        return False
     if db is not None:
         # A honeypot inside an active maintenance window: nothing is sent,
         # but the delivery history says so, naming the window.
@@ -363,8 +369,9 @@ async def _dispatch_rule(
                 error=None,
                 muted_by=window.name,
             )
-            return
+            return False
     subject, body = render_template(template_kind, rule, context)
+    body += body_suffix
     await _deliver(
         db_app_settings,
         db,
@@ -378,6 +385,30 @@ async def _dispatch_rule(
         webhook_payload=webhook_payload,
         token=rule_token(rule),
     )
+    return True
+
+
+_HELD_BACK_NOTE = {
+    "en": "{count} more alert(s) from this honeypot were held back since {since} (throttled).",
+    "cs": "Od {since} bylo zadrženo {count} dalších alertů z tohoto honeypotu (tlumení).",
+}
+
+
+async def _alert_throttle_state(
+    db: AsyncSession, rule: NotificationRule, honeypot: Honeypot
+) -> NotificationRuleState:
+    state = (
+        await db.execute(
+            select(NotificationRuleState).where(
+                NotificationRuleState.rule_id == rule.id,
+                NotificationRuleState.honeypot_id == honeypot.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if state is None:
+        state = NotificationRuleState(rule_id=rule.id, honeypot_id=honeypot.id, alerts_held_back=0)
+        db.add(state)
+    return state
 
 
 async def notify_alert(
@@ -404,7 +435,7 @@ async def notify_alert(
         "timestamp": occurred_at.isoformat(),
         "details": "",
     }
-    webhook_payload = {
+    webhook_payload: dict[str, Any] = {
         "kind": "alert",
         "honeypot_id": str(honeypot.id),
         "honeypot_name": honeypot.name,
@@ -412,8 +443,30 @@ async def notify_alert(
         "src_ip": src_ip,
         "occurred_at": occurred_at.isoformat(),
     }
+    now = datetime.now(UTC)
     for rule in rules:
-        await _dispatch_rule(
+        # The throttle window lives in the database; a caller without a
+        # session (none today) simply isn't throttled.
+        state: NotificationRuleState | None = None
+        suffix = ""
+        payload = webhook_payload
+        if rule.alert_throttle_minutes and db is not None:
+            state = await _alert_throttle_state(db, rule, honeypot)
+            last = (
+                as_aware_utc(state.alert_notified_at) if state.alert_notified_at else None
+            )
+            if last is not None and last > now - timedelta(minutes=rule.alert_throttle_minutes):
+                state.alerts_held_back += 1
+                await db.commit()
+                continue
+            if state.alerts_held_back and last is not None:
+                locale = rule.user.locale or DEFAULT_LOCALE_CODE
+                template = _HELD_BACK_NOTE.get(locale, _HELD_BACK_NOTE[DEFAULT_LOCALE_CODE])
+                suffix = "\n\n" + template.format(
+                    count=state.alerts_held_back, since=last.strftime("%Y-%m-%d %H:%M UTC")
+                )
+                payload = {**webhook_payload, "held_back": state.alerts_held_back}
+        sent = await _dispatch_rule(
             db_app_settings,
             db,
             rule=rule,
@@ -421,8 +474,13 @@ async def notify_alert(
             kind=NotificationKind.ALERT,
             template_kind="alert",
             context=context,
-            webhook_payload=webhook_payload,
+            webhook_payload=payload,
+            body_suffix=suffix,
         )
+        if sent and state is not None and db is not None:
+            state.alert_notified_at = now
+            state.alerts_held_back = 0
+            await db.commit()
 
 
 async def notify_unavailable(

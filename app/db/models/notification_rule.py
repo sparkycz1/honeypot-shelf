@@ -70,6 +70,8 @@ from app.db.pg_enum import pg_enum
 # integer setting in this app.
 MIN_DEBOUNCE_MINUTES = 1
 MAX_DEBOUNCE_MINUTES = 10_080  # 7 days
+# Upper bound for `NotificationRule.alert_throttle_minutes`.
+MAX_THROTTLE_MINUTES = 10_080  # 7 days
 
 
 class NotificationScope(enum.StrEnum):
@@ -109,6 +111,12 @@ class NotificationRule(Base):
     unavailable_after_minutes: Mapped[int] = mapped_column(Integer, default=10, nullable=False)
     notify_on_recovered: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     recovered_after_minutes: Mapped[int] = mapped_column(Integer, default=5, nullable=False)
+    # "At most one alert notification per this many minutes" for one
+    # honeypot — a port scan is dozens of events within seconds. What
+    # arrives inside the window is counted (`NotificationRuleState.
+    # alerts_held_back`), and the next alert that does go out says how
+    # many were held back. NULL (the default) sends every alert, as before.
+    alert_throttle_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Per-rule wording override, one (subject, body) pair per event kind —
     # `None` means "use the built-in default, in this rule's owner's

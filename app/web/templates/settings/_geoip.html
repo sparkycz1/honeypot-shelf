@@ -39,7 +39,7 @@
 
       <label for="geoip_refresh_interval_hours">{{ t(request, "settings.geoip.refresh_interval") }}</label>
       <input type="number" id="geoip_refresh_interval_hours" name="geoip_refresh_interval_hours"
-             min="1" step="1" value="{{ app_settings.geoip_refresh_interval_hours }}" style="width: 6rem;">
+             min="1" step="1" value="{{ app_settings.geoip_refresh_interval_hours }}" class="input-narrow">
       <p class="hint">{{ t(request, "settings.geoip.refresh_interval_hint") }}</p>
 
       <p class="hint">{{ t(request, "settings.geoip.public_ip_hint") }}</p>
