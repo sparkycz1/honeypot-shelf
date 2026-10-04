@@ -226,7 +226,8 @@ async def set_honeypots_view_mode(
     next visit (and every saved view/pagination link) without needing to
     be threaded through every href on the page. See
     `HONEYPOTS_VIEW_COOKIE_NAME`."""
-    chosen = view if view in _HONEYPOT_VIEW_MODES else "table"
+    # Looked up, not echoed: the cookie only ever holds one of our constants.
+    chosen = {mode: mode for mode in _HONEYPOT_VIEW_MODES}.get(view, "table")
     response = RedirectResponse(
         url=_safe_honeypots_redirect(next), status_code=status.HTTP_303_SEE_OTHER
     )
