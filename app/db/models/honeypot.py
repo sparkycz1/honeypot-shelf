@@ -115,6 +115,12 @@ class Honeypot(Base):
     os_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     disks: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
     reboot_required: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Which health problems have already been announced to notification
+    # rules, so each is sent once when it appears and again only after it
+    # went away and came back: {"disk_full": ["/"], "service_failed":
+    # ["x.service"], "reboot_required": ["yes"]}. See
+    # `app.tasks.jobs._announce_health`.
+    health_announced: Mapped[dict[str, list[str]] | None] = mapped_column(JSON, nullable=True)
     uptime_seconds: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     process_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     filesystems: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)

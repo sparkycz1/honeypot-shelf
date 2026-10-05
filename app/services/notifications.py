@@ -90,6 +90,19 @@ _DEFAULT_TEMPLATES: dict[str, dict[str, tuple[str, str]]] = {
             "{threshold_minutes} minute(s) as of {timestamp}, after previously "
             "being unreachable.",
         ),
+        "disk_full": (
+            "Honeypot Shelf: {honeypot_name} is running out of disk space",
+            "At the current rate these will soon be full on {honeypot_name}: {details}. "
+            "As of {timestamp}.",
+        ),
+        "service_failed": (
+            "Honeypot Shelf: a service failed on {honeypot_name}",
+            "systemd units that failed on {honeypot_name}: {details}. As of {timestamp}.",
+        ),
+        "reboot_required": (
+            "Honeypot Shelf: {honeypot_name} needs a reboot",
+            "{honeypot_name} reports a reboot is pending after an update. As of {timestamp}.",
+        ),
     },
     "cs": {
         "alert": (
@@ -105,6 +118,19 @@ _DEFAULT_TEMPLATES: dict[str, dict[str, tuple[str, str]]] = {
             "Honeypot Shelf: {honeypot_name} je opět dostupný",
             "{honeypot_name} je opět dostupný nejméně {threshold_minutes} minut, "
             "stav k {timestamp}, poté co byl nedostupný.",
+        ),
+        "disk_full": (
+            "Honeypot Shelf: na {honeypot_name} dochází místo na disku",
+            "Na {honeypot_name} se podle současného tempa brzy zaplní: {details}. "
+            "Stav k {timestamp}.",
+        ),
+        "service_failed": (
+            "Honeypot Shelf: na {honeypot_name} selhala služba",
+            "Na {honeypot_name} selhaly služby systemd: {details}. Stav k {timestamp}.",
+        ),
+        "reboot_required": (
+            "Honeypot Shelf: {honeypot_name} potřebuje restart",
+            "{honeypot_name} hlásí, že po aktualizaci čeká na restart. Stav k {timestamp}.",
         ),
     },
 }
@@ -489,6 +515,41 @@ async def notify_alert(
             state.alert_notified_at = now
             state.alerts_held_back = 0
             await db.commit()
+
+
+async def notify_health(
+    db_app_settings: AppSettings,
+    *,
+    rules: list[NotificationRule],
+    honeypot: Honeypot,
+    kind: NotificationKind,
+    details: str,
+    db: AsyncSession | None = None,
+) -> None:
+    """Tell `rules` about a health problem that just appeared on `honeypot`
+    (`kind` is DISK_FULL, SERVICE_FAILED or REBOOT_REQUIRED; `details` names
+    the mounts or units). The caller decides *when* — see
+    `app.tasks.jobs._announce_health`."""
+    timestamp = datetime.now(UTC).isoformat()
+    context = {"honeypot_name": honeypot.name, "details": details, "timestamp": timestamp}
+    webhook_payload: dict[str, Any] = {
+        "kind": kind.value,
+        "honeypot_id": str(honeypot.id),
+        "honeypot_name": honeypot.name,
+        "details": details,
+        "timestamp": timestamp,
+    }
+    for rule in rules:
+        await _dispatch_rule(
+            db_app_settings,
+            db,
+            rule=rule,
+            honeypot=honeypot,
+            kind=kind,
+            template_kind=kind.value,
+            context=context,
+            webhook_payload=webhook_payload,
+        )
 
 
 async def notify_unavailable(

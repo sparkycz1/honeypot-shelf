@@ -1762,6 +1762,15 @@
     "events.ignored.ignore_this": "Ignorovat tuto adresu",
     "events.ignored.on_list": "Tato adresa je na seznamu ignorovaných: její události neposílají upozornění a nezapočítávají se.",
     "audit.action_label.event.ignore.add": "Zdroj přidán mezi ignorované",
-    "audit.action_label.event.ignore.remove": "Zdroj odebrán z ignorovaných"
+    "audit.action_label.event.ignore.remove": "Zdroj odebrán z ignorovaných",
+    "notifications.rule.alert_types_label": "Jen tyto typy alertů",
+    "notifications.rule.alert_types_hint": "Zaškrtněte druhy alertů, které má pravidlo posílat. Bez zaškrtnutí posílá všechny.",
+    "notifications.rule.health_hint": "Stav samotného honeypotu. Každé se pošle jednou, když nastane.",
+    "notifications.rule.event_disk_full": "Disk se do týdne zaplní",
+    "notifications.rule.event_service_failed": "Selhala systémová služba",
+    "notifications.rule.event_reboot_required": "Po aktualizaci je potřeba restart",
+    "notifications.event.disk_full": "Plní se disk",
+    "notifications.event.service_failed": "Selhala služba",
+    "notifications.event.reboot_required": "Potřeba restart"
   }
 }

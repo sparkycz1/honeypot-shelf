@@ -2,7 +2,7 @@
    used by notifications/list.html's "Add rule" panel and notifications/edit.html,
    so both stay visually and functionally identical (same layout, same
    toggle behavior). #}
-{% macro rule_fields(request, prefix, companies, honeypots, template_defaults, min_minutes, max_minutes, user, rule=none) %}
+{% macro rule_fields(request, prefix, companies, honeypots, template_defaults, min_minutes, max_minutes, user, rule=none, alert_types=[]) %}
   <label for="{{ prefix }}-name">{{ t(request, "notifications.rule.name_label") }}</label>
   <input type="text" id="{{ prefix }}-name" name="name" maxlength="255" required
          value="{{ rule.name if rule else '' }}"
@@ -56,6 +56,17 @@
            placeholder="{{ t(request, 'notifications.rule.alert_throttle_placeholder') }}"
            value="{{ rule.alert_throttle_minutes if rule and rule.alert_throttle_minutes else '' }}">
     <p class="hint">{{ t(request, "notifications.rule.alert_throttle_hint") }}</p>
+    <details class="form-advanced" {{ 'open' if rule and rule.alert_event_types else '' }}>
+      <summary>{{ t(request, "notifications.rule.alert_types_label") }}</summary>
+      <p class="hint">{{ t(request, "notifications.rule.alert_types_hint") }}</p>
+      {% for value, label in alert_types %}
+        <label class="checkbox-row">
+          <input type="checkbox" name="alert_event_types" value="{{ value }}"
+                 {% if rule and rule.alert_event_types and value in rule.alert_event_types %}checked{% endif %}>
+          {{ label }}
+        </label>
+      {% endfor %}
+    </details>
 
     <label class="checkbox-row">
       <input type="checkbox" name="notify_on_unavailable" {% if not rule or rule.notify_on_unavailable %}checked{% endif %}>
@@ -74,6 +85,14 @@
     <input type="number" id="{{ prefix }}-recovered-minutes" name="recovered_after_minutes"
            min="{{ min_minutes }}" max="{{ max_minutes }}" class="input-narrow"
            value="{{ rule.recovered_after_minutes if rule else 5 }}">
+
+    <p class="hint">{{ t(request, "notifications.rule.health_hint") }}</p>
+    {% for name in ("disk_full", "service_failed", "reboot_required") %}
+      <label class="checkbox-row">
+        <input type="checkbox" name="notify_on_{{ name }}" {% if rule and rule["notify_on_" ~ name] %}checked{% endif %}>
+        {{ t(request, "notifications.rule.event_" ~ name) }}
+      </label>
+    {% endfor %}
   </fieldset>
 
   {# --- How: email or webhook --- #}

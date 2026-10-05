@@ -21,7 +21,7 @@
     <form method="post" action="/account/notifications/{{ rule.id }}/edit" class="form form-wide"
           autocomplete="off" data-rule-form>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      {{ rule_fields(request, "edit", companies, honeypots, template_defaults, min_minutes, max_minutes, user, rule=rule) }}
+      {{ rule_fields(request, "edit", companies, honeypots, template_defaults, min_minutes, max_minutes, user, rule=rule, alert_types=alert_types) }}
       <button type="submit" class="button">{{ t(request, "common.save") }}</button>
     </form>
   </section>

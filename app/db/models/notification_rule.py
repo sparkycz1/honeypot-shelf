@@ -50,7 +50,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, ForeignKey, Integer, LargeBinary, String, Text, func
+from sqlalchemy import JSON, Boolean, ForeignKey, Integer, LargeBinary, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -72,6 +72,9 @@ MIN_DEBOUNCE_MINUTES = 1
 MAX_DEBOUNCE_MINUTES = 10_080  # 7 days
 # Upper bound for `NotificationRule.alert_throttle_minutes`.
 MAX_THROTTLE_MINUTES = 10_080  # 7 days
+# A disk is "about to fill" for `notify_on_disk_full` when its forecast
+# (`Honeypot.disk_forecast`) says it has this many days left or fewer.
+HEALTH_DISK_FULL_DAYS = 7
 
 
 class NotificationScope(enum.StrEnum):
@@ -117,6 +120,29 @@ class NotificationRule(Base):
     # alerts_held_back`), and the next alert that does go out says how
     # many were held back. NULL (the default) sends every alert, as before.
     alert_throttle_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Only these OpenCanary event types raise an alert notification
+    # (`HoneypotEvent.event_type` values, e.g. "4002"). NULL or empty =
+    # every type, as before.
+    alert_event_types: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+
+    # The honeypot's own health (all off by default, so an existing rule
+    # sends nothing new): a disk predicted to fill within
+    # `HEALTH_DISK_FULL_DAYS`, a systemd unit that failed, a pending reboot.
+    # Each is announced once, when it appears — see
+    # `app.tasks.jobs._announce_health`.
+    notify_on_disk_full: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+    notify_on_service_failed: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+    notify_on_reboot_required: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+
+    def wants_alert(self, event_type: str) -> bool:
+        """Whether an alert of this type is one the rule asked for."""
+        return not self.alert_event_types or event_type in self.alert_event_types
 
     # Per-rule wording override, one (subject, body) pair per event kind —
     # `None` means "use the built-in default, in this rule's owner's

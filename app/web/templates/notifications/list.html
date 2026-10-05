@@ -34,7 +34,7 @@
       <form method="post" action="/account/notifications" class="form form-wide"
             autocomplete="off" data-rule-form>
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        {{ rule_fields(request, "new", companies, honeypots, template_defaults, min_minutes, max_minutes, user) }}
+        {{ rule_fields(request, "new", companies, honeypots, template_defaults, min_minutes, max_minutes, user, alert_types=alert_types) }}
         <button type="submit" class="button">{{ t(request, "notifications.rule.add_button") }}</button>
       </form>
     </details>
@@ -67,6 +67,9 @@
                 {% if rule.notify_on_alert %}<span class="badge">{{ t(request, "notifications.rule.event_alert") }}</span>{% endif %}
                 {% if rule.notify_on_unavailable %}<span class="badge">{{ t(request, "notifications.rule.event_unavailable") }} ({{ rule.unavailable_after_minutes }}m)</span>{% endif %}
                 {% if rule.notify_on_recovered %}<span class="badge">{{ t(request, "notifications.rule.event_recovered") }} ({{ rule.recovered_after_minutes }}m)</span>{% endif %}
+                {% for name in ("disk_full", "service_failed", "reboot_required") %}
+                  {% if rule["notify_on_" ~ name] %}<span class="badge">{{ t(request, "notifications.rule.event_" ~ name) }}</span>{% endif %}
+                {% endfor %}
               </td>
               <td>
                 {{ t(request, "notifications.rule.send_via_" + rule.delivery_channel.value) }}
