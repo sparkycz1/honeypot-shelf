@@ -40,6 +40,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.audit import log_event
+from app.auth.scope import can_write_honeypot
 from app.core.app_settings import effective_event_retention_days, get_or_create_app_settings
 from app.core.config import get_settings
 from app.db import session as db_session
@@ -1073,6 +1074,10 @@ async def _announce_health(
     rules = (await _matching_notification_rules(session, [honeypot], rule_column)).get(
         honeypot.id, []
     )
+    if kind == NotificationKind.REBOOT_REQUIRED:
+        # A pending reboot is about maintaining the honeypot: only for rule
+        # owners who may write it, like everything else about updates.
+        rules = [rule for rule in rules if can_write_honeypot(rule.user, honeypot)]
     if rules:
         await notify_health(
             await get_or_create_app_settings(session),

@@ -89,6 +89,27 @@ def honeypots_visible_to(user: User) -> Select[Honeypot]:
     return query
 
 
+def writable_company_ids(user: User) -> set[uuid.UUID] | None:
+    """The companies `user` may write — `None` for "every company", like
+    `visible_company_ids`."""
+    if user.sees_every_company:
+        return None
+    return {cid for cid in user.company_ids() if user.can_write_company(cid)}
+
+
+def honeypots_writable_by(user: User) -> Select[Honeypot]:
+    """`honeypots_visible_to`, narrowed to the honeypots `user` may write
+    (through any of their companies) — the same rule as
+    `can_write_honeypot`, as a query. What an account may only read shows
+    it the honeypot's state and activity, not its packages or pending
+    updates."""
+    query = select(Honeypot)
+    company_ids = writable_company_ids(user)
+    if company_ids is not None:
+        query = query.where(Honeypot.companies.any(Company.id.in_(company_ids)))
+    return query
+
+
 def companies_visible_to(user: User) -> Select[Company]:
     """The `Company` equivalent of `honeypots_visible_to`."""
     query = select(Company)

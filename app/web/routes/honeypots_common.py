@@ -114,6 +114,18 @@ async def _get_honeypot_or_404(honeypot_id: uuid.UUID, db: AsyncSession, user: U
     return honeypot
 
 
+async def _get_writable_honeypot_or_404(
+    honeypot_id: uuid.UUID, db: AsyncSession, user: User
+) -> Honeypot:
+    """`_get_honeypot_or_404`, then 403 for an account that may only read
+    it — for everything a read-only account has no business with: changing
+    the honeypot, and its packages and pending updates."""
+    honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
+    if not can_write_honeypot(user, honeypot):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Read-only access.")
+    return honeypot
+
+
 async def _get_companies(db: AsyncSession, user: User) -> list[Company]:
     """The companies offered in the honeypot create/edit form's
     multi-select — every company for a superadmin; only the companies a

@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.auth.dependencies import get_current_user
-from app.auth.scope import visible_company_ids
+from app.auth.scope import visible_company_ids, writable_company_ids
 from app.core.app_settings import get_or_create_app_settings
 from app.db.models.company import Company
 from app.db.models.company_snapshot import CompanySnapshot
@@ -159,13 +159,16 @@ async def _build_dashboard_context(
     # company in view) summed, drawn at midnight UTC — the chart cards the
     # Monitoring tab uses need datetimes.
     by_day: dict[date, dict[str, int]] = {}
+    # "Needs updates" counts only the companies the account may write.
+    writable_ids = writable_company_ids(user)
     for snapshot in daily_snapshots:
         day = by_day.setdefault(
             snapshot.snapshot_date, {"events": 0, "online": 0, "needs_updates": 0}
         )
         day["events"] += snapshot.event_count
         day["online"] += snapshot.honeypots_online
-        day["needs_updates"] += snapshot.needs_updates
+        if writable_ids is None or snapshot.company_id in writable_ids:
+            day["needs_updates"] += snapshot.needs_updates
     trend_days = sorted(by_day)
 
     return {

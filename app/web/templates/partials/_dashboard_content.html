@@ -73,8 +73,10 @@
          wide=true) }}
     {{ chart_card(online_label, none,
          chart([(online_label, trend_online)], trend_timestamps, time_format='%d.%m.', colors=(chart_palette[1],))) }}
+    {% if current_user.can_write() %}
     {{ chart_card(updates_label, none,
          chart([(updates_label, trend_needs_updates)], trend_timestamps, time_format='%d.%m.', colors=(chart_palette[3],))) }}
+    {% endif %}
   </div>
 </section>
 {% endif %}

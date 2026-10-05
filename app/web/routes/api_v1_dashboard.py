@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_api_token_user
-from app.auth.scope import visible_company_ids
+from app.auth.scope import visible_company_ids, writable_company_ids
 from app.db.models.company_snapshot import CompanySnapshot
 from app.db.models.user import User
 from app.db.session import get_db
@@ -26,7 +26,9 @@ router = APIRouter(prefix="/api/v1/dashboard")
 _view = Depends(get_api_token_user)
 
 
-def _snapshot_to_dict(snapshot: CompanySnapshot) -> dict[str, object]:
+def _snapshot_to_dict(snapshot: CompanySnapshot, *, with_updates: bool) -> dict[str, object]:
+    """`with_updates` is False for a company the account may only read: the
+    three update counts are then null."""
     return {
         "company_id": str(snapshot.company_id),
         "date": snapshot.snapshot_date.isoformat(),
@@ -34,9 +36,9 @@ def _snapshot_to_dict(snapshot: CompanySnapshot) -> dict[str, object]:
         "honeypots_online": snapshot.honeypots_online,
         "event_count": snapshot.event_count,
         "honeypots_reachable": snapshot.honeypots_reachable,
-        "needs_updates": snapshot.needs_updates,
-        "needs_security_updates": snapshot.needs_security_updates,
-        "needs_reboot": snapshot.needs_reboot,
+        "needs_updates": snapshot.needs_updates if with_updates else None,
+        "needs_security_updates": snapshot.needs_security_updates if with_updates else None,
+        "needs_reboot": snapshot.needs_reboot if with_updates else None,
     }
 
 
@@ -55,4 +57,10 @@ async def dashboard_trends_api(
         query = query.where(CompanySnapshot.company_id.in_(company_ids))
     result = await db.execute(query)
     snapshots = list(result.scalars().all())
-    return {"snapshots": [_snapshot_to_dict(s) for s in snapshots]}
+    writable = writable_company_ids(user)
+    return {
+        "snapshots": [
+            _snapshot_to_dict(s, with_updates=writable is None or s.company_id in writable)
+            for s in snapshots
+        ]
+    }

@@ -111,6 +111,7 @@
     {% include "partials/honeypot_facts.html" %}
   </section>
 
+  {% if can_see_packages %}
   <section class="panel">
     {{ render_packages_summary(request, honeypot, package_counts, held_count, poll=True) }}
   </section>
@@ -139,6 +140,7 @@
       </div>
     </div>
   </div>
+  {% endif %}
 
   <section class="panel">
     <h2>{{ t(request, 'honeypots.detail.test_connection_heading') }}</h2>

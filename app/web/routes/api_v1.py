@@ -71,6 +71,7 @@ from app.auth.scope import (
     companies_visible_to,
     has_company_access,
     honeypots_visible_to,
+    honeypots_writable_by,
     visible_honeypots_by_ids,
 )
 from app.core.app_settings import get_or_create_app_settings
@@ -203,6 +204,32 @@ def _honeypot_to_dict(honeypot: Honeypot) -> dict[str, object]:
     }
 
 
+# What an account that may only read a honeypot does not get: its packages
+# and pending updates. The keys stay, with null, so a client's parsing holds.
+_MAINTENANCE_FIELDS = (
+    "reboot_required",
+    "upgradable_count",
+    "security_upgradable_count",
+    "flatpak_upgradable_count",
+    "snap_upgradable_count",
+    "apt_upgradable_packages",
+    "apt_held_packages",
+    "flatpak_upgradable_packages",
+    "snap_upgradable_packages",
+    "updates_checked_at",
+    "packages_updated_at",
+)
+
+
+def _honeypot_for(user: User, honeypot: Honeypot) -> dict[str, object]:
+    """`_honeypot_to_dict` as `user` may see it."""
+    data = _honeypot_to_dict(honeypot)
+    if not can_write_honeypot(user, honeypot):
+        for key in _MAINTENANCE_FIELDS:
+            data[key] = None
+    return data
+
+
 def _company_to_dict(company: Company) -> dict[str, object]:
     return {
         "id": str(company.id),
@@ -310,7 +337,7 @@ async def list_honeypots_api(
     query = honeypots_visible_to(user)
     query = apply_tag_filter(query, tag, tag_mode if tag_mode == "and" else "or")
     result = await db.execute(query)
-    return [_honeypot_to_dict(m) for m in result.scalars().all()]
+    return [_honeypot_for(user, m) for m in result.scalars().all()]
 
 
 @router.get("/honeypots/package-search", dependencies=[_view_honeypots])
@@ -325,7 +352,8 @@ async def package_search_api(
     500-row cap."""
     if not q.strip():
         return {"results": [], "truncated": False}
-    visible_ids = (honeypots_visible_to(user)).with_only_columns(Honeypot.id)
+    # Only honeypots the account may write: packages are not for read-only access.
+    visible_ids = honeypots_writable_by(user).with_only_columns(Honeypot.id)
     query = (
         select(HoneypotPackage)
         .options(selectinload(HoneypotPackage.honeypot))
@@ -440,7 +468,7 @@ async def get_honeypot_api(
     honeypot_id: uuid.UUID, db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_token_user),
 ) -> dict[str, object]:
-    return _honeypot_to_dict(await _get_honeypot_or_404(honeypot_id, db, user))
+    return _honeypot_for(user, await _get_honeypot_or_404(honeypot_id, db, user))
 
 
 @router.get("/honeypots/{honeypot_id}/packages", dependencies=[_view_honeypots])
@@ -452,7 +480,7 @@ async def list_honeypot_packages_api(
     held_only: bool = False,
     user: User = Depends(get_api_token_user),
 ) -> list[dict[str, object]]:
-    await _get_honeypot_or_404(honeypot_id, db, user)
+    await _get_writable_honeypot_or_404(honeypot_id, db, user)
     query = select(HoneypotPackage).where(HoneypotPackage.honeypot_id == honeypot_id)
     if q.strip():
         query = query.where(HoneypotPackage.name.ilike(f"%{q.strip()}%"))
@@ -469,7 +497,7 @@ async def list_honeypot_held_packages_api(
     honeypot_id: uuid.UUID, db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_token_user),
 ) -> list[dict[str, object]]:
-    await _get_honeypot_or_404(honeypot_id, db, user)
+    await _get_writable_honeypot_or_404(honeypot_id, db, user)
     result = await db.execute(
         select(HoneypotPackage)
         .where(HoneypotPackage.honeypot_id == honeypot_id, HoneypotPackage.held.is_(True))
@@ -497,6 +525,7 @@ async def honeypot_timeline_api(
         honeypot,
         days=days,
         include_audit=user.is_superadmin,
+        include_updates=can_write_honeypot(user, honeypot),
         kinds={kind} if kind in honeypot_timeline.TIMELINE_KINDS else None,
     )
     return {
@@ -577,7 +606,7 @@ async def list_honeypot_update_runs_api(
 ) -> dict[str, object]:
     """The API equivalent of `GET /honeypots/{id}/updates` — every update run
     for this honeypot, newest first, paginated/filterable the same way."""
-    await _get_honeypot_or_404(honeypot_id, db, user)
+    await _get_writable_honeypot_or_404(honeypot_id, db, user)
     page = max(page, 1)
 
     query = select(HoneypotUpdateRun).where(HoneypotUpdateRun.honeypot_id == honeypot_id)
@@ -1947,7 +1976,8 @@ async def update_batch_detail_api(
     # Restricted to this account's own honeypots, so a batch that straddles
     # the boundary (an unrestricted admin's "All honeypots" run) reports only
     # the part this account can see.
-    visible_ids = (honeypots_visible_to(user)).with_only_columns(Honeypot.id)
+    # Only honeypots the account may write: packages are not for read-only access.
+    visible_ids = honeypots_writable_by(user).with_only_columns(Honeypot.id)
     result = await db.execute(
         select(HoneypotUpdateRun)
         .options(selectinload(HoneypotUpdateRun.honeypot))
