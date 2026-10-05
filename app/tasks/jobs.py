@@ -94,7 +94,7 @@ from app.ssh.client import open_connection, test_connection
 from app.ssh.credentials import resolve_honeypot_credential
 from app.ssh.exceptions import SSHConnectionError
 from app.ssh.exec import run_command
-from app.ssh.facts import gather_facts
+from app.ssh.facts import check_reboot_required, gather_facts
 from app.ssh.identity import get_or_create_identity
 from app.ssh.logs import (
     LogAccessError,
@@ -125,9 +125,11 @@ from app.ssh.services import gather_services
 from app.ssh.updates import (
     capture_package_snapshot,
     check_updates,
+    fetch_changelog,
     preview_update,
     run_rollback,
     run_system_update,
+    set_package_hold,
 )
 from app.tasks.celery_app import celery_app
 
@@ -2088,6 +2090,8 @@ async def _run_honeypot_update(run_id: str) -> None:
 
     refresh_honeypot_packages.delay(str(run.honeypot_id))
     check_honeypot_updates.delay(str(run.honeypot_id))
+    if run.reboot_if_required or run.rollout_position is not None:
+        finish_update_run.delay(str(run.id))
 
 
 @celery_app.task(
@@ -2096,6 +2100,171 @@ async def _run_honeypot_update(run_id: str) -> None:
 )
 def run_honeypot_update(run_id: str) -> None:
     asyncio.run(_run_honeypot_update(run_id))
+
+
+# After "reboot only if needed": how long a honeypot gets to go down, then to
+# answer on its SSH port again, before a rolling update gives up on it.
+_REBOOT_DOWN_WAIT_SECONDS = 180
+_REBOOT_BACK_WAIT_SECONDS = 15 * 60
+_REBOOT_POLL_SECONDS = 10
+_UPDATE_FOLLOW_UP_ACTOR = "scheduler (automatic)"
+
+
+async def _wait_until_back(honeypot: Honeypot) -> bool:
+    """After a reboot command: wait for the honeypot to stop answering on its
+    SSH port (or `_REBOOT_DOWN_WAIT_SECONDS`, for one that rebooted faster
+    than a poll), then for it to answer again. True = it's back."""
+    address = honeypot.ip_address
+    if address is None:
+        return False
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + _REBOOT_DOWN_WAIT_SECONDS
+    while loop.time() < deadline:
+        if not (await check_reachable(address, honeypot.port)).reachable:
+            break
+        await asyncio.sleep(_REBOOT_POLL_SECONDS)
+    deadline = loop.time() + _REBOOT_BACK_WAIT_SECONDS
+    while loop.time() < deadline:
+        if (await check_reachable(address, honeypot.port)).reachable:
+            return True
+        await asyncio.sleep(_REBOOT_POLL_SECONDS)
+    return False
+
+
+async def _reboot_after_update(
+    session: AsyncSession, run: HoneypotUpdateRun, honeypot: Honeypot, connect_timeout: int
+) -> None:
+    """"Reboot only if needed" for one successful run: check, reboot, wait
+    for the honeypot to answer again; the outcome lands on the run, in its
+    output and in the audit log."""
+    secret = await resolve_honeypot_credential(honeypot, session)
+    try:
+        needed = await check_reboot_required(honeypot, secret, connect_timeout)
+    except (SSHConnectionError, TimeoutError) as exc:
+        logger.warning("Reboot check failed for %s: %s", honeypot.name, exc)
+        needed = None
+    note: str
+    if needed:
+        try:
+            await send_power_command(honeypot, secret, PowerAction.REBOOT, connect_timeout)
+        except (SSHConnectionError, TimeoutError) as exc:
+            run.reboot_outcome = "failed"
+            note = f"Reboot needed, but the reboot command failed: {exc}"
+        else:
+            back = await _wait_until_back(honeypot)
+            run.reboot_outcome = "rebooted" if back else "not_back"
+            note = (
+                "Rebooted (the update needed it) and the honeypot is back."
+                if back
+                else "Rebooted (the update needed it), but the honeypot did not "
+                f"answer again within {_REBOOT_BACK_WAIT_SECONDS // 60} minutes."
+            )
+    else:
+        run.reboot_outcome = "not_needed"
+        note = (
+            "No reboot needed."
+            if needed is False
+            else "Couldn't tell whether a reboot is needed — not rebooted."
+        )
+    run.output = _truncate_output(f"{run.output or ''}\n\n[Honeypot Shelf] {note}")
+    await session.commit()
+    await log_event(
+        session,
+        actor=_UPDATE_FOLLOW_UP_ACTOR,
+        action="honeypot.update.reboot",
+        summary=f'After updating "{honeypot.name}": {note}',
+        outcome=(
+            AuditOutcome.FAILURE
+            if run.reboot_outcome in ("failed", "not_back")
+            else AuditOutcome.SUCCESS
+        ),
+        target_type="honeypot",
+        target_id=honeypot.id,
+        target_label=honeypot.name,
+        details={"run_id": str(run.id), "reboot_outcome": run.reboot_outcome},
+    )
+    if run.reboot_outcome == "rebooted":
+        refresh_honeypot_facts.delay(str(honeypot.id))
+
+
+async def _continue_rollout(
+    session: AsyncSession, run: HoneypotUpdateRun, honeypot: Honeypot
+) -> None:
+    """A rolling batch: start the next honeypot's run when this one went
+    well, otherwise fail every run still waiting, with the reason."""
+    result = await session.execute(
+        select(HoneypotUpdateRun)
+        .where(
+            HoneypotUpdateRun.batch_id == run.batch_id,
+            HoneypotUpdateRun.status == UpdateRunStatus.PENDING,
+            HoneypotUpdateRun.rollout_position > run.rollout_position,
+        )
+        .order_by(HoneypotUpdateRun.rollout_position)
+    )
+    waiting = list(result.scalars().all())
+    if not waiting:
+        return
+    did_not_come_back = run.reboot_outcome in ("failed", "not_back")
+    if run.status == UpdateRunStatus.SUCCEEDED and not did_not_come_back:
+        run_honeypot_update.delay(str(waiting[0].id))
+        return
+    now = datetime.now(UTC)
+    reason = f'Rolling update stopped: "{honeypot.name}" ' + (
+        "did not come back after its reboot." if did_not_come_back else "failed to update."
+    )
+    for pending in waiting:
+        pending.status = UpdateRunStatus.FAILED
+        pending.error = reason[:1024]
+        pending.finished_at = now
+    await session.commit()
+    await log_event(
+        session,
+        actor=_UPDATE_FOLLOW_UP_ACTOR,
+        action="honeypot.update.rollout_stopped",
+        summary=f"{reason} {len(waiting)} honeypot(s) were not updated.",
+        outcome=AuditOutcome.FAILURE,
+        target_type="honeypot",
+        target_id=honeypot.id,
+        target_label=honeypot.name,
+        details={"batch_id": str(run.batch_id), "not_updated": len(waiting)},
+    )
+
+
+async def _finish_update_run(run_id: str) -> dict[str, Any]:
+    """What happens after an update run, when it asked for more than the
+    update itself (`HoneypotUpdateRun.reboot_if_required` /
+    `.rollout_position`, set by a scheduled "System update"):
+
+    1. reboot only if needed — a successful run whose honeypot now needs a
+       reboot (`app.ssh.facts.check_reboot_required`) is rebooted, and
+       waited for until it answers again; the outcome lands on the run;
+    2. rolling batches — the next honeypot's run starts only after this one
+       succeeded (and came back, if it rebooted). Anything else stops the
+       rollout: every run still waiting is marked failed with the reason,
+       so nothing is left pending forever.
+    """
+    async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
+        run = await session.get(HoneypotUpdateRun, uuid.UUID(run_id))
+        if run is None:
+            return {"ok": False, "error": "Update run not found."}
+        honeypot = await session.get(Honeypot, run.honeypot_id)
+        if honeypot is None:
+            return {"ok": False, "error": "Honeypot not found."}
+
+        if run.status == UpdateRunStatus.SUCCEEDED and run.reboot_if_required:
+            await _reboot_after_update(session, run, honeypot, app_settings.ssh_connect_timeout)
+        if run.rollout_position is not None and run.batch_id is not None:
+            await _continue_rollout(session, run, honeypot)
+        return {"ok": True, "reboot_outcome": run.reboot_outcome}
+
+
+@celery_app.task(
+    name="app.tasks.jobs.finish_update_run",
+    time_limit=_REBOOT_DOWN_WAIT_SECONDS + _REBOOT_BACK_WAIT_SECONDS + 300,
+)
+def finish_update_run(run_id: str) -> dict[str, Any]:
+    return asyncio.run(_finish_update_run(run_id))
 
 
 async def _rollback_honeypot_update(run_id: str) -> None:
@@ -2223,6 +2392,8 @@ async def _check_honeypot_updates(honeypot_id: str) -> dict[str, Any]:
         honeypot.snap_upgradable_count = result.snap_upgradable_count
         honeypot.flatpak_upgradable_packages = [dict(p) for p in result.flatpak_upgradable_packages]
         honeypot.snap_upgradable_packages = [dict(p) for p in result.snap_upgradable_packages]
+        if result.held_packages is not None:
+            honeypot.apt_held_packages = result.held_packages
 
         if result.exit_status == 0:
             honeypot.upgradable_count = result.upgradable_count
@@ -2254,6 +2425,91 @@ async def _check_honeypot_updates(honeypot_id: str) -> dict[str, Any]:
 )
 def check_honeypot_updates(honeypot_id: str) -> dict[str, Any]:
     return asyncio.run(_check_honeypot_updates(honeypot_id))
+
+
+async def _set_honeypot_package_hold(honeypot_id: str, package: str, hold: bool) -> dict[str, Any]:
+    """`apt-mark hold`/`unhold` one package, then keep
+    `Honeypot.apt_held_packages` in step with the result right away (the
+    next update check refreshes it from the honeypot anyway)."""
+    async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
+        honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
+        if honeypot is None:
+            return {"ok": False, "error": "Honeypot not found."}
+        if not honeypot.host_key_fingerprint:
+            return {"ok": False, "error": "No pinned host key fingerprint yet."}
+        secret = await resolve_honeypot_credential(honeypot, session)
+        try:
+            result = await set_package_hold(
+                honeypot,
+                secret,
+                package,
+                hold=hold,
+                connect_timeout_seconds=app_settings.ssh_connect_timeout,
+            )
+        except (SSHConnectionError, TimeoutError, ValueError) as exc:
+            logger.warning("set_honeypot_package_hold failed for %s: %s", honeypot.name, exc)
+            return {"ok": False, "error": str(exc)}
+        if result.exit_status != 0:
+            return {"ok": False, "error": result.output.strip()[-500:] or "apt-mark failed."}
+        held = set(honeypot.apt_held_packages or [])
+        if hold:
+            held.add(package)
+        else:
+            held.discard(package)
+        honeypot.apt_held_packages = sorted(held)
+        await session.commit()
+        await publish_honeypot_event(honeypot_id, KIND_UPDATES)
+        return {"ok": True, "output": result.output}
+
+
+@celery_app.task(
+    name="app.tasks.jobs.set_honeypot_package_hold",
+    time_limit=_SSH_TASK_TIME_LIMIT_SECONDS,
+)
+def set_honeypot_package_hold(honeypot_id: str, package: str, hold: bool) -> dict[str, Any]:
+    return asyncio.run(_set_honeypot_package_hold(honeypot_id, package, hold))
+
+
+async def _view_package_changelog(honeypot_id: str, package: str) -> dict[str, Any]:
+    """The changelog of one pending apt update since the installed version
+    (`app.ssh.updates.fetch_changelog`) — read-only, nothing stored."""
+    async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
+        honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
+        if honeypot is None:
+            return {"ok": False, "error": "Honeypot not found."}
+        if not honeypot.host_key_fingerprint:
+            return {"ok": False, "error": "No pinned host key fingerprint yet."}
+        installed = next(
+            (
+                str(p.get("current_version") or "") or None
+                for p in honeypot.apt_upgradable_packages or []
+                if p.get("name") == package
+            ),
+            None,
+        )
+        secret = await resolve_honeypot_credential(honeypot, session)
+        try:
+            text = await fetch_changelog(
+                honeypot,
+                secret,
+                package,
+                installed_version=installed,
+                connect_timeout_seconds=app_settings.ssh_connect_timeout,
+            )
+        except (SSHConnectionError, TimeoutError, ValueError) as exc:
+            logger.warning("view_package_changelog failed for %s: %s", honeypot.name, exc)
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "changelog": text, "installed_version": installed}
+
+
+@celery_app.task(
+    name="app.tasks.jobs.view_package_changelog",
+    time_limit=_SSH_TASK_TIME_LIMIT_SECONDS,
+)
+def view_package_changelog(honeypot_id: str, package: str) -> dict[str, Any]:
+    return asyncio.run(_view_package_changelog(honeypot_id, package))
 
 
 async def _preview_honeypot_update(honeypot_id: str, strategy: str) -> dict[str, Any]:

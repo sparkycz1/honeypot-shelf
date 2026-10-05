@@ -263,3 +263,40 @@ async def gather_facts(
     stdout = result.stdout or ""
     raw = stdout if isinstance(stdout, str) else stdout.decode()
     return parse_facts_output(raw)
+
+
+# Just what `reboot_required` is computed from, plus Debian's own
+# /run/reboot-required flag — run after an update, to decide whether
+# "reboot only if needed" should reboot. Read by `parse_reboot_check`.
+_REBOOT_FLAG = "HONEYPOTSHELF_REBOOT_FLAG"
+REBOOT_CHECK_COMMAND = (
+    f"[ -f /run/reboot-required ] && echo {_REBOOT_FLAG}; "
+    "echo ===KERNEL===; uname -r 2>/dev/null; "
+    "echo ===KERNEL_LATEST===; "
+    "dpkg --list 'linux-image-*' 2>/dev/null | awk '/^ii/{print $2}' "
+    "| sed -E 's/^linux-image-//' | grep -E '^[0-9]' | sort -V | tail -1; true"
+)
+
+
+def parse_reboot_check(raw: str) -> bool | None:
+    """True = needs a reboot (the flag file, or a newer kernel installed
+    than running); None = couldn't tell."""
+    before, _, rest = raw.partition("===KERNEL===")
+    if _REBOOT_FLAG in before:
+        return True
+    running, _, latest = rest.partition("===KERNEL_LATEST===")
+    running, latest = running.strip(), latest.strip()
+    if not running or not latest:
+        return None
+    return running != latest
+
+
+async def check_reboot_required(
+    honeypot: Honeypot, secret: str | None, timeout_seconds: int
+) -> bool | None:
+    """Whether `honeypot` needs a reboot right now; None = couldn't tell."""
+    async with await open_connection(honeypot, secret, timeout_seconds) as conn:
+        result = await conn.run(REBOOT_CHECK_COMMAND, check=False, timeout=timeout_seconds + 15)
+    stdout = result.stdout or ""
+    raw = stdout if isinstance(stdout, str) else stdout.decode()
+    return parse_reboot_check(raw)

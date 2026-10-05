@@ -16,7 +16,31 @@
       {{ t(request, "honeypots.updates.history.hint") }}
     </p>
 
+    {% if hold_outcome == 'failed' %}
+      <div class="alert alert-error"><p>{{ t(request, "updates.hold.failed", package=(hold_package or '…')) }}</p></div>
+    {% elif hold_outcome %}
+      <div class="alert alert-ok"><p>{{ t(request, "updates.hold." ~ hold_outcome, package=(hold_package or '…')) }}</p></div>
+    {% endif %}
+
     {% include "partials/update_availability.html" %}
+
+    {% if honeypot.apt_held_packages %}
+      <h3>{{ t(request, "updates.hold.heading") }}</h3>
+      <p class="hint">{{ t(request, "updates.hold.hint") }}</p>
+      <ul class="held-packages">
+        {% for name in honeypot.apt_held_packages %}
+          <li>
+            <code>{{ name }}</code>
+            <form method="post" action="/honeypots/{{ honeypot.id }}/updates/hold" class="inline-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="package" value="{{ name }}">
+              <input type="hidden" name="hold" value="0">
+              <button type="submit" class="link-button">{{ t(request, "updates.hold.release") }}</button>
+            </form>
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
 
     <form method="get" action="/honeypots/{{ honeypot.id }}/updates/preview" class="form">
       {% include "partials/upgrade_strategy_fields.html" %}
@@ -65,7 +89,7 @@
           <tr>
             <td>{{ run.created_at | local_time('%Y-%m-%d %H:%M:%S %Z') }}</td>
             <td>
-              {{ 'dist-upgrade' if run.strategy.value == 'dist_upgrade' else 'full-upgrade' }}
+              {{ strategy_label(request, run.strategy.value) }}
               {% if run.rollback_of_run_id %}<span class="badge">{{ t(request, "partials.updates.rollback_badge") }}</span>{% endif %}
             </td>
             <td>

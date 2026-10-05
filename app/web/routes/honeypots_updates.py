@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from typing import Any
+from urllib.parse import quote
 
 # NOT the builtin `TimeoutError` — `celery.exceptions.TimeoutError` does not
 # subclass it, so catching the builtin around `AsyncResult.get(timeout=...)`
@@ -23,7 +25,7 @@ from app.db.models.audit_log import AuditOutcome
 from app.db.models.honeypot_update_run import HoneypotUpdateRun, UpdateRunStatus, UpgradeStrategy
 from app.db.models.user import User
 from app.db.session import get_db
-from app.ssh.updates import PendingPackage
+from app.ssh.updates import PendingPackage, is_safe_package_name
 
 # Imported as a module, not name-by-name: this file already has a route
 # function called `preview_honeypot_update`, which would shadow the task of
@@ -35,7 +37,7 @@ from app.web.routes.honeypots_common import (
     honeypots_router,
     need_updates,
 )
-from app.web.templating import templates
+from app.web.templating import t, templates
 
 router = honeypots_router()
 
@@ -271,6 +273,120 @@ async def rollback_honeypot_update_endpoint(
     )
 
 
+# The outcome of `POST .../updates/hold`, carried over its redirect as a
+# code — the package name next to it is validated before it is echoed.
+_HOLD_OUTCOMES = {"held": "held", "released": "released", "failed": "failed"}
+
+
+async def _run_task(delayed: Any, wait_seconds: float) -> tuple[dict[str, Any], str | None]:
+    """Wait for a task that answers `{"ok": ...}`. Returns (result, error)."""
+    try:
+        result = await asyncio.to_thread(delayed.get, timeout=wait_seconds)
+    except CeleryTimeoutError:
+        return {}, "The command did not finish in time."
+    except Exception as exc:  # the broker or the worker itself failed
+        return {}, str(exc)
+    if not isinstance(result, dict) or not result.get("ok"):
+        return {}, str((result or {}).get("error") or "Unknown error.")
+    return result, None
+
+
+@router.post("/{honeypot_id}/updates/hold", dependencies=[need_updates, Depends(verify_csrf)])
+async def set_package_hold_endpoint(
+    request: Request,
+    honeypot_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    package: str = Form(""),
+    hold: str = Form("1"),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Hold a package at its installed version (`apt-mark hold`) so no
+    update run touches it, or release it again (`hold=0`). Same access as
+    running updates. Audited as `honeypot.package.hold`/`.unhold`."""
+    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    app_settings = await get_or_create_app_settings(db)
+    package = package.strip()
+    holding = hold not in ("0", "false", "")
+    if not is_safe_package_name(package):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=t(request, "updates.hold.invalid_package"),
+        )
+    stored_names = [str(p.get("name") or "") for p in honeypot.apt_upgradable_packages or []]
+    stored_names += list(honeypot.apt_held_packages or [])
+    known_name = next((name for name in stored_names if name == package), "")
+    _result, error = await _run_task(
+        tasks.set_honeypot_package_hold.delay(str(honeypot.id), package, holding),
+        app_settings.ssh_connect_timeout + 90,
+    )
+    await log_event(
+        db,
+        request=request,
+        action="honeypot.package.hold" if holding else "honeypot.package.unhold",
+        summary=f'{"Held" if holding else "Released"} package "{package}" on "{honeypot.name}"',
+        outcome=AuditOutcome.SUCCESS if error is None else AuditOutcome.FAILURE,
+        target_type="honeypot",
+        target_id=honeypot.id,
+        target_label=honeypot.name,
+        details={"package": package, **({"error": error} if error else {})},
+    )
+    outcome = "failed" if error is not None else ("held" if holding else "released")
+    # The name shown after the redirect is taken from what is stored about
+    # this honeypot (its pending and held packages), never from the form.
+    url = f"/honeypots/{honeypot.id}/updates?hold={outcome}"
+    if known_name:
+        url += f"&package={quote(known_name, safe='')}"
+    return RedirectResponse(url=url, status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.get("/{honeypot_id}/updates/changelog", dependencies=[need_updates])
+async def package_changelog_page(
+    request: Request,
+    honeypot_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    package: str = "",
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """What changed in one pending apt update since the installed version —
+    `apt-get changelog`, fetched live over SSH, trimmed to the new entries
+    (`app.ssh.updates.fetch_changelog`). Read-only, never stored."""
+    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    app_settings = await get_or_create_app_settings(db)
+    package = package.strip()
+    changelog: str | None = None
+    installed: str | None = None
+    error: str | None = None
+    if not is_safe_package_name(package):
+        error = t(request, "updates.hold.invalid_package")
+    elif not honeypot.host_key_fingerprint:
+        error = t(request, "honeypots.updates.history.confirm_fingerprint_hint")
+    else:
+        result, error = await _run_task(
+            tasks.view_package_changelog.delay(str(honeypot.id), package),
+            app_settings.ssh_connect_timeout + 60,
+        )
+        if error is None:
+            changelog = str(result.get("changelog") or "")
+            installed = result.get("installed_version")
+    pending = next(
+        (p for p in honeypot.apt_upgradable_packages or [] if p.get("name") == package), None
+    )
+    return templates.TemplateResponse(
+        request,
+        "honeypots/changelog.html",
+        {
+            "honeypot": honeypot,
+            "tabs": _honeypot_tabs(request, honeypot, current_user),
+            "active_tab": "updates",
+            "package": package if is_safe_package_name(package) else "",
+            "pending": pending,
+            "installed_version": installed,
+            "changelog": changelog,
+            "error": error,
+        },
+    )
+
+
 @router.get("/{honeypot_id}/updates", dependencies=[need_updates])
 async def honeypot_update_history(
     request: Request,
@@ -315,6 +431,12 @@ async def honeypot_update_history(
             "status_filter": status_filter,
             "page": page,
             "has_older": has_older,
+            "hold_outcome": _HOLD_OUTCOMES.get(request.query_params.get("hold", "")),
+            "hold_package": (
+                hold_package
+                if is_safe_package_name(hold_package := request.query_params.get("package", ""))
+                else ""
+            ),
         },
     )
     if new_cookie:

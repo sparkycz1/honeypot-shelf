@@ -25,6 +25,7 @@ from app.i18n import translate as _translate
 from app.services import acknowledgements
 from app.services.geoip_display import country_flag
 from app.services.opencanary_logtypes import localized_logtype_label, logtype_label
+from app.ssh.updates import reboot_hint_packages
 from app.web import branding, charts
 from app.web.os_logos import badge_for
 
@@ -277,3 +278,16 @@ templates.env.globals["git_commit"] = get_git_commit
 # A flag emoji from a 2-letter country code — see app.services.geoip_display
 # for why this and the GeoIP lookups themselves are kept separate modules.
 templates.env.globals["geoip_flag"] = country_flag
+
+
+def strategy_label(request: Request, value: str | None) -> str:
+    """An update run's strategy the way the forms name it."""
+    key = f"updates.strategy.{value}"
+    label = t(request, key)
+    if label == key:
+        return value or ""
+    return label
+
+
+templates.env.globals["strategy_label"] = strategy_label
+templates.env.globals["reboot_hint_packages"] = reboot_hint_packages

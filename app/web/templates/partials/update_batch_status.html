@@ -19,7 +19,7 @@
       {% for run in runs %}
         <tr>
           <td><a href="/honeypots/{{ run.honeypot_id }}">{{ run.honeypot.name }}</a></td>
-          <td>{{ 'dist-upgrade' if run.strategy.value == 'dist_upgrade' else 'full-upgrade' }}</td>
+          <td>{{ strategy_label(request, run.strategy.value) }}</td>
           <td>
             {% if run.status.value == 'pending' %}
               <span class="badge badge-warn">{{ t(request, "partials.updates.status_pending") }}</span>

@@ -2072,3 +2072,23 @@ th[data-sort][aria-sort="descending"]::after { content: " \2193"; color: var(--c
 /* Logs tab: the directory browser inside a viewer card. */
 .log-browse { padding: var(--space-3) var(--space-4); }
 .log-browse .hint { margin-top: 0; }
+
+/* Updates: a pending package's changelog. */
+.changelog {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  font-size: 0.85rem;
+  max-height: 70vh;
+  overflow: auto;
+}
+.package-actions { display: inline-flex; gap: 0.35rem; align-items: center; margin-left: 0.35rem; }
+
+/* Update forms: the upgrade strategy, one option per line with its hint. */
+.strategy-fields { border: 0; padding: 0; margin: 0 0 0.75rem; display: grid; gap: 0.35rem; }
+.strategy-fields legend { font-weight: 600; margin-bottom: 0.25rem; }
+.strategy-fields .hint { display: block; margin: 0 0 0 1.6rem; }
+.held-packages { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; }

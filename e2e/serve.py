@@ -100,6 +100,26 @@ async def seed() -> str:
             last_ping_at=now,
             opencanary_log_polled_at=now,
             last_seen_at=now,
+            # Pending updates and a held package, so the Updates tab renders
+            # its changelog/hold controls and the "needs a reboot" hint.
+            updates_checked_at=now,
+            upgradable_count=2,
+            security_upgradable_count=1,
+            apt_upgradable_packages=[
+                {
+                    "name": "linux-image-6.1.0-28-amd64",
+                    "current_version": "6.1.119-1",
+                    "new_version": "6.1.123-1",
+                    "security": True,
+                },
+                {
+                    "name": "vim",
+                    "current_version": "9.0.1378-2",
+                    "new_version": "9.0.1378-3",
+                    "security": False,
+                },
+            ],
+            apt_held_packages=["opencanary"],
         )
         db.add(honeypot)
         await db.flush()
