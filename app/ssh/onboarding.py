@@ -100,7 +100,7 @@ def build_sudoers_grant_command(username: str) -> str:
     user = shlex.quote(username)
     return (
         f"cat > /etc/sudoers.d/{user} <<'HONEYPOTSHELF_SUDOERS_APT'\n"
-        f"{username} ALL=(root) NOPASSWD: /usr/bin/apt-get, /usr/sbin/shutdown, "
+        f"{username} ALL=(root) NOPASSWD: /usr/bin/apt-get, /usr/bin/apt-mark, /usr/sbin/shutdown, "
         "/usr/sbin/dmidecode, /usr/bin/systemctl, /usr/bin/raspi-config, "
         "/usr/bin/bash /tmp/.honeypotshelf-*\n"
         "HONEYPOTSHELF_SUDOERS_APT\n"

@@ -31,6 +31,10 @@
     </span>
     <span class="hint">({{ t(request, "partials.updates.checked_at") }} {{ honeypot.updates_checked_at | local_time('%Y-%m-%d %H:%M %Z') }})</span>
   </p>
+  {% set reboot_pkgs = reboot_hint_packages(honeypot.apt_upgradable_packages) %}
+  {% if reboot_pkgs %}
+    <div class="alert alert-warn"><p>{{ t(request, "updates.reboot_hint", packages=(reboot_pkgs | join(', '))) }}</p></div>
+  {% endif %}
   {% if honeypot.apt_upgradable_packages %}
     <details>
       <summary>{{ t(request, "partials.updates.which_apt_packages") }}</summary>
@@ -40,6 +44,18 @@
             <code>{{ pkg.name }}</code>
             {%- if pkg.current_version and pkg.new_version %}: {{ pkg.current_version }} → {{ pkg.new_version }}
             {%- elif pkg.new_version %}: {{ pkg.new_version }}{% endif %}
+            {% if pkg.security %}<span class="badge badge-warn">{{ t(request, "updates.security_badge") }}</span>{% endif %}
+            {% if request.state.user.can_write() %}
+              <span class="package-actions">
+                <a href="/honeypots/{{ honeypot.id }}/updates/changelog?package={{ pkg.name | urlencode }}">{{ t(request, "updates.changelog.link") }}</a>
+                <form method="post" action="/honeypots/{{ honeypot.id }}/updates/hold" class="inline-form">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <input type="hidden" name="package" value="{{ pkg.name }}">
+                  <input type="hidden" name="hold" value="1">
+                  <button type="submit" class="link-button" title="{{ t(request, 'updates.hold.hold_title') }}">{{ t(request, "updates.hold.hold") }}</button>
+                </form>
+              </span>
+            {% endif %}
           </li>
         {% endfor %}
       </ul>

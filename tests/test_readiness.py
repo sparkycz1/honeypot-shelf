@@ -22,6 +22,7 @@ def test_parse_readiness_output_all_ok():
         "===RASPI_CONFIG_SUDO===\nok\n"
         "===FLATPAK_SNAP_PRESENT===\nno\n"
         "===FLATPAK_SNAP_SUDO===\nok\n"
+        "===APT_MARK_SUDO===\nok\n"
     )
     result = parse_readiness_output(raw)
     assert result["systemctl_sudo_ok"] is True
@@ -41,6 +42,7 @@ def test_parse_readiness_output_missing_systemctl_sudo():
         "===RASPI_CONFIG_SUDO===\nok\n"
         "===FLATPAK_SNAP_PRESENT===\nno\n"
         "===FLATPAK_SNAP_SUDO===\nok\n"
+        "===APT_MARK_SUDO===\nok\n"
     )
     result = parse_readiness_output(raw)
     assert result["systemctl_sudo_ok"] is False
@@ -59,6 +61,7 @@ def test_parse_readiness_output_missing_raspi_config_sudo():
         "===RASPI_CONFIG_SUDO===\nmissing\n"
         "===FLATPAK_SNAP_PRESENT===\nno\n"
         "===FLATPAK_SNAP_SUDO===\nok\n"
+        "===APT_MARK_SUDO===\nok\n"
     )
     result = parse_readiness_output(raw)
     assert result["raspi_config_sudo_ok"] is False
@@ -81,6 +84,7 @@ def test_parse_readiness_output_raspi_config_absent_is_never_reported_missing():
         "===RASPI_CONFIG_SUDO===\nmissing\n"
         "===FLATPAK_SNAP_PRESENT===\nno\n"
         "===FLATPAK_SNAP_SUDO===\nok\n"
+        "===APT_MARK_SUDO===\nok\n"
     )
     result = parse_readiness_output(raw)
     assert result["raspi_config_present"] is False
@@ -95,3 +99,21 @@ def test_parse_readiness_output_missing_section_reads_as_not_ok():
     result = parse_readiness_output("===NCURSES_TERM===\nok\n")
     assert result["systemctl_sudo_ok"] is False
     assert result["raspi_config_present"] is False
+
+
+def test_missing_apt_mark_sudo_is_reported():
+    """An account set up before 0.70.0 has no sudoers entry for apt-mark."""
+    raw = (
+        "===NCURSES_TERM===\nok\n"
+        "===APT_SUDO===\nok\n"
+        "===SHUTDOWN_SUDO===\nok\n"
+        "===DMIDECODE_SUDO===\nok\n"
+        "===SYSTEMCTL_SUDO===\nok\n"
+        "===RASPI_CONFIG_PRESENT===\nno\n"
+        "===RASPI_CONFIG_SUDO===\nmissing\n"
+        "===FLATPAK_SNAP_PRESENT===\nno\n"
+        "===FLATPAK_SNAP_SUDO===\nok\n"
+        "===APT_MARK_SUDO===\nmissing\n"
+    )
+    missing = missing_requirements(parse_readiness_output(raw))
+    assert len(missing) == 1 and "apt-mark" in missing[0]

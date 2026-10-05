@@ -51,6 +51,7 @@ import contextlib
 import re
 import uuid
 from datetime import datetime
+from typing import Any
 
 # NOT the builtin `TimeoutError` — `celery.exceptions.TimeoutError` does not
 # subclass it, so catching the builtin around `AsyncResult.get(timeout=...)`
@@ -104,6 +105,7 @@ from app.ssh.client import discover_host_key_fingerprint
 from app.ssh.exceptions import SSHConnectionError
 from app.ssh.packages import PackageSource
 from app.ssh.power import PowerAction
+from app.ssh.updates import is_safe_package_name
 from app.tasks import jobs as tasks
 from app.tasks.jobs import (
     preview_honeypot_update,
@@ -188,6 +190,7 @@ def _honeypot_to_dict(honeypot: Honeypot) -> dict[str, object]:
         "flatpak_upgradable_count": honeypot.flatpak_upgradable_count,
         "snap_upgradable_count": honeypot.snap_upgradable_count,
         "apt_upgradable_packages": honeypot.apt_upgradable_packages,
+        "apt_held_packages": honeypot.apt_held_packages,
         "flatpak_upgradable_packages": honeypot.flatpak_upgradable_packages,
         "snap_upgradable_packages": honeypot.snap_upgradable_packages,
         "updates_checked_at": _isoformat(honeypot.updates_checked_at),
@@ -1382,6 +1385,114 @@ async def check_honeypot_updates_api(
         details={"skipped": skipped},
     )
     return {"skipped": skipped}
+
+
+async def _wait_for_task(delayed: Any, wait_seconds: float) -> dict[str, Any]:
+    """The `{"ok": True, ...}` answer of a task, or a 502 with its error."""
+    try:
+        result = await asyncio.to_thread(delayed.get, timeout=wait_seconds)
+    except CeleryTimeoutError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail="The command did not finish in time."
+        ) from exc
+    if not isinstance(result, dict) or not result.get("ok"):
+        detail = str((result or {}).get("error") or "Unknown error.")
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
+    return result
+
+
+def _require_package_and_host_key(honeypot: Honeypot, package: str) -> None:
+    if not is_safe_package_name(package):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid package name.")
+    if not honeypot.host_key_fingerprint:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Confirm the host key fingerprint first.",
+        )
+
+
+async def _set_hold_api(
+    request: Request, honeypot: Honeypot, package: str, *, hold: bool, db: AsyncSession
+) -> dict[str, object]:
+    _require_package_and_host_key(honeypot, package)
+    app_settings = await get_or_create_app_settings(db)
+    error: str | None = None
+    try:
+        await _wait_for_task(
+            tasks.set_honeypot_package_hold.delay(str(honeypot.id), package, hold),
+            app_settings.ssh_connect_timeout + 90,
+        )
+    except HTTPException as exc:
+        error = str(exc.detail)
+    await log_event(
+        db,
+        request=request,
+        action="honeypot.package.hold" if hold else "honeypot.package.unhold",
+        summary=f'{"Held" if hold else "Released"} package "{package}" on "{honeypot.name}"',
+        outcome=AuditOutcome.SUCCESS if error is None else AuditOutcome.FAILURE,
+        target_type="honeypot",
+        target_id=honeypot.id,
+        target_label=honeypot.name,
+        details={"package": package, **({"error": error} if error else {})},
+    )
+    if error is not None:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=error)
+    await db.refresh(honeypot)
+    return {"package": package, "held": hold, "apt_held_packages": honeypot.apt_held_packages}
+
+
+@router.post("/honeypots/{honeypot_id}/packages/{package}/hold", dependencies=[_action_updates])
+async def hold_package_api(
+    request: Request,
+    honeypot_id: uuid.UUID,
+    package: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_token_user),
+) -> dict[str, object]:
+    """`apt-mark hold` one package — no update run upgrades it until it is
+    released (`DELETE` on the same path). Same access as running updates;
+    needs root or a sudoers grant for `apt-mark`."""
+    honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
+    return await _set_hold_api(request, honeypot, package, hold=True, db=db)
+
+
+@router.delete("/honeypots/{honeypot_id}/packages/{package}/hold", dependencies=[_action_updates])
+async def release_package_api(
+    request: Request,
+    honeypot_id: uuid.UUID,
+    package: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_token_user),
+) -> dict[str, object]:
+    """`apt-mark unhold` — the reverse of `POST .../hold`."""
+    honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
+    return await _set_hold_api(request, honeypot, package, hold=False, db=db)
+
+
+@router.get(
+    "/honeypots/{honeypot_id}/packages/{package}/changelog", dependencies=[_action_updates]
+)
+async def package_changelog_api(
+    honeypot_id: uuid.UUID,
+    package: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_token_user),
+) -> dict[str, object]:
+    """What changed in a pending apt update since the installed version
+    (`apt-get changelog`, fetched live, trimmed to the new entries). Same
+    access as the web UI's Updates tab."""
+    honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
+    _require_package_and_host_key(honeypot, package)
+    app_settings = await get_or_create_app_settings(db)
+    result = await _wait_for_task(
+        tasks.view_package_changelog.delay(str(honeypot.id), package),
+        app_settings.ssh_connect_timeout + 60,
+    )
+    return {
+        "package": package,
+        "installed_version": result.get("installed_version"),
+        "changelog": result.get("changelog") or "",
+    }
 
 
 class _PowerAction(BaseModel):

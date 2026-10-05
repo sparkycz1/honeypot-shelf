@@ -38,6 +38,7 @@ _SECTION_MARKERS = (
     "RASPI_CONFIG_SUDO",
     "FLATPAK_SNAP_PRESENT",
     "FLATPAK_SNAP_SUDO",
+    "APT_MARK_SUDO",
 )
 
 READINESS_COMMAND = (
@@ -78,7 +79,12 @@ READINESS_COMMAND = (
     "if command -v snap >/dev/null 2>&1; then "
     "sudo -n snap version >/dev/null 2>&1 || ok=0; fi; "
     "fi; "
-    '[ "$ok" = 1 ] && echo ok || echo missing'
+    '[ "$ok" = 1 ] && echo ok || echo missing; '
+    # Last on purpose: sections are read by position, so a new probe goes
+    # at the end.
+    "echo ===APT_MARK_SUDO===; "
+    '[ "$is_root" = 1 ] && echo ok || '
+    "(sudo -n apt-mark showhold >/dev/null 2>&1 && echo ok || echo missing)"
 )
 
 
@@ -92,6 +98,7 @@ class ReadinessResult(TypedDict):
     raspi_config_sudo_ok: bool
     flatpak_or_snap_present: bool
     flatpak_snap_sudo_ok: bool
+    apt_mark_sudo_ok: bool
 
 
 def _split_sections(raw: str) -> dict[str, str]:
@@ -117,6 +124,7 @@ def parse_readiness_output(raw: str) -> ReadinessResult:
         raspi_config_sudo_ok=sections.get("RASPI_CONFIG_SUDO") == "ok",
         flatpak_or_snap_present=sections.get("FLATPAK_SNAP_PRESENT") == "yes",
         flatpak_snap_sudo_ok=sections.get("FLATPAK_SNAP_SUDO") == "ok",
+        apt_mark_sudo_ok=sections.get("APT_MARK_SUDO") == "ok",
     )
 
 
@@ -134,6 +142,10 @@ _REQUIREMENT_LABELS: tuple[tuple[str, str], ...] = (
         "passwordless sudo for systemctl (needed for the Honeypot Config tab's module editor)",
     ),
     ("ncurses_term_installed", "ncurses-term (needed for full-color terminal output)"),
+    (
+        "apt_mark_sudo_ok",
+        "passwordless sudo for apt-mark (needed for holding a package back on the Updates tab)",
+    ),
 )
 
 # The one requirement above that's a package install rather than a sudo

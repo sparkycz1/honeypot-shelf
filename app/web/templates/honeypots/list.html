@@ -304,8 +304,9 @@
           {{ t(request, 'honeypots.bulk.check_updates') }}
         </button>
         <select name="strategy" class="inline-select" aria-label="{{ t(request, 'honeypots.list.bulk_strategy_aria') }}">
-          <option value="dist_upgrade">dist-upgrade</option>
-          <option value="full_upgrade">full-upgrade</option>
+          <option value="full_upgrade">{{ strategy_label(request, 'full_upgrade') }}</option>
+          <option value="upgrade">{{ strategy_label(request, 'upgrade') }}</option>
+          <option value="security">{{ strategy_label(request, 'security') }}</option>
         </select>
         <button type="submit" formaction="/honeypots/bulk/updates" class="button">{{ t(request, 'honeypots.bulk.run_update') }}</button>
         <button type="submit" formaction="/honeypots/bulk/power-confirm/reboot" class="button button-secondary">

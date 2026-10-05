@@ -14,7 +14,7 @@
     <p class="hint">
       {{ t(request, "honeypots.updates.preview.simulated_intro") }}
       {{ honeypot.name }} {{ t(request, "honeypots.updates.preview.simulated_middle") }}
-      <code>{{ 'dist-upgrade' if strategy.value == 'dist_upgrade' else 'full-upgrade' }}</code>
+      <code>{{ strategy_label(request, strategy.value) }}</code>
       {{ t(request, "honeypots.updates.preview.simulated_tail") }}
     </p>
 

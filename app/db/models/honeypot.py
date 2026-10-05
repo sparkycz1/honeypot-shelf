@@ -192,6 +192,9 @@ class Honeypot(Base):
     apt_upgradable_packages: Mapped[list[dict[str, Any]] | None] = mapped_column(
         JSON, nullable=True
     )
+    # Packages pinned with `apt-mark hold` (never upgraded until released),
+    # as the last update check saw them. None = never checked.
+    apt_held_packages: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     flatpak_upgradable_packages: Mapped[list[dict[str, Any]] | None] = mapped_column(
         JSON, nullable=True
     )
