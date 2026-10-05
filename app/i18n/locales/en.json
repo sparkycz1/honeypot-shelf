@@ -1762,6 +1762,15 @@
     "events.ignored.ignore_this": "Ignore this address",
     "events.ignored.on_list": "This address is on the ignore list: its events send no notification and are not counted.",
     "audit.action_label.event.ignore.add": "Source added to the ignore list",
-    "audit.action_label.event.ignore.remove": "Source removed from the ignore list"
+    "audit.action_label.event.ignore.remove": "Source removed from the ignore list",
+    "notifications.rule.alert_types_label": "Only these alert types",
+    "notifications.rule.alert_types_hint": "Tick the kinds of alerts this rule should send. With none ticked it sends every alert.",
+    "notifications.rule.health_hint": "The honeypot's own health. Each is sent once, when it appears.",
+    "notifications.rule.event_disk_full": "A disk will be full within a week",
+    "notifications.rule.event_service_failed": "A system service failed",
+    "notifications.rule.event_reboot_required": "A reboot is needed after an update",
+    "notifications.event.disk_full": "Disk filling up",
+    "notifications.event.service_failed": "Service failed",
+    "notifications.event.reboot_required": "Reboot needed"
   }
 }

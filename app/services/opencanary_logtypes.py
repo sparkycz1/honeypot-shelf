@@ -151,6 +151,13 @@ def _as_int(logtype: object) -> int | None:
     return None
 
 
+def alert_logtypes() -> list[str]:
+    """Every known event type that is a real alert (not OpenCanary's own
+    start-up and debug messages), as stored in `HoneypotEvent.event_type` —
+    the choices of a notification rule's "only these types" filter."""
+    return [str(code) for code in sorted(_LABELS) if code not in _INTERNAL_LOGTYPES]
+
+
 def logtype_label(logtype: object) -> str:
     """A human label for a `HoneypotEvent.event_type`/raw `logtype` value —
     `"SSH login attempt"` for `4002`/`"4002"`. Falls back to the raw value

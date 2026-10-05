@@ -41,8 +41,9 @@ from app.db.session import get_db
 from app.schemas.user import looks_like_email
 from app.services import push_channels
 from app.services.notifications import default_template, resolve_target, send_test_notification
+from app.services.opencanary_logtypes import alert_logtypes, localized_logtype_label
 from app.services.webhook import UnsafeWebhookTargetError, validate_webhook_url
-from app.web.templating import templates
+from app.web.templating import t, templates
 
 router = APIRouter(prefix="/account/notifications")
 
@@ -130,6 +131,10 @@ async def _render_list(
             "honeypots": honeypots,
             "template_defaults": template_defaults,
             "min_minutes": MIN_DEBOUNCE_MINUTES,
+            "alert_types": [
+                (value, localized_logtype_label(lambda key: t(request, key), value))
+                for value in alert_logtypes()
+            ],
             "max_minutes": MAX_DEBOUNCE_MINUTES,
             "csrf_token": csrf_token,
             "saved": saved,
@@ -171,6 +176,10 @@ async def _render_edit(
             "honeypots": honeypots,
             "template_defaults": template_defaults,
             "min_minutes": MIN_DEBOUNCE_MINUTES,
+            "alert_types": [
+                (value, localized_logtype_label(lambda key: t(request, key), value))
+                for value in alert_logtypes()
+            ],
             "max_minutes": MAX_DEBOUNCE_MINUTES,
             "csrf_token": csrf_token,
             "errors": errors or [],
@@ -332,8 +341,19 @@ def _parse_rule_form(
     notify_on_alert = get("notify_on_alert") == "on"
     notify_on_unavailable = get("notify_on_unavailable") == "on"
     notify_on_recovered = get("notify_on_recovered") == "on"
-    if not (notify_on_alert or notify_on_unavailable or notify_on_recovered):
+    health = {
+        name: get(name) == "on"
+        for name in ("notify_on_disk_full", "notify_on_service_failed", "notify_on_reboot_required")
+    }
+    reachability = notify_on_alert or notify_on_unavailable or notify_on_recovered
+    if not (reachability or any(health.values())):
         errors.append("Pick at least one event to notify on.")
+
+    # Only known alert types are kept; none ticked means every type.
+    known_types = set(alert_logtypes())
+    alert_event_types = [
+        value for value in dict.fromkeys(form.getlist("alert_event_types")) if value in known_types
+    ]
 
     def _minutes(field: str, default: int) -> int:
         raw = str(get(field) or "").strip()
@@ -373,6 +393,8 @@ def _parse_rule_form(
         "notify_on_recovered": notify_on_recovered,
         "recovered_after_minutes": recovered_after_minutes,
         "alert_throttle_minutes": alert_throttle_minutes,
+        "alert_event_types": alert_event_types or None,
+        **health,
         "alert_subject": _text_override("alert_subject"),
         "alert_body": _text_override("alert_body"),
         "unavailable_subject": _text_override("unavailable_subject"),

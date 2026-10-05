@@ -54,8 +54,12 @@ from app.db.models.honeypot_package import HoneypotPackage
 from app.db.models.honeypot_reachability_sample import HoneypotReachabilitySample
 from app.db.models.honeypot_service import HoneypotService
 from app.db.models.honeypot_update_run import HoneypotUpdateRun, UpdateRunStatus, UpgradeStrategy
-from app.db.models.notification_log import NotificationLog
-from app.db.models.notification_rule import NotificationRule, NotificationScope
+from app.db.models.notification_log import NotificationKind, NotificationLog
+from app.db.models.notification_rule import (
+    HEALTH_DISK_FULL_DAYS,
+    NotificationRule,
+    NotificationScope,
+)
 from app.db.models.notification_rule_state import NotificationRuleState
 from app.services import acknowledgements, auto_backup, disk_forecast, ignored_sources
 from app.services.company_stats import compute_company_stats
@@ -77,7 +81,12 @@ from app.services.live_updates import (
     publish_fleet_event,
     publish_honeypot_event,
 )
-from app.services.notifications import notify_alert, notify_recovered, notify_unavailable
+from app.services.notifications import (
+    notify_alert,
+    notify_health,
+    notify_recovered,
+    notify_unavailable,
+)
 from app.services.opencanary_logtypes import is_internal_logtype, logtype_label
 from app.ssh.authorized_keys import build_authorized_keys_append_command
 from app.ssh.canary_activity import poll_log
@@ -1035,6 +1044,44 @@ async def _ping_all_honeypots() -> None:
             await _evaluate_unavailability_notifications(session, app_settings, results, now)
 
 
+async def _announce_health(
+    session: AsyncSession,
+    honeypot: Honeypot,
+    *,
+    kind: NotificationKind,
+    rule_column: Any,
+    current: list[str],
+) -> None:
+    """Send `kind` to the rules that asked for it when something in
+    `current` (mount points, unit names) was not there last time, then
+    remember `current`. A problem is therefore announced once when it
+    appears, and again only after it went away and came back. Nothing is
+    sent for the items already known — including when a rule is switched
+    on while the problem is ongoing."""
+    announced = dict(honeypot.health_announced or {})
+    known = set(announced.get(kind.value, []))
+    fresh = [item for item in current if item not in known]
+    if sorted(known) != sorted(current):
+        announced[kind.value] = sorted(current)
+        honeypot.health_announced = announced
+        await session.commit()
+    if not fresh:
+        return
+    await session.refresh(honeypot, attribute_names=["companies"])
+    rules = (await _matching_notification_rules(session, [honeypot], rule_column)).get(
+        honeypot.id, []
+    )
+    if rules:
+        await notify_health(
+            await get_or_create_app_settings(session),
+            rules=rules,
+            honeypot=honeypot,
+            kind=kind,
+            details=", ".join(fresh),
+            db=session,
+        )
+
+
 async def _matching_notification_rules(
     session: AsyncSession, honeypots: list[Honeypot], event_column: Any
 ) -> dict[uuid.UUID, list[NotificationRule]]:
@@ -1273,6 +1320,13 @@ async def _refresh_honeypot_facts(honeypot_id: str) -> dict[str, Any]:
             log_path_changed = True
         honeypot.facts_updated_at = datetime.now(UTC)
         await session.commit()
+        await _announce_health(
+            session,
+            honeypot,
+            kind=NotificationKind.REBOOT_REQUIRED,
+            rule_column=NotificationRule.notify_on_reboot_required,
+            current=["yes"] if honeypot.reboot_required else [],
+        )
         await publish_honeypot_event(honeypot_id, KIND_FACTS)
 
         if log_path_changed:
@@ -1436,6 +1490,15 @@ async def _refresh_honeypot_services(honeypot_id: str) -> dict[str, Any]:
         honeypot.services_updated_at = datetime.now(UTC)
         await session.commit()
         await publish_honeypot_event(honeypot_id, KIND_SERVICES)
+        await _announce_health(
+            session,
+            honeypot,
+            kind=NotificationKind.SERVICE_FAILED,
+            rule_column=NotificationRule.notify_on_service_failed,
+            current=sorted(
+                entry["unit"][:255] for entry in services if entry["active_state"] == "failed"
+            ),
+        )
 
         return {"ok": True, "service_count": len(services)}
 
@@ -1573,6 +1636,18 @@ async def _forecast_honeypot_disks(honeypot_id: str) -> dict[str, Any]:
         rows = [(as_aware_utc(sampled_at), filesystems) for sampled_at, filesystems in result.all()]
         honeypot.disk_forecast = disk_forecast.forecast_filesystems(rows, now) or None
         await session.commit()
+        await _announce_health(
+            session,
+            honeypot,
+            kind=NotificationKind.DISK_FULL,
+            rule_column=NotificationRule.notify_on_disk_full,
+            current=sorted(
+                mount
+                for mount, forecast in (honeypot.disk_forecast or {}).items()
+                if forecast.get("days_until_full") is not None
+                and forecast["days_until_full"] <= HEALTH_DISK_FULL_DAYS
+            ),
+        )
         return {"ok": True, "mounts": len(honeypot.disk_forecast or {})}
 
 
@@ -1705,9 +1780,12 @@ async def _poll_honeypot_canary_log(honeypot_id: str) -> dict[str, Any]:
             rules = rules_by_honeypot.get(honeypot.id, [])
             if rules:
                 for row in loud_rows:
+                    wanted = [rule for rule in rules if rule.wants_alert(row.event_type)]
+                    if not wanted:
+                        continue
                     await notify_alert(
                         app_settings,
-                        rules=rules,
+                        rules=wanted,
                         honeypot=honeypot,
                         event_type=row.event_type,
                         event_label=logtype_label(row.event_type),

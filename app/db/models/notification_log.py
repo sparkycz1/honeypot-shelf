@@ -39,6 +39,11 @@ class NotificationKind(enum.StrEnum):
     UNAVAILABLE = "unavailable"
     RECOVERED = "recovered"
     TEST = "test"
+    # A honeypot's own health, noticed by the periodic checks — see
+    # `app.tasks.jobs._announce_health`.
+    DISK_FULL = "disk_full"
+    SERVICE_FAILED = "service_failed"
+    REBOOT_REQUIRED = "reboot_required"
 
 
 

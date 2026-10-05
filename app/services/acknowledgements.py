@@ -41,7 +41,15 @@ MUTED_BY_PREFIX = "acknowledged by "
 
 # What an acknowledgement keeps from being sent. "Recovered" ends it and
 # is always delivered; a test send is never withheld.
-_WITHHELD = frozenset({NotificationKind.ALERT, NotificationKind.UNAVAILABLE})
+_WITHHELD = frozenset(
+    {
+        NotificationKind.ALERT,
+        NotificationKind.UNAVAILABLE,
+        NotificationKind.DISK_FULL,
+        NotificationKind.SERVICE_FAILED,
+        NotificationKind.REBOOT_REQUIRED,
+    }
+)
 
 
 class Acknowledgeable(Protocol):
