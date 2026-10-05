@@ -29,9 +29,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit import log_event
 from app.auth.dependencies import get_api_token_user
 from app.db.models.saved_honeypot_view import SavedHoneypotView
+from app.db.models.saved_log_view import SavedLogView
 from app.db.models.user import User
 from app.db.session import get_db
 from app.i18n import Locale, available_locales, get_locale
+from app.services.saved_log_views import (
+    build_log_query_string,
+    create_saved_log_view,
+    delete_saved_log_view,
+    list_saved_log_views,
+)
 from app.services.saved_views import (
     DuplicateViewNameError,
     build_query_string,
@@ -191,3 +198,82 @@ async def delete_saved_view_api(
             target_id=view_id,
         )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# --- Saved views of the Logs tab (app.services.saved_log_views) ------------
+
+
+def _saved_log_view_to_dict(view: SavedLogView) -> dict[str, object]:
+    return {
+        "id": str(view.id),
+        "name": view.name,
+        "query_string": view.query_string,
+        "created_at": view.created_at.isoformat(),
+    }
+
+
+@router.get("/account/saved-log-views")
+async def list_saved_log_views_api(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_token_user),
+) -> list[dict[str, object]]:
+    """The API equivalent of the Logs tab's "Saved views" chips — see
+    `app.services.saved_log_views`. Per-account."""
+    views = await list_saved_log_views(db, user.id)
+    return [_saved_log_view_to_dict(v) for v in views]
+
+
+class _SavedLogViewCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    # Structured filters, not an arbitrary query string — the same ones the
+    # Logs tab's own form has.
+    source: str = "journal"
+    path: str = ""
+    priority: str = ""
+    unit: str = ""
+    boot: str = ""
+    hide_own: bool = False
+    search: str = ""
+    since: str = ""
+    until: str = ""
+    lines: int | None = None
+
+
+@router.post("/account/saved-log-views", status_code=status.HTTP_201_CREATED)
+async def create_saved_log_view_api(
+    payload: _SavedLogViewCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_token_user),
+) -> dict[str, object]:
+    query_string = build_log_query_string(
+        {
+            "source": payload.source,
+            "path": payload.path,
+            "priority": payload.priority,
+            "unit": payload.unit,
+            "boot": payload.boot,
+            "hide_own": "1" if payload.hide_own else "",
+            "search": payload.search,
+            "since": payload.since,
+            "until": payload.until,
+            "lines": str(payload.lines) if payload.lines else "",
+        }
+    )
+    try:
+        view = await create_saved_log_view(db, user.id, payload.name, query_string)
+    except DuplicateViewNameError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f'A saved log view named "{payload.name}" already exists.',
+        ) from None
+    return _saved_log_view_to_dict(view)
+
+
+@router.delete("/account/saved-log-views/{view_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_saved_log_view_api(
+    view_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_token_user),
+) -> None:
+    if not await delete_saved_log_view(db, user.id, view_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Saved view not found.")

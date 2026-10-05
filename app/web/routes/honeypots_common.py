@@ -74,6 +74,8 @@ def _honeypot_tabs(request: Request, honeypot: Honeypot, user: User) -> list[tup
         # account can already see what OpenCanary has actually caught on
         # this honeypot without being able to manage it.
         ("status", t(request, "honeypots.tabs.activity"), f"{base}/status"),
+        # Read-only as well: what happened to the honeypot itself.
+        ("history", t(request, "honeypots.tabs.history"), f"{base}/history"),
     ]
     if user.can_write():
         tabs.append(("updates", t(request, "honeypots.tabs.updates"), f"{base}/updates"))

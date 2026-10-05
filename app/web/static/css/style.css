@@ -2092,3 +2092,32 @@ th[data-sort][aria-sort="descending"]::after { content: " \2193"; color: var(--c
 .strategy-fields legend { font-weight: 600; margin-bottom: 0.25rem; }
 .strategy-fields .hint { display: block; margin: 0 0 0 1.6rem; }
 .held-packages { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; }
+
+/* History tab: one honeypot's time line. */
+.timeline { list-style: none; margin: var(--space-3) 0 0; padding: 0; }
+.timeline-item {
+  display: grid;
+  grid-template-columns: minmax(10rem, 13rem) 1fr;
+  gap: var(--space-3);
+  padding: var(--space-2) 0 var(--space-2) var(--space-3);
+  border-left: 3px solid var(--color-border-strong);
+  border-bottom: 1px solid var(--color-border);
+}
+.timeline-item.timeline-ok { border-left-color: var(--color-ok); }
+.timeline-item.timeline-error { border-left-color: var(--color-danger); }
+.timeline-item.timeline-warn { border-left-color: var(--color-warn); }
+.timeline-item.timeline-kind-note { border-left-color: var(--color-accent); }
+.timeline-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  font-size: 0.88rem;
+}
+.timeline-meta time { color: var(--color-muted); font-variant-numeric: tabular-nums; }
+.timeline-body p { margin: 0 0 0.2rem; overflow-wrap: anywhere; }
+.timeline-note-text { white-space: pre-wrap; }
+@media (max-width: 640px) {
+  .timeline-item { grid-template-columns: 1fr; gap: var(--space-1); }
+  .timeline-meta { flex-direction: row; flex-wrap: wrap; align-items: center; }
+}

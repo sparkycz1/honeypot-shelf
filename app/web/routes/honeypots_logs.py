@@ -10,17 +10,26 @@ import uuid
 # subclass it, so catching the builtin around `AsyncResult.get(timeout=...)`
 # would silently never match and the timeout branches below would be dead code.
 from celery.exceptions import TimeoutError as CeleryTimeoutError
-from fastapi import Depends, HTTPException, Request, Response, status
+from fastapi import Depends, Form, HTTPException, Request, Response, status
+from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_event
 from app.auth.dependencies import get_current_user
 from app.core.app_settings import get_or_create_app_settings
 from app.core.config import get_settings
-from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie
+from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie, verify_csrf
 from app.db.models.audit_log import AuditOutcome
 from app.db.models.user import User
 from app.db.session import get_db
+from app.services.saved_log_views import (
+    ALLOWED_LOG_VIEW_PARAMS,
+    build_log_query_string,
+    create_saved_log_view,
+    delete_saved_log_view,
+    list_saved_log_views,
+)
+from app.services.saved_views import DuplicateViewNameError
 from app.ssh import logs as ssh_logs
 from app.tasks import jobs as tasks
 from app.web.log_lines import journal_log_lines, parse_log_lines
@@ -250,8 +259,55 @@ async def honeypot_logs(
             "until": until,
             "default_lines": ssh_logs.DEFAULT_LINE_LIMIT,
             "allowed_paths": settings.log_file_allowed_path_list,
+            "saved_log_views": await list_saved_log_views(db, current_user.id),
+            "view_error": request.query_params.get("view_error"),
         },
     )
     if new_cookie:
         set_csrf_cookie(response, new_cookie)
     return response
+
+
+@router.post("/{honeypot_id}/logs/views", dependencies=[need_terminal, Depends(verify_csrf)])
+async def save_log_view(
+    request: Request,
+    honeypot_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    name: str = Form(""),
+) -> Response:
+    """"Save this view" on the Logs tab — only the Logs filters are kept
+    (`app.services.saved_log_views`), not the honeypot, so the view can be
+    replayed on any honeypot's Logs tab."""
+    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    form = await request.form()
+    query_string = build_log_query_string(
+        {key: str(form.get(key, "")) for key in ALLOWED_LOG_VIEW_PARAMS}
+    )
+    base = f"/honeypots/{honeypot.id}/logs?{query_string}"
+    if not name.strip():
+        return RedirectResponse(url=base, status_code=status.HTTP_303_SEE_OTHER)
+    try:
+        await create_saved_log_view(db, current_user.id, name, query_string)
+    except DuplicateViewNameError:
+        return RedirectResponse(
+            url=f"{base}&view_error=duplicate_name", status_code=status.HTTP_303_SEE_OTHER
+        )
+    return RedirectResponse(url=base, status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post(
+    "/{honeypot_id}/logs/views/{view_id}/delete",
+    dependencies=[need_terminal, Depends(verify_csrf)],
+)
+async def delete_log_view(
+    honeypot_id: uuid.UUID,
+    view_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    await delete_saved_log_view(db, current_user.id, view_id)
+    return RedirectResponse(
+        url=f"/honeypots/{honeypot.id}/logs", status_code=status.HTTP_303_SEE_OTHER
+    )

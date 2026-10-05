@@ -78,6 +78,7 @@ from app.core.security import encrypt_secret
 from app.db.models.audit_log import AuditOutcome
 from app.db.models.company import Company
 from app.db.models.honeypot import AuthMethod, Honeypot
+from app.db.models.honeypot_note import MAX_NOTE_LENGTH
 from app.db.models.honeypot_package import HoneypotPackage
 from app.db.models.honeypot_update_run import HoneypotUpdateRun, UpdateRunStatus, UpgradeStrategy
 from app.db.models.pending_honeypot import PendingHoneypot
@@ -87,13 +88,14 @@ from app.schemas.acknowledgement import AcknowledgeRequest
 from app.schemas.company import CompanyCreate
 from app.schemas.honeypot import HoneypotCreate, HoneypotUpdate
 from app.schemas.honeypot_config import HoneypotConfigExport
-from app.services import acknowledgements
+from app.services import acknowledgements, honeypot_timeline
 from app.services.honeypot_actions import (
     send_power_to_honeypots,
     trigger_check_updates,
     trigger_updates,
 )
 from app.services.honeypot_config import export_honeypot_config, import_honeypot_config
+from app.services.honeypot_notes import EmptyNoteError, add_note, delete_note
 from app.services.honeypot_tags import (
     add_tags_to_honeypots,
     normalize_tag_names,
@@ -474,6 +476,95 @@ async def list_honeypot_held_packages_api(
         .order_by(HoneypotPackage.name)
     )
     return [_package_to_dict(p) for p in result.scalars().all()]
+
+
+@router.get("/honeypots/{honeypot_id}/timeline", dependencies=[_view_honeypots])
+async def honeypot_timeline_api(
+    honeypot_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_token_user),
+    days: int = honeypot_timeline.DEFAULT_RANGE_DAYS,
+    kind: str = "",
+) -> dict[str, object]:
+    """A honeypot's History tab as data, newest first: notes, update runs,
+    reachability transitions and — only for a superadmin's token — audited
+    actions. `days` is one of 1/7/30/90/365, `kind` optionally one of
+    `note`/`update_run`/`reachability`/`audit`. See
+    `app.services.honeypot_timeline`."""
+    honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
+    timeline = await honeypot_timeline.load_timeline(
+        db,
+        honeypot,
+        days=days,
+        include_audit=user.is_superadmin,
+        kinds={kind} if kind in honeypot_timeline.TIMELINE_KINDS else None,
+    )
+    return {
+        "days": timeline.days,
+        "since": timeline.since.isoformat(),
+        "truncated": timeline.truncated,
+        "includes_audit": timeline.includes_audit,
+        "events": [event.as_dict() for event in timeline.events],
+    }
+
+
+class HoneypotNoteCreate(BaseModel):
+    body: str = Field(min_length=1, max_length=MAX_NOTE_LENGTH)
+
+
+async def _get_writable_honeypot_or_404(
+    honeypot_id: uuid.UUID, db: AsyncSession, user: User
+) -> Honeypot:
+    honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
+    if not can_write_honeypot(user, honeypot):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Read-only access.")
+    return honeypot
+
+
+@router.post(
+    "/honeypots/{honeypot_id}/notes",
+    dependencies=[_manage_honeypots],
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_honeypot_note_api(
+    honeypot_id: uuid.UUID,
+    payload: HoneypotNoteCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_token_user),
+) -> dict[str, object]:
+    """Add a note to the honeypot's history — same as the History tab's
+    form (write access to the honeypot, audited as `honeypot.note.add`)."""
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, user)
+    try:
+        note = await add_note(db, request, honeypot, user, payload.body)
+    except EmptyNoteError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="The note is empty."
+        ) from None
+    return {
+        "id": str(note.id),
+        "author": note.author,
+        "body": note.body,
+        "created_at": note.created_at.isoformat() if note.created_at else None,
+    }
+
+
+@router.delete(
+    "/honeypots/{honeypot_id}/notes/{note_id}",
+    dependencies=[_manage_honeypots],
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_honeypot_note_api(
+    honeypot_id: uuid.UUID,
+    note_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_token_user),
+) -> None:
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, user)
+    if not await delete_note(db, request, honeypot, note_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Note not found.")
 
 
 @router.get("/honeypots/{honeypot_id}/update-runs", dependencies=[_view_honeypots])

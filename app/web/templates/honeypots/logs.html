@@ -33,6 +33,24 @@
     </a>
   </nav>
 
+  {% if saved_log_views %}
+    <div class="saved-views">
+      {% for view in saved_log_views %}
+        <span class="saved-view-chip">
+          <a href="{{ base }}?{{ view.query_string }}">{{ view.name }}</a>
+          <form method="post" action="{{ base }}/views/{{ view.id }}/delete" class="inline-form"
+                data-confirm="{{ t(request, 'honeypots.list.confirm_delete_view', name=view.name) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="link-button" aria-label="{{ t(request, 'honeypots.list.delete_view_aria', name=view.name) }}">&times;</button>
+          </form>
+        </span>
+      {% endfor %}
+    </div>
+  {% endif %}
+  {% if view_error == 'duplicate_name' %}
+    <div class="alert alert-error"><p>{{ t(request, 'honeypots.save_view.duplicate') }}</p></div>
+  {% endif %}
+
   {% if error %}
     <div class="alert alert-error"><p>{{ error }}</p></div>
   {% endif %}
@@ -103,6 +121,26 @@
         </label>
       {% endif %}
       <button type="submit" class="button">{{ t(request, 'honeypots.logs.show') }}</button>
+    </form>
+  {% endif %}
+
+  {% if output is not none and not browse %}
+    <form method="post" action="{{ base }}/views" class="inline-form stack-gap">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="source" value="{{ source }}">
+      <input type="hidden" name="path" value="{{ path }}">
+      <input type="hidden" name="priority" value="{{ priority }}">
+      <input type="hidden" name="unit" value="{{ unit }}">
+      <input type="hidden" name="boot" value="{{ boot }}">
+      <input type="hidden" name="hide_own" value="{{ '1' if hide_own else '' }}">
+      <input type="hidden" name="search" value="{{ search }}">
+      <input type="hidden" name="since" value="{{ since }}">
+      <input type="hidden" name="until" value="{{ until }}">
+      <input type="hidden" name="lines" value="{{ lines if lines != default_lines else '' }}">
+      <input type="text" name="name" class="inline-text-input" maxlength="100" required
+             aria-label="{{ t(request, 'honeypots.logs.save_view_placeholder') }}"
+             placeholder="{{ t(request, 'honeypots.logs.save_view_placeholder') }}">
+      <button type="submit" class="button button-secondary">{{ t(request, 'honeypots.save_view.submit') }}</button>
     </form>
   {% endif %}
 

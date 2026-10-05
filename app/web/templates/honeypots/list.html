@@ -58,6 +58,8 @@
         <summary class="button button-secondary">{{ t(request, 'honeypots.actions.more') }}</summary>
         <div class="actions-menu-list">
           <a href="/honeypots/package-search">{{ t(request, 'honeypots.actions.package_search') }}</a>
+          {# Keeps the current search/tag filter (a stray `page` is ignored). #}
+          <a href="/honeypots/inventory.csv{% if request.url.query %}?{{ request.url.query }}{% endif %}">{{ t(request, 'honeypots.actions.export_inventory') }}</a>
           <a href="/honeypots/import">{{ t(request, 'honeypots.actions.bulk_import') }}</a>
           <a href="/honeypots/config/export?format=json">{{ t(request, 'honeypots.actions.export_json') }}</a>
           <a href="/honeypots/config/export?format=csv">{{ t(request, 'honeypots.actions.export_csv') }}</a>
@@ -309,6 +311,15 @@
           <option value="security">{{ strategy_label(request, 'security') }}</option>
         </select>
         <button type="submit" formaction="/honeypots/bulk/updates" class="button">{{ t(request, 'honeypots.bulk.run_update') }}</button>
+        <input type="text" name="tags" class="inline-text-input" maxlength="200"
+               aria-label="{{ t(request, 'honeypots.bulk.tags_aria') }}"
+               placeholder="{{ t(request, 'honeypots.bulk.tags_placeholder') }}">
+        <button type="submit" formaction="/honeypots/bulk/tags/add" class="button button-secondary">
+          {{ t(request, 'honeypots.bulk.add_tags') }}
+        </button>
+        <button type="submit" formaction="/honeypots/bulk/tags/remove" class="button button-secondary">
+          {{ t(request, 'honeypots.bulk.remove_tags') }}
+        </button>
         <button type="submit" formaction="/honeypots/bulk/power-confirm/reboot" class="button button-secondary">
           {{ t(request, 'honeypots.bulk.reboot') }}
         </button>

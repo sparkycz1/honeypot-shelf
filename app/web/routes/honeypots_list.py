@@ -21,6 +21,7 @@ from sqlalchemy.orm import aliased, selectinload
 from app.audit import log_event
 from app.auth.dependencies import get_current_user
 from app.auth.scope import (
+    can_write_honeypot,
     honeypots_visible_to,
     visible_honeypots_by_ids,
 )
@@ -45,7 +46,9 @@ from app.services.honeypot_actions import (
 )
 from app.services.honeypot_config import export_honeypot_config, import_honeypot_config
 from app.services.honeypot_tags import (
+    add_tags_to_honeypots,
     parse_tag_names_from_text,
+    remove_tags_from_honeypots,
     set_honeypot_tags,
 )
 from app.services.saved_views import (
@@ -519,6 +522,110 @@ _CONFIG_EXPORT_CSV_FIELDS = (
 )
 
 
+_INVENTORY_CSV_FIELDS = (
+    "name",
+    "ip_address",
+    "hostname",
+    "companies",
+    "tags",
+    "status",
+    "os_version",
+    "kernel_version",
+    "cpu_architecture",
+    "cpu_cores",
+    "ram_gb",
+    "upgradable",
+    "security_upgradable",
+    "reboot_required",
+    "uptime_days",
+    "host_key_pinned",
+    "facts_updated_at",
+    "updates_checked_at",
+)
+
+
+def _inventory_row(honeypot: Honeypot) -> dict[str, object]:
+    def iso(value: datetime | None) -> str:
+        return value.isoformat() if value else ""
+
+    def number(value: int | None) -> object:
+        return "" if value is None else value
+
+    if honeypot.is_reachable is None:
+        status_label = "unknown"
+    else:
+        status_label = "online" if honeypot.is_reachable else "offline"
+    return {
+        "name": _csv_safe(honeypot.name),
+        "ip_address": honeypot.ip_address or "",
+        "hostname": _csv_safe(honeypot.discovered_hostname or ""),
+        "companies": _csv_safe(", ".join(company.name for company in honeypot.companies)),
+        "tags": _csv_safe(", ".join(tag.name for tag in honeypot.tags)),
+        "status": status_label,
+        "os_version": _csv_safe(honeypot.os_version or ""),
+        "kernel_version": _csv_safe(honeypot.kernel_version or ""),
+        "cpu_architecture": honeypot.cpu_architecture or "",
+        "cpu_cores": number(honeypot.cpu_cores),
+        "ram_gb": round(honeypot.ram_bytes / 1024**3, 1) if honeypot.ram_bytes else "",
+        "upgradable": number(honeypot.upgradable_count),
+        "security_upgradable": number(honeypot.security_upgradable_count),
+        "reboot_required": "" if honeypot.reboot_required is None else honeypot.reboot_required,
+        "uptime_days": (
+            round(honeypot.uptime_seconds / 86400, 1) if honeypot.uptime_seconds else ""
+        ),
+        "host_key_pinned": bool(honeypot.host_key_fingerprint),
+        "facts_updated_at": iso(honeypot.facts_updated_at),
+        "updates_checked_at": iso(honeypot.updates_checked_at),
+    }
+
+
+@router.get("/inventory.csv")
+async def export_honeypot_inventory(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    q: str = "",
+    tag: list[str] = Query(default=[]),
+    tag_mode: str = "or",
+) -> Response:
+    """The honeypot list as a spreadsheet — every honeypot matching the
+    current search/tag filter (not just the visible page), with the status,
+    OS, hardware and update columns an inventory report needs. Scoped
+    exactly like the list itself. Unlike `/config/export` (the structural
+    import/export round-trip) this is a read-only report; the same data is
+    available as JSON from `GET /api/v1/honeypots`."""
+    tag_mode = tag_mode if tag_mode == "and" else "or"
+    query = honeypots_visible_to(current_user)
+    if q.strip():
+        query = query.where(honeypot_search_clause(q))
+    query = apply_tag_filter(query, tag, tag_mode)
+    honeypots = list((await db.execute(query.order_by(Honeypot.name))).scalars().all())
+
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=_INVENTORY_CSV_FIELDS)
+    writer.writeheader()
+    for honeypot in honeypots:
+        writer.writerow(_inventory_row(honeypot))
+
+    await log_event(
+        db,
+        request=request,
+        action="honeypot.inventory_export",
+        summary=f"Exported the honeypot inventory ({len(honeypots)} honeypot(s)) as CSV",
+        details={"honeypot_count": len(honeypots), "q": q or None, "tags": tag or None},
+    )
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    return Response(
+        content=buffer.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="honeypot-shelf-inventory-{timestamp}.csv"'
+            )
+        },
+    )
+
+
 @router.get("/config/export")
 async def export_honeypot_config_endpoint(
     request: Request,
@@ -891,6 +998,72 @@ async def bulk_delete_honeypots(
         details={"honeypot_names": names},
     )
     return RedirectResponse(url="/honeypots", status_code=status.HTTP_303_SEE_OTHER)
+
+
+async def _bulk_change_tags(
+    request: Request,
+    db: AsyncSession,
+    user: User,
+    honeypot_ids: list[uuid.UUID],
+    tags: str,
+    *,
+    add: bool,
+) -> Response:
+    """Add or remove `tags` on the ticked honeypots the account may write;
+    the rest of each honeypot's tags stay as they are."""
+    honeypots = [
+        honeypot
+        for honeypot in await _get_honeypots_by_ids(honeypot_ids, db, user)
+        if can_write_honeypot(user, honeypot)
+    ]
+    names = parse_tag_names_from_text(tags)
+    if not honeypots or not names:
+        return RedirectResponse(
+            url="/honeypots?bulk_error=Select+at+least+one+honeypot+and+enter+a+tag.",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+    change = add_tags_to_honeypots if add else remove_tags_from_honeypots
+    await change(db, [honeypot.id for honeypot in honeypots], names)
+    await db.commit()
+    await log_event(
+        db,
+        request=request,
+        action="honeypots.bulk.tags.add" if add else "honeypots.bulk.tags.remove",
+        summary=(
+            f'{"Added" if add else "Removed"} tag(s) {", ".join(names)} '
+            f'{"to" if add else "from"} {len(honeypots)} selected honeypot(s)'
+        ),
+        details={"tags": names, "honeypot_count": len(honeypots)},
+    )
+    return RedirectResponse(url="/honeypots", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/bulk/tags/add", dependencies=[need_manage, Depends(verify_csrf)])
+async def bulk_add_tags(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    honeypot_ids: list[uuid.UUID] = Form(default=[]),
+    tags: str = Form(""),
+) -> Response:
+    """Add one or more tags to every honeypot in an ad-hoc selection from
+    the honeypot list, leaving each honeypot's other tags untouched — the
+    bulk equivalent of typing into one honeypot's own tags field."""
+    return await _bulk_change_tags(request, db, current_user, honeypot_ids, tags, add=True)
+
+
+@router.post("/bulk/tags/remove", dependencies=[need_manage, Depends(verify_csrf)])
+async def bulk_remove_tags(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    honeypot_ids: list[uuid.UUID] = Form(default=[]),
+    tags: str = Form(""),
+) -> Response:
+    """Remove one or more tags from every honeypot in an ad-hoc selection —
+    a no-op for any honeypot that didn't have a given tag in the first
+    place, never an error."""
+    return await _bulk_change_tags(request, db, current_user, honeypot_ids, tags, add=False)
 
 
 @router.post("/pending/{pending_id}/dismiss", dependencies=[need_manage, Depends(verify_csrf)])
