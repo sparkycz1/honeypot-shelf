@@ -173,7 +173,7 @@ def _first_href(page: Any, list_path: str, prefix: str) -> str:
 def test_honeypot_tabs_load_without_browser_errors(page: Any) -> None:
     honeypot = _first_href(page, "/honeypots", "/honeypots/")
     # Not Terminal or Config: both open an SSH session to the honeypot.
-    for tab in ("", "/monitoring", "/status", "/updates", "/logs"):
+    for tab in ("", "/monitoring", "/status", "/history", "/updates", "/logs"):
         _open(page, honeypot + tab)
 
 

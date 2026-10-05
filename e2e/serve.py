@@ -44,10 +44,16 @@ from app.db.models.company_snapshot import CompanySnapshot
 from app.db.models.honeypot import AuthMethod, Honeypot
 from app.db.models.honeypot_event import HoneypotEvent
 from app.db.models.honeypot_monitoring_sample import HoneypotMonitoringSample
+from app.db.models.honeypot_note import HoneypotNote
 from app.db.models.honeypot_reachability_sample import (
     HoneypotReachabilitySample,
 )
 from app.db.models.honeypot_service import HoneypotService
+from app.db.models.honeypot_update_run import (
+    HoneypotUpdateRun,
+    UpdateRunStatus,
+    UpgradeStrategy,
+)
 from app.db.models.user import AuthProvider, User
 from app.db.session import get_db
 from app.main import app
@@ -123,6 +129,27 @@ async def seed() -> str:
         )
         db.add(honeypot)
         await db.flush()
+
+        # The History tab: a note, an outage and an update run.
+        db.add(HoneypotNote(honeypot_id=honeypot.id, author="e2e", body="Moved to the DMZ switch"))
+        for minutes, reachable in ((90, True), (60, False), (30, True)):
+            db.add(
+                HoneypotReachabilitySample(
+                    honeypot_id=honeypot.id,
+                    checked_at=now - timedelta(minutes=minutes),
+                    reachable=reachable,
+                )
+            )
+        db.add(
+            HoneypotUpdateRun(
+                honeypot_id=honeypot.id,
+                strategy=UpgradeStrategy.SECURITY,
+                status=UpdateRunStatus.SUCCEEDED,
+                finished_at=now - timedelta(hours=3),
+                reboot_outcome="not_needed",
+                output="Reading package lists...",
+            )
+        )
 
         gib = 1024**3
         for k in range(60):

@@ -14,6 +14,7 @@ from app.db.models.honeypot import Honeypot
 from app.db.models.honeypot_company import honeypot_companies
 from app.db.models.honeypot_event import HoneypotEvent
 from app.db.models.honeypot_monitoring_sample import HoneypotMonitoringSample
+from app.db.models.honeypot_note import HoneypotNote
 from app.db.models.honeypot_package import HoneypotPackage
 from app.db.models.honeypot_reachability_sample import HoneypotReachabilitySample
 from app.db.models.honeypot_service import HoneypotService
@@ -27,6 +28,7 @@ from app.db.models.notification_rule import NotificationRule, NotificationScope
 from app.db.models.notification_rule_state import NotificationRuleState
 from app.db.models.pending_honeypot import PendingHoneypot
 from app.db.models.saved_honeypot_view import SavedHoneypotView
+from app.db.models.saved_log_view import SavedLogView
 from app.db.models.scheduled_task import ScheduledTask
 from app.db.models.scheduled_task_run import ScheduledTaskRun
 from app.db.models.ssh_identity import SSHIdentity
@@ -47,6 +49,7 @@ __all__ = [
     "Honeypot",
     "HoneypotEvent",
     "HoneypotMonitoringSample",
+    "HoneypotNote",
     "HoneypotPackage",
     "HoneypotReachabilitySample",
     "HoneypotService",
@@ -63,6 +66,7 @@ __all__ = [
     "PendingHoneypot",
     "SSHIdentity",
     "SavedHoneypotView",
+    "SavedLogView",
     "ScheduledTask",
     "ScheduledTaskRun",
     "Tag",

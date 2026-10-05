@@ -29,14 +29,17 @@ from app.core.security import encrypt_secret
 from app.db.models.audit_log import AuditOutcome
 from app.db.models.company import Company
 from app.db.models.honeypot import AuthMethod, Honeypot
+from app.db.models.honeypot_note import MAX_NOTE_LENGTH
 from app.db.models.honeypot_package import HoneypotPackage
 from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.honeypot import HoneypotUpdate
 from app.services import (
     acknowledgements,
+    honeypot_timeline,
     maintenance_windows,
 )
+from app.services.honeypot_notes import EmptyNoteError, add_note, delete_note
 from app.services.honeypot_tags import (
     parse_tag_names_from_text,
     set_honeypot_tags,
@@ -1133,3 +1136,89 @@ async def clear_honeypot_acknowledgement(
         target_label=honeypot.name,
     )
     return RedirectResponse(url=f"/honeypots/{honeypot.id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+# --- History tab and notes (app.services.honeypot_timeline) ----------------
+
+
+@router.get("/{honeypot_id}/history")
+async def honeypot_history(
+    request: Request,
+    honeypot_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    days: int = honeypot_timeline.DEFAULT_RANGE_DAYS,
+    kind: str = "",
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """The History tab — notes, update runs, reachability transitions and
+    (for a superadmin) audited actions on one time line; see
+    `app.services.honeypot_timeline`."""
+    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    kind = kind if kind in honeypot_timeline.TIMELINE_KINDS else ""
+    timeline = await honeypot_timeline.load_timeline(
+        db,
+        honeypot,
+        days=days,
+        include_audit=current_user.is_superadmin,
+        kinds={kind} if kind else None,
+    )
+    csrf_token, new_cookie = get_or_create_csrf_token(request)
+    response = templates.TemplateResponse(
+        request,
+        "honeypots/history.html",
+        {
+            "honeypot": honeypot,
+            "tabs": _honeypot_tabs(request, honeypot, current_user),
+            "active_tab": "history",
+            "csrf_token": csrf_token,
+            "timeline": timeline,
+            "ranges": honeypot_timeline.TIMELINE_RANGES,
+            "kinds": honeypot_timeline.TIMELINE_KINDS,
+            "kind": kind,
+            "can_add_note": can_write_honeypot(current_user, honeypot),
+            "note_error": request.query_params.get("note_error"),
+            "max_note_length": MAX_NOTE_LENGTH,
+        },
+    )
+    if new_cookie:
+        set_csrf_cookie(response, new_cookie)
+    return response
+
+
+@router.post("/{honeypot_id}/notes", dependencies=[need_manage, Depends(verify_csrf)])
+async def add_honeypot_note(
+    request: Request,
+    honeypot_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    body: str = Form(""),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
+    try:
+        await add_note(db, request, honeypot, current_user, body)
+    except EmptyNoteError:
+        return RedirectResponse(
+            url=f"/honeypots/{honeypot.id}/history?note_error=1",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+    return RedirectResponse(
+        url=f"/honeypots/{honeypot.id}/history", status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
+@router.post(
+    "/{honeypot_id}/notes/{note_id}/delete", dependencies=[need_manage, Depends(verify_csrf)]
+)
+async def delete_honeypot_note(
+    request: Request,
+    honeypot_id: uuid.UUID,
+    note_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
+    if not await delete_note(db, request, honeypot, note_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Note not found.")
+    return RedirectResponse(
+        url=f"/honeypots/{honeypot.id}/history", status_code=status.HTTP_303_SEE_OTHER
+    )
