@@ -33,6 +33,7 @@ from app.ssh.updates import PendingPackage, is_safe_package_name
 from app.tasks import jobs as tasks
 from app.web.routes.honeypots_common import (
     _get_honeypot_or_404,
+    _get_writable_honeypot_or_404,
     _honeypot_tabs,
     honeypots_router,
     need_updates,
@@ -451,7 +452,7 @@ async def honeypot_update_availability_panel(
 ) -> Response:
     """See the module-level comment above `honeypot_status_panel` — this is
     the Updates tab's equivalent, polled by `partials/update_availability.html`."""
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     csrf_token, _ = get_or_create_csrf_token(request)
     return templates.TemplateResponse(
         request,

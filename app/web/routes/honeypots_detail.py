@@ -28,7 +28,7 @@ from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie, verify_csrf
 from app.core.security import encrypt_secret
 from app.db.models.audit_log import AuditOutcome
 from app.db.models.company import Company
-from app.db.models.honeypot import AuthMethod, Honeypot
+from app.db.models.honeypot import AuthMethod
 from app.db.models.honeypot_note import MAX_NOTE_LENGTH
 from app.db.models.honeypot_package import HoneypotPackage
 from app.db.models.user import User
@@ -53,6 +53,7 @@ from app.web.routes.honeypots_common import (
     _get_all_tags,
     _get_companies,
     _get_honeypot_or_404,
+    _get_writable_honeypot_or_404,
     _honeypot_tabs,
     honeypots_router,
     need_manage,
@@ -119,6 +120,7 @@ async def honeypot_detail(
     current_user: User = Depends(get_current_user),
 ) -> Response:
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    can_write = can_write_honeypot(current_user, honeypot)
     csrf_token, new_cookie = get_or_create_csrf_token(request)
     response = templates.TemplateResponse(
         request,
@@ -126,7 +128,11 @@ async def honeypot_detail(
         {
             "honeypot": honeypot,
             "maintenance_window": await maintenance_windows.active_window_for(db, honeypot),
-            "can_acknowledge": can_write_honeypot(current_user, honeypot),
+            "can_acknowledge": can_write,
+            # Installed packages are for the accounts that maintain the
+            # honeypot; a read-only account gets neither the panel nor the
+            # counts.
+            "can_see_packages": can_write,
             "csrf_token": csrf_token,
             "tabs": _honeypot_tabs(request, honeypot, current_user),
             "active_tab": "overview",
@@ -137,8 +143,8 @@ async def honeypot_detail(
             # summary line; the full listing loads lazily into a modal (see
             # the "Show installed packages" button and
             # GET /honeypots/{id}/packages below).
-            "package_counts": await _get_package_counts(honeypot_id, db),
-            "held_count": await _get_held_count(honeypot_id, db),
+            "package_counts": await _get_package_counts(honeypot_id, db) if can_write else {},
+            "held_count": await _get_held_count(honeypot_id, db) if can_write else 0,
             # One-time notice after a power action redirect — not persisted
             # anywhere, just echoed back from the query string (see
             # `power_action`'s own redirect).
@@ -189,7 +195,7 @@ async def honeypot_packages_summary_panel(
     request: Request, honeypot_id: uuid.UUID, db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Response:
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     return templates.TemplateResponse(
         request,
         "partials/_packages_summary_inner.html",
@@ -216,7 +222,7 @@ async def honeypot_packages_panel(
     initial render. Also serves the filter form's own requests, which target
     just `#packages-panel` (not the whole modal) to stay open while filtering.
     """
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     csrf_token, new_cookie = get_or_create_csrf_token(request)
     response = templates.TemplateResponse(
         request,
@@ -1073,15 +1079,6 @@ async def delete_honeypot(
 # --- Acknowledging a problem (app.services.acknowledgements) ---------------
 
 
-async def _get_writable_honeypot_or_404(
-    honeypot_id: uuid.UUID, db: AsyncSession, user: User
-) -> Honeypot:
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
-    if not can_write_honeypot(user, honeypot):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Read-only access.")
-    return honeypot
-
-
 @router.post("/{honeypot_id}/acknowledge", dependencies=[need_manage, Depends(verify_csrf)])
 async def acknowledge_honeypot(
     request: Request,
@@ -1160,6 +1157,7 @@ async def honeypot_history(
         honeypot,
         days=days,
         include_audit=current_user.is_superadmin,
+        include_updates=can_write_honeypot(current_user, honeypot),
         kinds={kind} if kind else None,
     )
     csrf_token, new_cookie = get_or_create_csrf_token(request)

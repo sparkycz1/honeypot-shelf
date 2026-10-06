@@ -40,7 +40,7 @@
     </select>
     <select name="kind" data-autosubmit aria-label="{{ t(request, 'history.kind') }}">
       <option value="" {% if not kind %}selected{% endif %}>{{ t(request, "history.kind.all") }}</option>
-      {% for k in kinds if k != 'audit' or timeline.includes_audit %}
+      {% for k in kinds if (k != 'audit' or timeline.includes_audit) and (k != 'update_run' or timeline.includes_updates) %}
         <option value="{{ k }}" {% if k == kind %}selected{% endif %}>{{ t(request, "history.kind." ~ k) }}</option>
       {% endfor %}
     </select>

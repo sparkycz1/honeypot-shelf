@@ -79,6 +79,7 @@ class Timeline:
     events: list[TimelineEvent]
     truncated: bool
     includes_audit: bool
+    includes_updates: bool = True
 
 
 def normalize_days(days: int | str | None) -> int:
@@ -210,13 +211,18 @@ async def load_timeline(
     *,
     days: int = DEFAULT_RANGE_DAYS,
     include_audit: bool,
+    include_updates: bool = True,
     kinds: set[str] | None = None,
 ) -> Timeline:
     """`honeypot` must already be access-checked by the caller. `kinds`
-    limits the sources (None = all)."""
+    limits the sources (None = all). `include_updates` is False for an
+    account that may only read the honeypot: update runs are not its
+    business."""
     days = normalize_days(days)
     since = datetime.now(UTC) - timedelta(days=days)
     wanted = set(TIMELINE_KINDS) if not kinds else set(kinds) & set(TIMELINE_KINDS)
+    if not include_updates:
+        wanted.discard("update_run")
     events: list[TimelineEvent] = []
 
     if "note" in wanted:
@@ -244,4 +250,5 @@ async def load_timeline(
         events=events[:MAX_EVENTS],
         truncated=len(events) > MAX_EVENTS,
         includes_audit=include_audit,
+        includes_updates=include_updates,
     )

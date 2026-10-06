@@ -87,7 +87,8 @@
            value="{{ rule.recovered_after_minutes if rule else 5 }}">
 
     <p class="hint">{{ t(request, "notifications.rule.health_hint") }}</p>
-    {% for name in ("disk_full", "service_failed", "reboot_required") %}
+    {# "Reboot needed" is about updates: only for accounts that maintain honeypots. #}
+    {% for name in ("disk_full", "service_failed", "reboot_required") if name != "reboot_required" or user.can_write() %}
       <label class="checkbox-row">
         <input type="checkbox" name="notify_on_{{ name }}" {% if rule and rule["notify_on_" ~ name] %}checked{% endif %}>
         {{ t(request, "notifications.rule.event_" ~ name) }}

@@ -57,7 +57,7 @@
       <details class="actions-menu">
         <summary class="button button-secondary">{{ t(request, 'honeypots.actions.more') }}</summary>
         <div class="actions-menu-list">
-          <a href="/honeypots/package-search">{{ t(request, 'honeypots.actions.package_search') }}</a>
+          {% if request.state.user.can_write() %}<a href="/honeypots/package-search">{{ t(request, 'honeypots.actions.package_search') }}</a>{% endif %}
           {# Keeps the current search/tag filter (a stray `page` is ignored). #}
           <a href="/honeypots/inventory.csv{% if request.url.query %}?{{ request.url.query }}{% endif %}">{{ t(request, 'honeypots.actions.export_inventory') }}</a>
           <a href="/honeypots/import">{{ t(request, 'honeypots.actions.bulk_import') }}</a>
@@ -259,7 +259,7 @@
               <th>{{ t(request, 'honeypots.table.hostname') }}</th>
               <th>{{ t(request, 'honeypots.table.company') }}</th>
               <th>{{ t(request, 'honeypots.table.status') }}</th>
-              <th>{{ t(request, 'honeypots.table.updates') }}</th>
+              {% if request.state.user.can_write() %}<th>{{ t(request, 'honeypots.table.updates') }}</th>{% endif %}
               <th>{{ t(request, 'honeypots.table.host_key') }}</th>
               <th></th>
             </tr>
@@ -290,7 +290,7 @@
                   {% endif %}
                 </td>
                 <td>{{ status_badge(request, honeypot) }}</td>
-                <td>{% include "partials/honeypot_update_status_cell.html" %}</td>
+                {% if request.state.user.can_write() %}<td>{% include "partials/honeypot_update_status_cell.html" %}</td>{% endif %}
                 <td>{{ host_key_badge(request, honeypot) }}</td>
                 <td><a href="/honeypots/{{ honeypot.id }}">{{ t(request, 'honeypots.table.details') }}</a></td>
               </tr>

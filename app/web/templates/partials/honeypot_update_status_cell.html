@@ -1,3 +1,5 @@
+{# Pending updates are shown only for a honeypot the viewer may write. #}
+{% if can_write_honeypot(request.state.user, honeypot) %}
 {% set other_count = (honeypot.flatpak_upgradable_count or 0) + (honeypot.snap_upgradable_count or 0) %}
 {% if honeypot.updates_checked_at is none %}
   <span class="hint">—</span>
@@ -11,3 +13,4 @@
   {% if other_count %}<span class="badge badge-warn">+{{ other_count }} {{ t(request, "partials.update_status.flatpak_snap") }}</span>{% endif %}
 {% endif %}
 {% if honeypot.reboot_required %}<span class="badge badge-error">{{ t(request, "partials.update_status.reboot") }}</span>{% endif %}
+{% endif %}

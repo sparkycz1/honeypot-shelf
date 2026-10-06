@@ -23,6 +23,7 @@ from app.auth.dependencies import get_current_user
 from app.auth.scope import (
     can_write_honeypot,
     honeypots_visible_to,
+    honeypots_writable_by,
     visible_honeypots_by_ids,
 )
 from app.core.config import get_settings
@@ -544,7 +545,7 @@ _INVENTORY_CSV_FIELDS = (
 )
 
 
-def _inventory_row(honeypot: Honeypot) -> dict[str, object]:
+def _inventory_row(honeypot: Honeypot, *, with_updates: bool) -> dict[str, object]:
     def iso(value: datetime | None) -> str:
         return value.isoformat() if value else ""
 
@@ -567,15 +568,21 @@ def _inventory_row(honeypot: Honeypot) -> dict[str, object]:
         "cpu_architecture": honeypot.cpu_architecture or "",
         "cpu_cores": number(honeypot.cpu_cores),
         "ram_gb": round(honeypot.ram_bytes / 1024**3, 1) if honeypot.ram_bytes else "",
-        "upgradable": number(honeypot.upgradable_count),
-        "security_upgradable": number(honeypot.security_upgradable_count),
-        "reboot_required": "" if honeypot.reboot_required is None else honeypot.reboot_required,
+        # Left empty for a honeypot the account may only read.
+        "upgradable": number(honeypot.upgradable_count) if with_updates else "",
+        "security_upgradable": (
+            number(honeypot.security_upgradable_count) if with_updates else ""
+        ),
+        "reboot_required": (
+            "" if honeypot.reboot_required is None or not with_updates
+            else honeypot.reboot_required
+        ),
         "uptime_days": (
             round(honeypot.uptime_seconds / 86400, 1) if honeypot.uptime_seconds else ""
         ),
         "host_key_pinned": bool(honeypot.host_key_fingerprint),
         "facts_updated_at": iso(honeypot.facts_updated_at),
-        "updates_checked_at": iso(honeypot.updates_checked_at),
+        "updates_checked_at": iso(honeypot.updates_checked_at) if with_updates else "",
     }
 
 
@@ -605,7 +612,9 @@ async def export_honeypot_inventory(
     writer = csv.DictWriter(buffer, fieldnames=_INVENTORY_CSV_FIELDS)
     writer.writeheader()
     for honeypot in honeypots:
-        writer.writerow(_inventory_row(honeypot))
+        writer.writerow(
+            _inventory_row(honeypot, with_updates=can_write_honeypot(current_user, honeypot))
+        )
 
     await log_event(
         db,
@@ -757,7 +766,7 @@ async def import_honeypot_config_submit(
 _PACKAGE_SEARCH_LIMIT = 500
 
 
-@router.get("/package-search")
+@router.get("/package-search", dependencies=[need_manage])
 async def package_search(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -774,8 +783,8 @@ async def package_search(
     if q.strip():
         # Scoped by joining the honeypot each row belongs to — a restricted
         # user searching fleet-wide must not learn which packages sit on a
-        # honeypot they can't otherwise see.
-        visible_ids = honeypots_visible_to(current_user).with_only_columns(Honeypot.id)
+        # honeypot they can't otherwise see, or may only read.
+        visible_ids = honeypots_writable_by(current_user).with_only_columns(Honeypot.id)
         query = (
             select(HoneypotPackage)
             .options(selectinload(HoneypotPackage.honeypot))

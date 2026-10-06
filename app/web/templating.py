@@ -18,6 +18,7 @@ from jinja2 import pass_context
 from jinja2.runtime import Context
 from markupsafe import Markup
 
+from app.auth.scope import can_write_honeypot
 from app.core.config import get_settings
 from app.core.version import APP_VERSION, get_git_commit
 from app.i18n import DEFAULT_LOCALE_CODE, get_locale
@@ -290,4 +291,7 @@ def strategy_label(request: Request, value: str | None) -> str:
 
 
 templates.env.globals["strategy_label"] = strategy_label
+# Packages and pending updates are shown only for a honeypot the viewer may
+# write — a read-only account watches the honeypot, it does not maintain it.
+templates.env.globals["can_write_honeypot"] = can_write_honeypot
 templates.env.globals["reboot_hint_packages"] = reboot_hint_packages
