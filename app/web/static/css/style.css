@@ -1287,6 +1287,12 @@ img.brand-mark-lg { object-fit: contain; }
 
 .hint { color: var(--color-muted); font-size: 0.88rem; }
 
+/* The rest of a long explanation, folded away under a one-line hint. */
+.hint-more { margin: calc(-1 * var(--space-2)) 0 var(--space-3); }
+.hint-more > summary { color: var(--color-muted); font-size: 0.88rem; cursor: pointer; width: fit-content; }
+.hint-more > summary:hover { color: var(--color-text); }
+.hint-more > .hint { margin-top: var(--space-2); }
+
 /* --- Alerts --- */
 
 /* Icon sits absolutely in reserved left padding rather than as a flex

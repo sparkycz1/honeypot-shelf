@@ -44,6 +44,7 @@ from app.auth.scope import companies_visible_to
 from app.auth.security import hash_password, verify_password
 from app.auth.sessions import (
     IMPERSONATION_RETURN_COOKIE_NAME,
+    PASSWORD_CHANGE_PATH,
     PENDING_TOTP_COOKIE_NAME,
     SESSION_COOKIE_NAME,
     WEBAUTHN_CHALLENGE_COOKIE_NAME,
@@ -192,7 +193,7 @@ async def _finish_login(
     # doing anything else — send them straight to where that happens instead
     # of wherever they were originally headed.
     if user.must_change_password:
-        next_url = "/account"
+        next_url = PASSWORD_CHANGE_PATH
     await log_event(
         db,
         request=request,
@@ -940,6 +941,34 @@ async def update_locale(
     return RedirectResponse(url="/account", status_code=status.HTTP_303_SEE_OTHER)
 
 
+def _render_forced_password_change(
+    request: Request, user: User, *, errors: list[str] | None = None
+) -> Response:
+    return templates.TemplateResponse(
+        request,
+        "auth/change_password.html",
+        {
+            "user": user,
+            "errors": errors or [],
+            "csrf_token": request.state.csrf_token,
+            "min_password_length": MIN_PASSWORD_LENGTH,
+        },
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT if errors else status.HTTP_200_OK,
+    )
+
+
+@router.get(PASSWORD_CHANGE_PATH)
+async def forced_password_change_form(
+    request: Request, user: User = Depends(get_current_user)
+) -> Response:
+    """Where an account with an admin-set password lands, and stays (the
+    middleware sends every other request back here), until it has chosen
+    its own. Anyone else changes their password on the account page."""
+    if not user.must_change_password:
+        return RedirectResponse(url="/account", status_code=status.HTTP_303_SEE_OTHER)
+    return _render_forced_password_change(request, user)
+
+
 @router.post("/account/password", dependencies=[Depends(verify_csrf)])
 async def change_own_password(
     request: Request,
@@ -951,17 +980,23 @@ async def change_own_password(
 ) -> Response:
     user = await db.get(User, current_user.id)
     assert user is not None
+    forced = user.must_change_password
     errors: list[str] = []
     if user.auth_provider != AuthProvider.LOCAL:
-        errors.append("Only local accounts have a Honeypot Shelf password to change.")
+        errors.append(t(request, "account.password.error.not_local"))
     elif user.password_hash is None or not verify_password(user.password_hash, current_password):
-        errors.append("Current password is incorrect.")
+        errors.append(t(request, "account.password.error.wrong_current"))
     elif new_password != confirm_password:
-        errors.append("New password and confirmation don't match.")
+        errors.append(t(request, "account.password.error.mismatch"))
     elif len(new_password) < MIN_PASSWORD_LENGTH:
-        errors.append(f"New password must be at least {MIN_PASSWORD_LENGTH} characters.")
+        errors.append(t(request, "account.password.error.too_short", count=MIN_PASSWORD_LENGTH))
+    elif new_password == current_password:
+        # Keeping the password an administrator knows is not a change.
+        errors.append(t(request, "account.password.error.same"))
 
     if errors:
+        if forced:
+            return _render_forced_password_change(request, user, errors=errors)
         return await _render_account(request, db, user, errors=errors)
 
     user.password_hash = hash_password(new_password)
@@ -975,8 +1010,13 @@ async def change_own_password(
         target_type="user",
         target_id=user.id,
         target_label=user.username,
+        details={"required": True} if forced else None,
     )
-    return RedirectResponse(url="/account", status_code=status.HTTP_303_SEE_OTHER)
+    # A forced change was the only thing standing between the sign-in and
+    # the app itself — carry on there; a voluntary one stays on the page.
+    return RedirectResponse(
+        url="/" if forced else "/account", status_code=status.HTTP_303_SEE_OTHER
+    )
 
 
 @router.get("/account/totp/enroll")

@@ -44,7 +44,13 @@ from fastapi.responses import JSONResponse, RedirectResponse
 
 from app.audit import client_ip
 from app.auth import session_policy
-from app.auth.sessions import SESSION_COOKIE_NAME, get_valid_session
+from app.auth.sessions import (
+    PASSWORD_CHANGE_PATH,
+    SESSION_COOKIE_NAME,
+    allowed_before_password_change,
+    get_valid_session,
+    must_change_password_first,
+)
 from app.core.config import get_settings
 from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie
 from app.i18n import get_locale
@@ -157,6 +163,25 @@ async def require_auth(
                 )
             else:
                 response = _redirect_to_login(request)
+            if new_csrf_cookie:
+                set_csrf_cookie(response, new_csrf_cookie)
+            return response
+
+        if must_change_password_first(session) and not allowed_before_password_change(
+            request.url.path
+        ):
+            # An admin-set password is good for exactly one thing: signing
+            # in to replace it. Every other page, form and JSON endpoint
+            # behind the session is closed until that is done.
+            if request.headers.get("accept", "").startswith("application/json"):
+                response = JSONResponse(
+                    {"detail": "Change your password first."},
+                    status_code=status.HTTP_403_FORBIDDEN,
+                )
+            else:
+                response = RedirectResponse(
+                    url=PASSWORD_CHANGE_PATH, status_code=status.HTTP_303_SEE_OTHER
+                )
             if new_csrf_cookie:
                 set_csrf_cookie(response, new_csrf_cookie)
             return response

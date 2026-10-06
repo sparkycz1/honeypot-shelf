@@ -144,6 +144,44 @@ def get_locale(code: str | None, *, default: str = DEFAULT_LOCALE_CODE) -> Local
     return locales[DEFAULT_LOCALE_CODE]
 
 
+# Languages whose nouns take a third form after 2-4 ("3 firmy", but "5
+# firem"). Everything else here has just singular and plural.
+_FEW_FORM_LOCALES = frozenset({"cs"})
+
+
+def _plural_suffix(code: str, count: object) -> str | None:
+    """Which variant of a counted string `count` calls for: `.one`, `.few`
+    (only in a language that has it), or None for the plain key — the
+    form used for 0 and for larger counts."""
+    if isinstance(count, str) and count.isdigit():
+        # A count that came back through a redirect's query string.
+        count = int(count)
+    if isinstance(count, bool) or not isinstance(count, int):
+        return None
+    if count == 1:
+        return ".one"
+    if code in _FEW_FORM_LOCALES and 2 <= count <= 4:
+        return ".few"
+    return None
+
+
+def _lookup(locale: Locale, key: str, count: object) -> str | None:
+    """`locale`'s string for `key`, then the default locale's. A caller
+    passing `count=` gets `key.one`/`key.few` where the language file has
+    one ("1 honeypot was skipped" / "3 honeypots were skipped"); a string
+    with no such variant just uses `key` for every count."""
+    candidates = [locale]
+    if locale.code != DEFAULT_LOCALE_CODE:
+        candidates.append(_registry()[DEFAULT_LOCALE_CODE])
+    for candidate in candidates:
+        suffix = _plural_suffix(candidate.code, count)
+        if suffix is not None and key + suffix in candidate.strings:
+            return candidate.strings[key + suffix]
+        if key in candidate.strings:
+            return candidate.strings[key]
+    return None
+
+
 def translate(locale: Locale, key: str, **kwargs: object) -> str:
     """`locale`'s own string for `key`, falling back to the default
     locale's, falling back to the literal key itself — see module
@@ -152,9 +190,7 @@ def translate(locale: Locale, key: str, **kwargs: object) -> str:
     string like `"Hello, {name}!"`); a template referencing a placeholder
     no caller supplied is returned unsubstituted rather than raising —
     a translation typo should never break a page render."""
-    template = locale.strings.get(key)
-    if template is None and locale.code != DEFAULT_LOCALE_CODE:
-        template = _registry()[DEFAULT_LOCALE_CODE].strings.get(key)
+    template = _lookup(locale, key, kwargs.get("count"))
     if template is None:
         return key
     if not kwargs:

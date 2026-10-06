@@ -26,7 +26,7 @@ from starlette.responses import Response
 
 from app.auth import session_policy
 from app.core.config import get_settings
-from app.db.models.user import User
+from app.db.models.user import AuthProvider, User
 from app.db.models.user_session import UserSession
 
 SESSION_COOKIE_NAME = "session"
@@ -359,3 +359,29 @@ def set_webauthn_challenge_cookie(response: Response, ticket: str) -> None:
 
 def clear_webauthn_challenge_cookie(response: Response) -> None:
     response.delete_cookie(WEBAUTHN_CHALLENGE_COOKIE_NAME)
+
+
+# The only places a signed-in account that still has to replace an
+# admin-set password may go: the page that does it, and the way out.
+PASSWORD_CHANGE_PATH = "/account/password"  # noqa: S105 - a URL path, not a secret
+_PASSWORD_CHANGE_ALLOWED_PATHS = frozenset({PASSWORD_CHANGE_PATH, "/logout"})
+
+
+def must_change_password_first(session: UserSession) -> bool:
+    """Whether `session`'s account has to set its own password before it
+    can do anything else — an administrator created it or reset its
+    password (`User.must_change_password`). Not while an administrator is
+    impersonating the account: they neither know nor should replace the
+    user's password, and the user still gets asked at their own sign-in."""
+    user = session.user
+    return (
+        bool(user.must_change_password)
+        # Only a local account has a password here to change; anything
+        # else carrying the flag would be locked out with no way to clear it.
+        and user.auth_provider == AuthProvider.LOCAL
+        and session.impersonator_id is None
+    )
+
+
+def allowed_before_password_change(path: str) -> bool:
+    return path in _PASSWORD_CHANGE_ALLOWED_PATHS
