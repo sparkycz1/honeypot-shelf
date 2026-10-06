@@ -9,6 +9,9 @@
 {% from "partials/_liveness.html" import liveness_badges %}
 {% macro status_badge(request, honeypot) %}
   {{ liveness_badges(request, honeypot) }}
+  {% if honeypot.host_key_changed_fingerprint %}
+    <span class="badge badge-error" title="{{ t(request, 'honeypots.host_key_changed.badge_hint') }}">{{ t(request, 'honeypots.host_key_changed.badge') }}</span>
+  {% endif %}
   {{ ack_badge(request, honeypot) }}
 {% endmacro %}
 
