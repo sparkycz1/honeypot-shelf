@@ -1,0 +1,6 @@
+{# One place for the live-updates script tag, so its browser-notification
+   texts reach it translated: a JSON `data-i18n` attribute, read through
+   `document.currentScript` (no inline script — CSP). Single-quoted on
+   purpose: `tojson` escapes `'` but leaves `"` alone. #}
+<script src="{{ static_url('js/live-updates.js') }}" defer
+        data-i18n='{{ live_updates_strings(request) | tojson }}'></script>

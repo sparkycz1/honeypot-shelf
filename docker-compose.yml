@@ -20,6 +20,11 @@ x-app-image: &app-image
     args:
       GIT_COMMIT: ${GIT_COMMIT:-unknown}
       CACHE_BUST: ${CACHE_BUST:-unknown}
+      # The pinned NetBird client version — set in `.env` (see
+      # `.env.example`), deliberately with no fallback here: one place to
+      # bump it. scripts/upgrade.sh and scripts/setup.py add it to an
+      # older `.env` that predates it.
+      NETBIRD_VERSION: ${NETBIRD_VERSION:?set NETBIRD_VERSION in .env (see .env.example)}
   image: honeypotshelf:local
   env_file:
     - .env

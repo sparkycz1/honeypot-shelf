@@ -3,9 +3,13 @@
    own periodic poll, see update_history.html) can render the same content
    without the poll response re-nesting the wrapping #update-availability
    div inside itself. #}
-{% if error %}
+{# `error` is this request's own check; the stored one is whatever the
+   last check — manual or the periodic sweep — failed with. #}
+{% set shown_error = error or honeypot.updates_check_error %}
+{% if shown_error %}
   <div class="alert alert-error">
-    <p>{{ t(request, "partials.updates.check_failed", error=error) }}</p>
+    <p>{{ t(request, "partials.updates.check_failed") }}</p>
+    <pre class="log-output">{{ shown_error }}</pre>
   </div>
 {% endif %}
 

@@ -61,6 +61,8 @@ async def _build_dashboard_context(
         "total": len(honeypots),
         "online": online_count,
         "offline": len(honeypots) - online_count,
+        # The other, independent signal: the SSH port answers.
+        "ssh_reachable": sum(1 for h in honeypots if h.is_reachable),
     }
 
     now = datetime.now(UTC)
@@ -147,6 +149,7 @@ async def _build_dashboard_context(
                     "company_name": company.name,
                     "honeypot_count": len(company_honeypots),
                     "online_count": company_online,
+                    "reachable_count": sum(1 for h in company_honeypots if h.is_reachable),
                     "events_24h": events_24h,
                 }
             )

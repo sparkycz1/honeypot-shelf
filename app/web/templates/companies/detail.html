@@ -33,6 +33,10 @@
       <span class="stat-label">{{ t(request, "companies.detail.stat_reachable") }}</span>
     </div>
     <div class="stat-card">
+      <span class="stat-value">{{ canary_online }}</span>
+      <span class="stat-label">{{ t(request, "companies.detail.stat_canary_online") }}</span>
+    </div>
+    <div class="stat-card">
       <span class="stat-value">{{ stats.needs_updates }}</span>
       <span class="stat-label">{{ t(request, "companies.detail.stat_needs_updates") }}</span>
     </div>

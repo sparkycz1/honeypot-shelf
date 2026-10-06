@@ -130,5 +130,5 @@
 {% endblock %}
 
 {% block extra_scripts %}
-  <script src="{{ static_url('js/live-updates.js') }}" defer></script>
+  {% include "partials/_live_updates_script.html" %}
 {% endblock %}

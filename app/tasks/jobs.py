@@ -124,6 +124,7 @@ from app.ssh.readiness import check_honeypot_readiness as run_readiness_probes
 from app.ssh.readonly import ReadonlyToggleError, check_readonly_status, set_readonly
 from app.ssh.services import gather_services
 from app.ssh.updates import (
+    apt_refresh_error,
     capture_package_snapshot,
     check_updates,
     fetch_changelog,
@@ -2387,6 +2388,10 @@ async def _check_honeypot_updates(honeypot_id: str) -> dict[str, Any]:
             )
         except SSHConnectionError as exc:
             logger.warning("check_honeypot_updates failed for %s: %s", honeypot.name, exc)
+            honeypot.updates_check_error = str(exc)
+            await session.commit()
+            await publish_honeypot_event(honeypot_id, KIND_UPDATES)
+            await publish_fleet_event(KIND_UPDATES)
             return {"ok": False, "error": str(exc)}
 
         honeypot.updates_checked_at = datetime.now(UTC)
@@ -2404,6 +2409,7 @@ async def _check_honeypot_updates(honeypot_id: str) -> dict[str, Any]:
             honeypot.upgradable_count = result.upgradable_count
             honeypot.security_upgradable_count = result.security_upgradable_count
             honeypot.apt_upgradable_packages = [dict(p) for p in result.apt_upgradable_packages]
+            honeypot.updates_check_error = None
             await session.commit()
             await publish_honeypot_event(honeypot_id, KIND_UPDATES)
             await publish_fleet_event(KIND_UPDATES)
@@ -2416,10 +2422,14 @@ async def _check_honeypot_updates(honeypot_id: str) -> dict[str, Any]:
         honeypot.upgradable_count = None
         honeypot.security_upgradable_count = None
         honeypot.apt_upgradable_packages = None
+        error = f"apt-get update exited with status {result.exit_status}."
+        apt_said = apt_refresh_error(result.output)
+        if apt_said:
+            error = f"{error}\n{apt_said}"
+        honeypot.updates_check_error = error
         await session.commit()
         await publish_honeypot_event(honeypot_id, KIND_UPDATES)
         await publish_fleet_event(KIND_UPDATES)
-        error = f"apt-get update exited with status {result.exit_status}."
         logger.warning("check_honeypot_updates failed for %s: %s", honeypot.name, error)
         return {"ok": False, "error": error}
 

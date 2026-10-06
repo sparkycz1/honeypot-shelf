@@ -37,6 +37,7 @@ async def _seed(db_session_factory: Any) -> tuple[uuid.UUID, uuid.UUID]:
             auth_method=AuthMethod.SSH_KEY,
             host_key_fingerprint="SHA256:fakefingerprint",
             is_reachable=True,
+            last_seen_at=now,
             updates_checked_at=now,
             packages_updated_at=now,
             upgradable_count=3,

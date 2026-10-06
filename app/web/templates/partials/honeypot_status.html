@@ -4,14 +4,9 @@
   hx-trigger="every 60s, live-status from:body"
   hx-swap="outerHTML settle:600ms"
 >
-  {% if honeypot.is_reachable is none %}
-    <span class="badge badge-warn">{{ t(request, "partials.status.unknown") }}</span>
-  {% elif honeypot.is_reachable %}
-    <span class="badge badge-ok">{{ t(request, "partials.status.online") }}</span>
-  {% else %}
-    <span class="badge badge-error">{{ t(request, "partials.status.offline") }}</span>
-  {% endif %}
+  {% from "partials/_liveness.html" import liveness_badges %}
+  {{ liveness_badges(request, honeypot) }}
   {% if honeypot.last_ping_at %}
-    <span class="hint">({{ t(request, "partials.status.checked_at") }} {{ honeypot.last_ping_at | local_time('%Y-%m-%d %H:%M %Z') }})</span>
+    <span class="hint">({{ t(request, "partials.status.ssh_checked_at") }} {{ honeypot.last_ping_at | local_time('%Y-%m-%d %H:%M %Z') }})</span>
   {% endif %}
 </span>

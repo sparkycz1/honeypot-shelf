@@ -204,14 +204,14 @@ async def test_dashboard_trend_sums_every_company_per_day(client, db_session_fac
     page = await client.get("/dashboard")
 
     assert page.status_code == 200
-    assert ">Events per day<" in page.text and ">Honeypots online<" in page.text
+    assert ">Events per day<" in page.text and ">Honeypots with OpenCanary reporting<" in page.text
     # Two days -> two points, 15 and 27 events; both companies online -> 2.
     series = {}
     for raw in re.findall(r"data-chart='([^']*)'", page.text):
         for entry in json.loads(html.unescape(raw))["s"]:
             series[entry["label"]] = entry["v"]
     assert series["Events per day"] == [15, 27]
-    assert series["Honeypots online"] == [2, 2]
+    assert series["Honeypots with OpenCanary reporting"] == [2, 2]
     assert "js/monitoring-chart.js" in page.text
 
 
