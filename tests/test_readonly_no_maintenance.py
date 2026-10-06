@@ -222,9 +222,11 @@ async def test_reboot_needed_is_not_sent_to_a_read_only_rule_owner(
     honeypot_id, company_id = await _seed(db_session_factory)
     owners = {}
     for name, level in (("reader", AccessLevel.READ), ("writer", AccessLevel.READ_WRITE)):
-        owners[name], _token_value = await _create_user(
-            db_session_factory, username=name, company_id=company_id, access_level=level
-        )
+        owners[name] = (
+            await _create_user(
+                db_session_factory, username=name, company_id=company_id, access_level=level
+            )
+        )[0]
     async with db_session_factory() as db:
         honeypot = await db.get(Honeypot, honeypot_id)
         for name, owner in owners.items():
