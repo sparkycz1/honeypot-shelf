@@ -1860,6 +1860,18 @@
     "live.notify.kind.services": "Services refreshed",
     "live.notify.kind.updates": "Update availability changed",
     "live.notify.kind.monitoring": "New monitoring sample",
-    "live.notify.kind.activity": "New OpenCanary activity"
+    "live.notify.kind.activity": "New OpenCanary activity",
+    "honeypots.host_key_changed.title": "The SSH host key has changed.",
+    "honeypots.host_key_changed.banner": "Since {since} this honeypot answers with a different key than the pinned one, so every connection to it is refused: no OpenCanary events, facts, updates or terminal. If the machine was reinstalled or moved, verify the new key and accept it in",
+    "honeypots.host_key_changed.settings_link": "the honeypot's settings",
+    "honeypots.host_key_changed.since": "Noticed {since}.",
+    "honeypots.host_key_changed.presented": "The server now presents:",
+    "honeypots.host_key_changed.accept_hint": "Accept it only if you know why it changed (a reinstall, a restored or moved VM whose keys were regenerated) and the fingerprint matches what the machine itself shows on its console: ssh-keygen -lf /etc/ssh/ssh_host_*_key.pub. An unexplained change can mean something is intercepting the connection.",
+    "honeypots.host_key_changed.accept_button": "Accept the new key",
+    "honeypots.host_key_changed.accept_confirm": "Replace the pinned SSH host key with the one the server presents now? Do this only after verifying the fingerprint on the machine itself.",
+    "honeypots.host_key_changed.badge": "SSH key changed",
+    "honeypots.host_key_changed.badge_hint": "The honeypot answers with a different SSH host key than the pinned one. Connections are refused until the new key is accepted in its settings.",
+    "honeypots.host_key_changed.recheck_hint": "No change has been noticed. If you know the machine's keys were regenerated, you can look at what it presents now and pin that instead.",
+    "honeypots.host_key_changed.recheck_button": "Check the key the server presents now"
   }
 }

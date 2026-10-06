@@ -93,7 +93,7 @@ from app.ssh.authorized_keys import build_authorized_keys_append_command
 from app.ssh.canary_activity import poll_log
 from app.ssh.client import open_connection, test_connection
 from app.ssh.credentials import resolve_honeypot_credential
-from app.ssh.exceptions import SSHConnectionError
+from app.ssh.exceptions import HostKeyMismatchError, SSHConnectionError
 from app.ssh.exec import run_command
 from app.ssh.facts import check_reboot_required, gather_facts
 from app.ssh.identity import get_or_create_identity
@@ -1683,6 +1683,20 @@ def forecast_all_honeypot_disks() -> None:
     asyncio.run(_forecast_all_honeypot_disks())
 
 
+def _note_host_key_change(honeypot: Honeypot, exc: SSHConnectionError) -> bool:
+    """Record on `honeypot` that it answered with a different key than the
+    pinned one, if that is what `exc` says and it isn't recorded already.
+    Called from the OpenCanary log poll: the one connection every pinned
+    honeypot gets regularly, so it is where a changed key is noticed.
+    Returns whether anything changed."""
+    presented = exc.presented_fingerprint if isinstance(exc, HostKeyMismatchError) else None
+    if not presented or presented == honeypot.host_key_changed_fingerprint:
+        return False
+    honeypot.host_key_changed_fingerprint = presented
+    honeypot.host_key_changed_at = datetime.now(UTC)
+    return True
+
+
 async def _poll_honeypot_canary_log(honeypot_id: str) -> dict[str, Any]:
     """Connect to one honeypot, read whatever's new in its OpenCanary log
     since the last poll, and store each new line as a `HoneypotEvent`
@@ -1711,7 +1725,16 @@ async def _poll_honeypot_canary_log(honeypot_id: str) -> dict[str, Any]:
             )
         except SSHConnectionError as exc:
             logger.warning("poll_honeypot_canary_log failed for %s: %s", honeypot.name, exc)
+            if _note_host_key_change(honeypot, exc):
+                await session.commit()
+                await publish_honeypot_event(honeypot_id, KIND_STATUS)
+                await publish_fleet_event(KIND_STATUS)
             return {"ok": False, "error": str(exc)}
+
+        # Connected with the pinned key — whatever answered differently
+        # before (if anything did) is gone.
+        honeypot.host_key_changed_fingerprint = None
+        honeypot.host_key_changed_at = None
 
         now = datetime.now(UTC)
         honeypot.opencanary_log_polled_at = now

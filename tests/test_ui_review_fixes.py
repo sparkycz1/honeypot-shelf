@@ -19,7 +19,8 @@ from app.db.models.audit_log import AuditOutcome
 from app.db.models.company import Company
 from app.db.models.honeypot import AuthMethod, Honeypot
 from app.db.models.user import User
-from app.ssh.exceptions import SSHConnectionError
+from app.ssh.canary_activity import LogPollResult
+from app.ssh.exceptions import HostKeyMismatchError, SSHConnectionError
 from app.ssh.updates import UpdateCheckResult, apt_refresh_error
 from tests.conftest import create_company
 
@@ -232,6 +233,102 @@ async def test_an_unreachable_honeypot_fails_its_update_check_visibly(
     async with db_session_factory() as db:
         honeypot = await db.get(Honeypot, honeypot_id)
         assert honeypot is not None and honeypot.updates_check_error == "Connection refused"
+
+
+# --- A changed SSH host key ----------------------------------------------
+
+_NEW_KEY = "SHA256:" + "n" * 43
+
+
+async def _poll(
+    db_session_factory: Any, monkeypatch: Any, honeypot_id: uuid.UUID, outcome: Any
+) -> dict[str, Any]:
+    from app.tasks import jobs
+
+    async def _poll_log(*_args: Any, **_kwargs: Any) -> LogPollResult:
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    async def _nothing(*_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    monkeypatch.setattr("app.db.session.AsyncSessionLocal", db_session_factory)
+    monkeypatch.setattr(jobs, "poll_log", _poll_log)
+    monkeypatch.setattr(jobs, "resolve_honeypot_credential", _nothing)
+    monkeypatch.setattr(jobs, "get_geoip_reader", _nothing)
+    monkeypatch.setattr(jobs, "publish_honeypot_event", _nothing)
+    monkeypatch.setattr(jobs, "publish_fleet_event", _nothing)
+    return await jobs._poll_honeypot_canary_log(str(honeypot_id))
+
+
+@pytest.mark.asyncio
+async def test_a_changed_host_key_is_reported_and_can_be_accepted(
+    client: Any, db_session_factory: Any, monkeypatch: Any, celery_calls: Any
+) -> None:
+    honeypot_id, _company_id = await _honeypot(db_session_factory, is_reachable=True)
+    mismatch = HostKeyMismatchError("different key", presented_fingerprint=_NEW_KEY)
+    assert (await _poll(db_session_factory, monkeypatch, honeypot_id, mismatch))["ok"] is False
+
+    # Reported on the overview and in the list...
+    overview = (await client.get(f"/honeypots/{honeypot_id}")).text
+    assert "The SSH host key has changed." in overview
+    assert _NEW_KEY in overview
+    assert f'href="/honeypots/{honeypot_id}/edit#host-key"' in overview
+    assert "SSH key changed" in (await client.get("/honeypots")).text
+
+    # ...and accepted from the honeypot's settings.
+    settings = (await client.get(f"/honeypots/{honeypot_id}/edit")).text
+    assert "Accept the new key" in settings
+    assert f'name="fingerprint" value="{_NEW_KEY}"' in settings
+    csrf = settings.split('name="csrf_token" value="', 1)[1].split('"', 1)[0]
+    accepted = await client.post(
+        f"/honeypots/{honeypot_id}/trust-host-key",
+        data={"csrf_token": csrf, "fingerprint": _NEW_KEY},
+    )
+    assert accepted.status_code == 303
+
+    async with db_session_factory() as db:
+        honeypot = await db.get(Honeypot, honeypot_id)
+        assert honeypot is not None
+        assert honeypot.host_key_fingerprint == _NEW_KEY
+        assert honeypot.host_key_changed_fingerprint is None
+        assert honeypot.host_key_changed_at is None
+    overview = (await client.get(f"/honeypots/{honeypot_id}")).text
+    assert "The SSH host key has changed." not in overview
+
+
+@pytest.mark.asyncio
+async def test_a_changed_host_key_report_clears_when_the_pinned_key_answers_again(
+    db_session_factory: Any, monkeypatch: Any
+) -> None:
+    honeypot_id, _company_id = await _honeypot(
+        db_session_factory,
+        host_key_changed_fingerprint=_NEW_KEY,
+        host_key_changed_at=datetime.now(UTC),
+    )
+    # An ordinary failure says nothing about the key either way.
+    await _poll(db_session_factory, monkeypatch, honeypot_id, SSHConnectionError("timed out"))
+    async with db_session_factory() as db:
+        honeypot = await db.get(Honeypot, honeypot_id)
+        assert honeypot is not None and honeypot.host_key_changed_fingerprint == _NEW_KEY
+
+    await _poll(
+        db_session_factory, monkeypatch, honeypot_id, LogPollResult(events=[], new_offset=0)
+    )
+    async with db_session_factory() as db:
+        honeypot = await db.get(Honeypot, honeypot_id)
+        assert honeypot is not None and honeypot.host_key_changed_fingerprint is None
+
+
+@pytest.mark.asyncio
+async def test_settings_offer_a_key_recheck_when_no_change_was_noticed(
+    client: Any, db_session_factory: Any
+) -> None:
+    honeypot_id, _company_id = await _honeypot(db_session_factory, is_reachable=True)
+    settings = (await client.get(f"/honeypots/{honeypot_id}/edit")).text
+    assert "Accept the new key" not in settings
+    assert f'hx-post="/honeypots/{honeypot_id}/discover-host-key"' in settings
 
 
 # --- Notification toggle, Notifications page, map ------------------------

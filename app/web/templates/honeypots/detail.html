@@ -31,6 +31,16 @@
     </div>
   {% endif %}
 
+  {% if honeypot.host_key_changed_fingerprint %}
+    <div class="alert alert-error">
+      <p>
+        <strong>{{ t(request, 'honeypots.host_key_changed.title') }}</strong>
+        {{ t(request, 'honeypots.host_key_changed.banner', since=honeypot.host_key_changed_at | local_time('%Y-%m-%d %H:%M %Z')) }}
+        <a href="/honeypots/{{ honeypot.id }}/edit#host-key">{{ t(request, 'honeypots.host_key_changed.settings_link') }}</a>.
+      </p>
+    </div>
+  {% endif %}
+
   {% if honeypot.readiness_missing %}
     <div class="alert alert-warn">
       <p>
@@ -84,6 +94,9 @@
       <p class="hint">
         {{ t(request, 'honeypots.detail.host_key_pinned_hint') }}
       </p>
+      {% if honeypot.host_key_changed_fingerprint %}
+        <p>{{ t(request, 'honeypots.host_key_changed.presented') }} <code>{{ honeypot.host_key_changed_fingerprint }}</code></p>
+      {% endif %}
     {% else %}
       <p class="hint">
         {{ t(request, 'honeypots.detail.host_key_missing_hint') }}

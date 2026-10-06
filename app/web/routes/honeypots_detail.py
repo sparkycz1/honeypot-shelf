@@ -674,6 +674,8 @@ async def update_honeypot(
 
     if connection_target_changed:
         honeypot.host_key_fingerprint = None
+        honeypot.host_key_changed_fingerprint = None
+        honeypot.host_key_changed_at = None
         honeypot.discovered_hostname = None
         honeypot.os_version = None
         honeypot.os_id = None
@@ -754,7 +756,10 @@ async def trust_host_key(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid fingerprint format."
         )
+    previous_fingerprint = honeypot.host_key_fingerprint
     honeypot.host_key_fingerprint = fingerprint
+    honeypot.host_key_changed_fingerprint = None
+    honeypot.host_key_changed_at = None
     await db.commit()
 
     await log_event(
@@ -765,7 +770,14 @@ async def trust_host_key(
         target_type="honeypot",
         target_id=honeypot.id,
         target_label=honeypot.name,
-        details={"fingerprint": fingerprint},
+        details={
+            "fingerprint": fingerprint,
+            **(
+                {"previous_fingerprint": previous_fingerprint}
+                if previous_fingerprint and previous_fingerprint != fingerprint
+                else {}
+            ),
+        },
     )
 
     # Now that the honeypot can be safely connected to, kick off an initial

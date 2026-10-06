@@ -192,7 +192,8 @@ async def open_connection(
                 f"Server {honeypot.ip_address}:{honeypot.port} presented a different key "
                 f"fingerprint ({presented}) than the pinned one "
                 f"({honeypot.host_key_fingerprint}). Connection refused — this could be "
-                "a Man-in-the-Middle attack."
+                "a Man-in-the-Middle attack.",
+                presented_fingerprint=presented,
             ) from exc
         raise SSHConnectionError(
             f"Connection to {honeypot.ip_address}:{honeypot.port} failed: {exc}"

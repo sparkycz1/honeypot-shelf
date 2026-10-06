@@ -196,6 +196,45 @@ visudo -cf /etc/sudoers.d/{{ honeypot.username }}</code></pre>
     <a class="button button-secondary" href="/honeypots/{{ honeypot.id }}">{{ t(request, 'common.cancel') }}</a>
   </form>
 
+  {% if honeypot.host_key_fingerprint %}
+    <section class="panel" id="host-key">
+      <h2>{{ t(request, 'honeypots.detail.host_key_heading') }}</h2>
+      <p>{{ t(request, 'honeypots.detail.pinned_fingerprint') }} <code>{{ honeypot.host_key_fingerprint }}</code></p>
+      {% if honeypot.host_key_changed_fingerprint %}
+        <div class="alert alert-error">
+          <p>
+            <strong>{{ t(request, 'honeypots.host_key_changed.title') }}</strong>
+            {{ t(request, 'honeypots.host_key_changed.since', since=honeypot.host_key_changed_at | local_time('%Y-%m-%d %H:%M %Z')) }}
+          </p>
+          <p>{{ t(request, 'honeypots.host_key_changed.presented') }} <code>{{ honeypot.host_key_changed_fingerprint }}</code></p>
+          <p class="hint">{{ t(request, 'honeypots.host_key_changed.accept_hint') }}</p>
+          <form method="post" action="/honeypots/{{ honeypot.id }}/trust-host-key"
+                class="inline-form" data-confirm="{{ t(request, 'honeypots.host_key_changed.accept_confirm') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="fingerprint" value="{{ honeypot.host_key_changed_fingerprint }}">
+            <button type="submit" class="button button-danger">{{ t(request, 'honeypots.host_key_changed.accept_button') }}</button>
+          </form>
+        </div>
+      {% else %}
+        {# Nothing noticed a change — still a way to look at what the
+           server presents right now and pin that instead (the discovery
+           partial swaps itself into this panel). #}
+        <p class="hint">{{ t(request, 'honeypots.host_key_changed.recheck_hint') }}</p>
+        <div id="host-key-panel">
+          <button
+            class="button button-secondary"
+            hx-post="/honeypots/{{ honeypot.id }}/discover-host-key"
+            hx-vals='{"csrf_token": "{{ csrf_token }}"}'
+            hx-target="#host-key-panel"
+            hx-swap="innerHTML"
+          >
+            {{ t(request, 'honeypots.host_key_changed.recheck_button') }}
+          </button>
+        </div>
+      {% endif %}
+    </section>
+  {% endif %}
+
   {% if honeypot.auth_method.value == 'password' %}
     <section class="panel">
       <h2>{{ t(request, 'honeypots.edit.initial_setup_heading') }}</h2>

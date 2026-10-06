@@ -6,6 +6,9 @@
 >
   {% from "partials/_liveness.html" import liveness_badges %}
   {{ liveness_badges(request, honeypot) }}
+  {% if honeypot.host_key_changed_fingerprint %}
+    <span class="badge badge-error" title="{{ t(request, 'honeypots.host_key_changed.badge_hint') }}">{{ t(request, 'honeypots.host_key_changed.badge') }}</span>
+  {% endif %}
   {% if honeypot.last_ping_at %}
     <span class="hint">({{ t(request, "partials.status.ssh_checked_at") }} {{ honeypot.last_ping_at | local_time('%Y-%m-%d %H:%M %Z') }})</span>
   {% endif %}

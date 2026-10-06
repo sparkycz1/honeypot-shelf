@@ -90,6 +90,15 @@ class Honeypot(Base):
     )
     secret_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     host_key_fingerprint: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Set when the honeypot last answered with a different key than the
+    # pinned one (the OpenCanary log poll notices, see
+    # `app.tasks.jobs._poll_honeypot_canary_log`): what it presented and
+    # since when. Connections stay refused either way — this only makes
+    # the refusal visible, and lets an operator who verified the new key
+    # accept it. Cleared once a connection succeeds again or a key is
+    # (re)trusted.
+    host_key_changed_fingerprint: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    host_key_changed_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     # Free-form, cross-cutting labels independent of `companies` above.
     tags: Mapped[list[Tag]] = relationship(

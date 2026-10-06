@@ -1860,6 +1860,18 @@
     "live.notify.kind.services": "Služby obnoveny",
     "live.notify.kind.updates": "Změnila se dostupnost aktualizací",
     "live.notify.kind.monitoring": "Nový monitorovací vzorek",
-    "live.notify.kind.activity": "Nová aktivita OpenCanary"
+    "live.notify.kind.activity": "Nová aktivita OpenCanary",
+    "honeypots.host_key_changed.title": "SSH host klíč se změnil.",
+    "honeypots.host_key_changed.banner": "Od {since} tento honeypot odpovídá jiným klíčem, než je připnutý, takže se každé spojení s ním odmítá: žádné události OpenCanary, fakta, aktualizace ani terminál. Pokud byl stroj přeinstalován nebo přesunut, ověřte nový klíč a přijměte ho v",
+    "honeypots.host_key_changed.settings_link": "nastavení honeypotu",
+    "honeypots.host_key_changed.since": "Zjištěno {since}.",
+    "honeypots.host_key_changed.presented": "Server nyní předkládá:",
+    "honeypots.host_key_changed.accept_hint": "Přijměte ho jen tehdy, když víte, proč se změnil (přeinstalace, obnovená nebo přesunutá VM s nově vygenerovanými klíči), a otisk odpovídá tomu, co stroj sám ukazuje na své konzoli: ssh-keygen -lf /etc/ssh/ssh_host_*_key.pub. Nevysvětlená změna může znamenat, že spojení někdo odposlouchává.",
+    "honeypots.host_key_changed.accept_button": "Přijmout nový klíč",
+    "honeypots.host_key_changed.accept_confirm": "Nahradit připnutý SSH host klíč tím, který server předkládá teď? Udělejte to až po ověření otisku přímo na stroji.",
+    "honeypots.host_key_changed.badge": "SSH klíč změněn",
+    "honeypots.host_key_changed.badge_hint": "Honeypot odpovídá jiným SSH host klíčem, než je připnutý. Spojení se odmítají, dokud nový klíč nepřijmete v jeho nastavení.",
+    "honeypots.host_key_changed.recheck_hint": "Žádná změna nebyla zjištěna. Pokud víte, že se klíče stroje vygenerovaly znovu, můžete se podívat, co předkládá teď, a připnout to.",
+    "honeypots.host_key_changed.recheck_button": "Zjistit klíč, který server předkládá teď"
   }
 }
