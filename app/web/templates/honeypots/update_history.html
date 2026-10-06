@@ -15,6 +15,10 @@
     <p class="hint">
       {{ t(request, "honeypots.updates.history.hint") }}
     </p>
+    <details class="hint-more">
+      <summary>{{ t(request, "common.more") }}</summary>
+      <p class="hint">{{ t(request, "honeypots.updates.history.hint_more") }}</p>
+    </details>
 
     {% if hold_outcome == 'failed' %}
       <div class="alert alert-error"><p>{{ t(request, "updates.hold.failed", package=(hold_package or '…')) }}</p></div>
@@ -63,7 +67,7 @@
       <option value="" {% if not status_filter %}selected{% endif %}>{{ t(request, "honeypots.updates.history.any_status") }}</option>
       {% for s in statuses %}
         <option value="{{ s.value }}" {% if status_filter == s.value %}selected{% endif %}>
-          {{ s.value }}
+          {{ t(request, "honeypots.updates.history.status_" ~ s.value) }}
         </option>
       {% endfor %}
     </select>
@@ -94,7 +98,7 @@
             </td>
             <td>
               {% if run.status.value in ('pending', 'running') %}
-                <span class="badge badge-warn">{{ run.status.value }}</span>
+                <span class="badge badge-warn">{{ t(request, "honeypots.updates.history.status_" ~ run.status.value) }}</span>
               {% elif run.status.value == 'succeeded' %}
                 <span class="badge badge-ok">{{ t(request, "honeypots.updates.history.status_succeeded") }}</span>
               {% else %}

@@ -35,7 +35,7 @@
   </div>
   <p class="hint">
     <a href="/honeypots">{{ t(request, "dashboard.all_honeypots") }}</a>
-    {% if current_user.is_superadmin %} · <a href="/companies">{{ company_count }} {{ t(request, "dashboard.company_singular") if company_count == 1 else t(request, "dashboard.company_plural") }}</a>{% endif %}
+    {% if current_user.is_superadmin %} · <a href="/companies">{{ t(request, "dashboard.companies_count", count=company_count) }}</a>{% endif %}
   </p>
 </section>
 

@@ -53,6 +53,7 @@
       {% set is_active = current_path == prefix or current_path.startswith(prefix ~ '/') %}
       <a href="{{ href }}" {% if is_active %}class="active" aria-current="page"{% endif %}>{{ t(request, key) }}</a>
     {% endmacro %}
+    {% block nav %}
     <nav>
       {% for href, key, shown, prefix in main_links if shown %}
         {{ nav_link(href, key, prefix) }}
@@ -73,6 +74,7 @@
         </details>
       {% endif %}
     </nav>
+    {% endblock %}
     <div class="site-header-user">
       <form method="get" action="/search" class="site-search" role="search">
         <input type="search" name="q" maxlength="100" data-global-search

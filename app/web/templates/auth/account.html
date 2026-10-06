@@ -11,12 +11,6 @@
     </div>
   {% endif %}
 
-  {% if user.must_change_password %}
-    <div class="alert alert-warn">
-      <p>{{ t(request, "account.password_set_by_admin") }}</p>
-    </div>
-  {% endif %}
-
   {% if recovery_codes %}
     <div class="alert alert-ok">
       <p>
@@ -267,6 +261,10 @@
     <section class="panel">
       <h2>{{ t(request, "account.ssh_keys.heading") }}</h2>
       <p class="hint">{{ t(request, "account.ssh_keys.hint") }}</p>
+      <details class="hint-more">
+        <summary>{{ t(request, "common.more") }}</summary>
+        <p class="hint">{{ t(request, "account.ssh_keys.hint_more") }}</p>
+      </details>
 
       <form method="post" action="/account/ssh-keys" class="form" autocomplete="off">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

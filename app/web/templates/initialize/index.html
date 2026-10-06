@@ -8,6 +8,10 @@
     <a class="button button-secondary" href="/initialize/history">{{ t(request, "initialize.history.link") }}</a>
   </div>
   <p class="hint">{{ t(request, "initialize.intro") }}</p>
+  <details class="hint-more">
+    <summary>{{ t(request, "common.more") }}</summary>
+    <p class="hint">{{ t(request, "initialize.intro_more") }}</p>
+  </details>
 
   {% if errors %}
     <div class="alert alert-error">

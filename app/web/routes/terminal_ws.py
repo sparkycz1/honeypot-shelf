@@ -66,7 +66,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.audit import log_event
 from app.auth import session_policy
 from app.auth.scope import can_write_honeypot
-from app.auth.sessions import SESSION_COOKIE_NAME, get_valid_session
+from app.auth.sessions import (
+    SESSION_COOKIE_NAME,
+    get_valid_session,
+    must_change_password_first,
+)
 from app.auth.websocket_origin import is_same_origin
 from app.core.app_settings import get_or_create_app_settings
 from app.db.models.honeypot import Honeypot
@@ -127,7 +131,7 @@ async def _authenticate(
     db_session_factory = websocket.app.state.db_session_factory
     async with db_session_factory() as db:
         session = await get_valid_session(db, raw_token)
-    if session is None:
+    if session is None or must_change_password_first(session):
         await websocket.close(code=_POLICY_VIOLATION, reason="Not authenticated.")
         return None
 

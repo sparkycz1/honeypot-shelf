@@ -44,7 +44,11 @@ from redis.asyncio.client import PubSub
 
 from app.auth import session_policy
 from app.auth.scope import can_see_honeypot
-from app.auth.sessions import SESSION_COOKIE_NAME, get_valid_session
+from app.auth.sessions import (
+    SESSION_COOKIE_NAME,
+    get_valid_session,
+    must_change_password_first,
+)
 from app.auth.websocket_origin import is_same_origin
 from app.db.models.honeypot import Honeypot
 from app.db.models.user import User
@@ -82,7 +86,7 @@ async def _authenticated_user(websocket: WebSocket) -> User | None:
     db_session_factory = websocket.app.state.db_session_factory
     async with db_session_factory() as db:
         session = await get_valid_session(db, raw_token)
-        if session is None:
+        if session is None or must_change_password_first(session):
             await websocket.close(code=_POLICY_VIOLATION, reason="Not authenticated.")
             return None
         return session.user
@@ -104,7 +108,7 @@ async def _authenticate_honeypot(websocket: WebSocket, honeypot_id: uuid.UUID) -
     db_session_factory = websocket.app.state.db_session_factory
     async with db_session_factory() as db:
         session = await get_valid_session(db, raw_token)
-        if session is None:
+        if session is None or must_change_password_first(session):
             await websocket.close(code=_POLICY_VIOLATION, reason="Not authenticated.")
             return None
         user = session.user
