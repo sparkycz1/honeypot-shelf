@@ -36,6 +36,17 @@
 (() => {
   "use strict";
 
+  // Translated texts for the notification toggle below, handed over by
+  // partials/_live_updates_script.html as JSON on this script's own tag.
+  // The English fallbacks only show if that attribute is missing.
+  let STRINGS = {};
+  try {
+    STRINGS = JSON.parse((document.currentScript && document.currentScript.dataset.i18n) || "{}");
+  } catch {
+    STRINGS = {};
+  }
+  const tr = (key, fallback) => STRINGS[key] || fallback;
+
   const INITIAL_RETRY_MS = 1000;
   const MAX_RETRY_MS = 30000;
 
@@ -111,7 +122,7 @@
   if (honeypotAnchor) {
     const honeypotId = honeypotAnchor.getAttribute("data-live-honeypot-id");
     const honeypotName =
-      honeypotAnchor.getAttribute("data-live-honeypot-name") || "This honeypot";
+      honeypotAnchor.getAttribute("data-live-honeypot-name") || tr("this_honeypot", "This honeypot");
     const url = `${scheme}://${host}/honeypots/${encodeURIComponent(honeypotId)}/live/ws`;
 
     // --- Browser notifications, for the same event when this tab is
@@ -125,15 +136,6 @@
 
     const NOTIFY_PREF_KEY = "honeypotshelf:notifications-enabled";
 
-    const KIND_MESSAGES = {
-      status: "Reachability status changed",
-      facts: "Facts refreshed",
-      packages: "Installed packages refreshed",
-      services: "Services refreshed",
-      updates: "Update availability changed",
-      monitoring: "New monitoring sample",
-      activity: "New OpenCanary activity",
-    };
 
     function notificationsWanted() {
       try {
@@ -158,7 +160,7 @@
       if (Notification.permission !== "granted") return;
       if (!notificationsWanted()) return;
       if (document.visibilityState !== "hidden") return; // tab is frontmost — the DOM update is enough
-      const body = KIND_MESSAGES[kind] || "Something changed";
+      const body = STRINGS[`kind.${kind}`] || tr("kind.other", "Something changed");
       let notification;
       try {
         notification = new Notification(honeypotName, { body, tag: `honeypotshelf-${honeypotId}` });
@@ -181,23 +183,40 @@
       button.type = "button";
       button.className = "link-button live-notify-toggle";
 
+      // Shown on click when the browser blocks notifications: a disabled
+      // button with only a tooltip never said what to do about it.
+      const blockedHint = document.createElement("span");
+      blockedHint.className = "hint";
+      blockedHint.hidden = true;
+      blockedHint.textContent = tr(
+        "blocked_hint",
+        "This browser blocks notifications from this site. Allow them in the site settings and reload the page.",
+      );
+
       function render() {
         if (Notification.permission === "denied") {
-          button.textContent = "🔕 Notifications blocked";
-          button.disabled = true;
-          button.title = "Blocked in this browser's site settings.";
+          button.textContent = tr("blocked", "🔕 Notifications blocked");
+          button.title = blockedHint.textContent;
           return;
         }
+        blockedHint.hidden = true;
         if (Notification.permission === "granted" && notificationsWanted()) {
-          button.textContent = "🔔 Notifications on";
-          button.title = "Click to turn off background notifications for this machine's page.";
+          button.textContent = tr("on", "🔔 Notifications on");
+          button.title = tr("on_hint", "Click to turn off background notifications for this page.");
         } else {
-          button.textContent = "🔔 Enable notifications";
-          button.title = "Get a browser notification when this page updates while backgrounded.";
+          button.textContent = tr("enable", "🔔 Enable notifications");
+          button.title = tr(
+            "enable_hint",
+            "Get a browser notification when this page updates while it is in the background.",
+          );
         }
       }
 
       button.addEventListener("click", async () => {
+        if (Notification.permission === "denied") {
+          blockedHint.hidden = !blockedHint.hidden;
+          return;
+        }
         if (Notification.permission === "default") {
           let permission;
           try {
@@ -217,6 +236,7 @@
 
       render();
       honeypotAnchor.appendChild(button);
+      honeypotAnchor.appendChild(blockedHint);
     }
 
     openLiveSocket(url, notifyIfBackgrounded);

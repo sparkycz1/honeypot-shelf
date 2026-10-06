@@ -23,7 +23,7 @@ from app.core.config import get_settings
 from app.core.version import APP_VERSION, get_git_commit
 from app.i18n import DEFAULT_LOCALE_CODE, get_locale
 from app.i18n import translate as _translate
-from app.services import acknowledgements
+from app.services import acknowledgements, honeypot_status
 from app.services.geoip_display import country_flag
 from app.services.opencanary_logtypes import localized_logtype_label, logtype_label
 from app.ssh.updates import reboot_hint_packages
@@ -93,6 +93,7 @@ def _chart(*args: Any, **kwargs: Any) -> charts.Chart:
 
 templates.env.globals["chart"] = _chart
 templates.env.globals["chart_palette"] = charts.PALETTE
+templates.env.globals["canary_status"] = lambda honeypot: honeypot_status.status_of(honeypot).value
 templates.env.globals["ack_active"] = acknowledgements.is_active
 templates.env.globals["ack_durations"] = acknowledgements.DURATION_CHOICES
 templates.env.globals["noise_interfaces"] = charts.noise_interfaces
@@ -217,6 +218,23 @@ def t(request: Request, key: str, **kwargs: object) -> str:
 
 
 templates.env.globals["t"] = t
+
+_LIVE_UPDATES_PREFIX = "live.notify."
+
+
+def live_updates_strings(request: Request) -> dict[str, str]:
+    """Every `live.notify.*` string in the reader's language, keyed without
+    the prefix — what `partials/_live_updates_script.html` hands
+    `live-updates.js`, which has no `t()` of its own."""
+    english = get_locale(DEFAULT_LOCALE_CODE).strings
+    return {
+        key.removeprefix(_LIVE_UPDATES_PREFIX): t(request, key)
+        for key in english
+        if key.startswith(_LIVE_UPDATES_PREFIX)
+    }
+
+
+templates.env.globals["live_updates_strings"] = live_updates_strings
 
 
 def audit_text(request: Request, action: str, summary: str) -> str:

@@ -1,0 +1,22 @@
+{# The two independent "is this honeypot alive" signals, each under its
+   own name and always side by side: whether its SSH port answers
+   (`Honeypot.is_reachable`) and whether its OpenCanary log is being read
+   (`app.services.honeypot_status`). Neither is ever called just
+   "online" — one can be fine while the other is down. #}
+{% macro liveness_badges(request, honeypot) %}
+  {% if honeypot.is_reachable is none %}
+    <span class="badge badge-warn" title="{{ t(request, 'status.ssh.hint') }}">{{ t(request, 'status.ssh.unknown') }}</span>
+  {% elif honeypot.is_reachable %}
+    <span class="badge badge-ok" title="{{ t(request, 'status.ssh.hint') }}">{{ t(request, 'status.ssh.reachable') }}</span>
+  {% else %}
+    <span class="badge badge-error" title="{{ t(request, 'status.ssh.hint') }}">{{ t(request, 'status.ssh.unreachable') }}</span>
+  {% endif %}
+  {% set canary = canary_status(honeypot) %}
+  {% if canary == 'online' %}
+    <span class="badge badge-ok" title="{{ t(request, 'status.canary.hint') }}">{{ t(request, 'status.canary.online') }}</span>
+  {% elif canary == 'offline' %}
+    <span class="badge badge-error" title="{{ t(request, 'status.canary.hint') }}">{{ t(request, 'status.canary.offline') }}</span>
+  {% else %}
+    <span class="badge badge-warn" title="{{ t(request, 'status.canary.hint') }}">{{ t(request, 'status.canary.never_seen') }}</span>
+  {% endif %}
+{% endmacro %}

@@ -35,6 +35,7 @@ from app.db.models.user import AccessLevel, User
 from app.db.session import get_db
 from app.schemas.company import CompanyCreate
 from app.services.company_stats import compute_company_stats
+from app.services.honeypot_status import offline_cutoff
 from app.services.syslog_transport import DEFAULT_SYSLOG_PORT, SyslogProtocol
 from app.web.honeypot_search import honeypot_search_clause
 from app.web.routes.honeypots_list import _HONEYPOT_LIST_PAGE_SIZE
@@ -478,6 +479,18 @@ async def company_detail(
     )
     users = users_result.scalars().all()
     stats = await compute_company_stats(db, company_id)
+    # The OpenCanary signal, next to `stats`' SSH one — over every honeypot
+    # of the company, not just the ones the tag filter above left in.
+    canary_online = (
+        await db.execute(
+            select(func.count())
+            .select_from(Honeypot)
+            .where(
+                Honeypot.companies.any(Company.id == company_id),
+                Honeypot.last_seen_at >= offline_cutoff(),
+            )
+        )
+    ).scalar_one()
 
     member_honeypot_ids = {h.id for h in honeypots}
     member_user_ids = {u.id for u in users}
@@ -508,6 +521,7 @@ async def company_detail(
             "attachable_users": attachable_users,
             "access_levels": list(AccessLevel),
             "stats": stats,
+            "canary_online": canary_online,
             "all_tags": await _get_all_tags(db),
             "q": q,
             "tag": tag,

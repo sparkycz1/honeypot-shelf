@@ -52,7 +52,13 @@ LABEL io.honeypotshelf.image="app"
 # pinned-dependency bump, and expect that (like a Postgres/Redis major
 # version bump) it may need re-registering with a fresh setup key once,
 # deliberately — not on every unrelated upgrade.
-ARG NETBIRD_VERSION=0.78.2
+#
+# The version itself lives in `.env` (`NETBIRD_VERSION`, see
+# `.env.example`), passed in by docker-compose.yml as a build arg — one
+# place to bump it, next to the rest of the deployment's configuration. No
+# default here on purpose: a build that didn't get one stops at the check
+# below instead of fetching a malformed URL.
+ARG NETBIRD_VERSION
 
 # Installed straight from its GitHub release tarball, not the `.deb`
 # (whose postinst script tries to install and start a SysV init service —
@@ -67,7 +73,9 @@ ARG NETBIRD_VERSION=0.78.2
 # instead. Harmless to have installed even when that overlay isn't used —
 # the CLI just fails with a clear "can't reach the daemon" error, same as
 # any other optional integration (LDAP/OIDC/syslog) left unconfigured.
-RUN apt-get update \
+RUN test -n "${NETBIRD_VERSION}" \
+        || { echo "NETBIRD_VERSION is not set - add it to .env (see .env.example)" >&2; exit 1; } \
+    && apt-get update \
     && apt-get install -y --no-install-recommends curl ca-certificates \
     && curl -fsSL \
         "https://github.com/netbirdio/netbird/releases/download/v${NETBIRD_VERSION}/netbird_${NETBIRD_VERSION}_linux_amd64.tar.gz" \

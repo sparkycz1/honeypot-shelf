@@ -16,7 +16,7 @@
 {% if geoip_ready %}
   <section class="panel">
     <div class="world-map-viewport" data-map-viewport>
-      <svg viewBox="0 0 {{ map_width }} {{ map_height }}" width="100%" height="auto"
+      <svg viewBox="0 0 {{ map_width }} {{ map_height }}" width="100%"
            role="img" aria-label="{{ t(request, 'map.svg_aria') }}" class="world-map"
            data-map-svg data-base-viewbox="0 0 {{ map_width }} {{ map_height }}">
         <rect x="0" y="0" width="{{ map_width }}" height="{{ map_height }}" class="world-map-ocean"></rect>

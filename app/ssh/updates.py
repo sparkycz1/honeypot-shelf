@@ -254,6 +254,20 @@ _CHECK_UPDATES_COMMAND = (
 )
 
 
+_APT_ERROR_MAX_LINES = 5
+_APT_ERROR_MAX_CHARS = 600
+
+
+def apt_refresh_error(raw: str) -> str:
+    """What `apt-get update` itself printed when it failed — everything the
+    check script wrote before its first section marker, cut down to the
+    last few lines (apt puts its `E:` lines at the end). Empty when it
+    printed nothing. Pure function, no I/O."""
+    head = raw.split(_APT_MARKER, 1)[0]
+    lines = [line.strip() for line in head.splitlines() if line.strip()]
+    return "\n".join(lines[-_APT_ERROR_MAX_LINES:])[-_APT_ERROR_MAX_CHARS:]
+
+
 def _split_sections(raw: str, markers: tuple[str, ...]) -> dict[str, str]:
     pattern = "|".join(f"==={name}===" for name in markers)
     parts = re.split(f"(?:{pattern})", raw)

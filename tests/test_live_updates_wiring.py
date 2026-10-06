@@ -33,6 +33,10 @@ _LIVE_UPDATES_JS = (_REPO_ROOT / "app" / "web" / "static" / "js" / "live-updates
     encoding="utf-8"
 )
 
+# How a page opts in: the one partial that emits the script tag together
+# with the translated texts the script needs.
+_SCRIPT_INCLUDE = '{% include "partials/_live_updates_script.html" %}'
+
 _DATA_ATTR_ID = "data-live-honeypot-id"
 _DATA_ATTR_NAME = "data-live-honeypot-name"
 
@@ -54,9 +58,17 @@ def test_live_updates_js_builds_the_url_the_live_ws_route_actually_serves():
     # route-resolution API, so this stays correct across an internal
     # routing refactor rather than reaching into `app.router.routes`.
     assert (
-        app.url_path_for("honeypot_live_websocket", honeypot_id="123")
-        == "/honeypots/123/live/ws"
+        app.url_path_for("honeypot_live_websocket", honeypot_id="123") == "/honeypots/123/live/ws"
     )
+
+
+def test_only_the_shared_partial_carries_the_script_tag_itself():
+    tagged = [
+        path.name
+        for path in _TEMPLATES_DIR.rglob("*.html")
+        if "static_url('js/live-updates.js')" in path.read_text(encoding="utf-8")
+    ]
+    assert tagged == ["_live_updates_script.html"]
 
 
 def test_every_template_that_includes_live_updates_js_sets_a_live_data_attribute():
@@ -73,7 +85,7 @@ def test_every_template_that_includes_live_updates_js_sets_a_live_data_attribute
     offenders = []
     for template_path in _TEMPLATES_DIR.rglob("*.html"):
         text = template_path.read_text(encoding="utf-8")
-        if "live-updates.js" not in text:
+        if _SCRIPT_INCLUDE not in text:
             continue
         if not any(attr in text for attr in live_attrs):
             offenders.append(str(template_path.relative_to(_REPO_ROOT)))
@@ -95,7 +107,7 @@ def test_at_least_the_known_honeypot_pages_wire_up_live_updates():
         "honeypots/update_history.html",
     ):
         text = (_TEMPLATES_DIR / relative_path).read_text(encoding="utf-8")
-        assert "live-updates.js" in text, f"{relative_path} no longer includes live-updates.js"
+        assert _SCRIPT_INCLUDE in text, f"{relative_path} no longer includes live-updates.js"
         assert _DATA_ATTR_ID in text, f"{relative_path} no longer sets {_DATA_ATTR_ID}"
 
 
@@ -115,14 +127,14 @@ def test_live_updates_js_builds_the_urls_the_other_three_routes_serve():
 def test_at_least_the_known_fleet_scoped_pages_wire_up_live_updates():
     for relative_path in ("dashboard/index.html", "map/index.html", "honeypots/list.html"):
         text = (_TEMPLATES_DIR / relative_path).read_text(encoding="utf-8")
-        assert "live-updates.js" in text, f"{relative_path} no longer includes live-updates.js"
+        assert _SCRIPT_INCLUDE in text, f"{relative_path} no longer includes live-updates.js"
         assert "data-live-fleet" in text, f"{relative_path} no longer sets data-live-fleet"
 
 
 def test_at_least_the_known_admin_scoped_pages_wire_up_live_updates():
     for relative_path in ("audit/list.html", "companies/list.html"):
         text = (_TEMPLATES_DIR / relative_path).read_text(encoding="utf-8")
-        assert "live-updates.js" in text, f"{relative_path} no longer includes live-updates.js"
+        assert _SCRIPT_INCLUDE in text, f"{relative_path} no longer includes live-updates.js"
         assert "data-live-admin" in text, f"{relative_path} no longer sets data-live-admin"
 
 

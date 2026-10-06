@@ -189,6 +189,11 @@ class Honeypot(Base):
     flatpak_upgradable_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     snap_upgradable_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updates_checked_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    # Why the last update check failed (unreachable over SSH, `apt-get
+    # update` exiting non-zero with apt's own messages) — None once a check
+    # succeeds. Kept so the failure stays visible in the list and on the
+    # Updates tab after the request that ran the check is long gone.
+    updates_check_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     apt_upgradable_packages: Mapped[list[dict[str, Any]] | None] = mapped_column(
         JSON, nullable=True
     )

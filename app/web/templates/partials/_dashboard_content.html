@@ -14,11 +14,15 @@
     </div>
     <div class="stat-card">
       <span class="stat-value">{{ honeypot_stats.online }}</span>
-      <span class="stat-label">{{ t(request, "dashboard.online") }}</span>
+      <span class="stat-label">{{ t(request, "dashboard.canary_online") }}</span>
     </div>
     <div class="stat-card">
       <span class="stat-value">{{ honeypot_stats.offline }}</span>
-      <span class="stat-label">{{ t(request, "dashboard.offline") }}</span>
+      <span class="stat-label">{{ t(request, "dashboard.canary_offline") }}</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-value">{{ honeypot_stats.ssh_reachable }}</span>
+      <span class="stat-label">{{ t(request, "dashboard.ssh_reachable") }}</span>
     </div>
     <div class="stat-card">
       <span class="stat-value">{{ event_stats.last_24h }}</span>
@@ -39,13 +43,14 @@
 <section class="panel">
   <h2>{{ t(request, "dashboard.by_company") }}</h2>
   <table class="data-table">
-    <thead><tr><th>{{ t(request, "dashboard.company") }}</th><th>{{ t(request, "nav.honeypots") }}</th><th>{{ t(request, "dashboard.online") }}</th><th>{{ t(request, "dashboard.events_24h") }}</th></tr></thead>
+    <thead><tr><th>{{ t(request, "dashboard.company") }}</th><th>{{ t(request, "nav.honeypots") }}</th><th>{{ t(request, "dashboard.canary_online") }}</th><th>{{ t(request, "dashboard.ssh_reachable") }}</th><th>{{ t(request, "dashboard.events_24h") }}</th></tr></thead>
     <tbody>
       {% for row in company_breakdown %}
       <tr>
         <td><a href="/companies/{{ row.company_id }}">{{ row.company_name }}</a></td>
         <td>{{ row.honeypot_count }}</td>
         <td>{{ row.online_count }}</td>
+        <td>{{ row.reachable_count }}</td>
         <td>{{ row.events_24h }}</td>
       </tr>
       {% endfor %}

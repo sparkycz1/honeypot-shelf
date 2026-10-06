@@ -6,14 +6,9 @@
 {% block main_class %}container-wide{% endblock %}
 
 {% from "partials/acknowledgement.html" import ack_badge with context %}
+{% from "partials/_liveness.html" import liveness_badges %}
 {% macro status_badge(request, honeypot) %}
-  {% if honeypot.is_reachable is none %}
-    <span class="badge badge-warn">{{ t(request, 'honeypots.list.status_unknown') }}</span>
-  {% elif honeypot.is_reachable %}
-    <span class="badge badge-ok">{{ t(request, 'honeypots.list.status_online') }}</span>
-  {% else %}
-    <span class="badge badge-error">{{ t(request, 'honeypots.list.status_offline') }}</span>
-  {% endif %}
+  {{ liveness_badges(request, honeypot) }}
   {{ ack_badge(request, honeypot) }}
 {% endmacro %}
 
@@ -352,6 +347,6 @@
 {% endblock %}
 
 {% block extra_scripts %}
-  <script src="{{ static_url('js/live-updates.js') }}" defer></script>
+  {% include "partials/_live_updates_script.html" %}
   <script src="{{ static_url('js/live-list.js') }}" defer></script>
 {% endblock %}
