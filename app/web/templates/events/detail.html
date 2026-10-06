@@ -26,6 +26,8 @@
           <code>{{ event.src_ip }}</code>{% if event.src_port %}:{{ event.src_port }}{% endif %}
           {% if event.src_country_code %}
             <span class="hint">{{ geoip_flag(event.src_country_code) }} {{ event.src_country_name or event.src_country_code }}{% if event.src_city_name %}, {{ event.src_city_name }}{% endif %}</span>
+          {% elif is_internal_ip(event.src_ip) %}
+            <span class="hint">{{ t(request, "events.internal_network") }}</span>
           {% endif %}
           · <a href="/events/source/{{ event.src_ip | urlencode }}">{{ t(request, "events.detail.same_source") }}</a>
         {% else %}—{% endif %}

@@ -122,6 +122,51 @@ async def page_of_events(
     return events[:PAGE_SIZE], len(events) > PAGE_SIZE
 
 
+async def count_events(db: AsyncSession, user: User, filters: EventFilters) -> int:
+    """How many events match `filters` in all, across every page."""
+    matching = apply_filters(select(HoneypotEvent), user, filters).subquery()
+    return (await db.execute(select(func.count()).select_from(matching))).scalar_one()
+
+
+# The same thing again within this long is a repeat of the row above, not
+# news — SNMP and port scans arrive two or more to the second.
+REPEAT_WINDOW_SECONDS = 60
+
+
+@dataclass
+class EventRow:
+    """One row of the Events table: an event, and how many identical ones
+    directly following it (same honeypot, type, source address and port,
+    moments apart) it stands for."""
+
+    event: HoneypotEvent
+    count: int = 1
+
+
+def group_repeats(events: list[HoneypotEvent]) -> list[EventRow]:
+    """Fold each run of identical consecutive events into its first row.
+    `events` is in display order (newest first); nothing is reordered and
+    nothing that isn't adjacent is merged."""
+    rows: list[EventRow] = []
+    previous: HoneypotEvent | None = None
+    for event in events:
+        if (
+            previous is not None
+            and event.honeypot_id == previous.honeypot_id
+            and event.event_type == previous.event_type
+            and event.src_ip == previous.src_ip
+            and event.dst_port == previous.dst_port
+            and event.ignored == previous.ignored
+            and abs((previous.occurred_at - event.occurred_at).total_seconds())
+            <= REPEAT_WINDOW_SECONDS
+        ):
+            rows[-1].count += 1
+        else:
+            rows.append(EventRow(event=event))
+        previous = event
+    return rows
+
+
 async def event_types_seen(db: AsyncSession, user: User) -> list[str]:
     """Every event type among the events `user` may see — the choices of
     the Events page's type filter."""

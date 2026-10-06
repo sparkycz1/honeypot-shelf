@@ -365,11 +365,11 @@ def test_live_updates_script_has_no_untranslatable_button_text() -> None:
 
 
 @pytest.mark.asyncio
-async def test_empty_notifications_page_points_at_the_button_above(client: Any) -> None:
+async def test_empty_notifications_page_points_at_the_form_where_it_is(client: Any) -> None:
     page = (await client.get("/account/notifications")).text
-    assert "button above" in page
-    assert "add one below" not in page
-    assert page.index("Add rule") < page.index("button above")
+    # "Below" has to be true: the sentence first, then the form, already open.
+    assert "add the first one below" in page
+    assert page.index("add the first one below") < page.index('<details class="stack-gap" open>')
 
 
 def test_map_svg_has_no_invalid_height() -> None:

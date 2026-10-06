@@ -45,7 +45,13 @@ from app.db.models.honeypot import Honeypot
 from app.db.models.honeypot_event import HoneypotEvent
 from app.db.models.user import User
 from app.db.session import get_db
-from app.services.geoip_display import WORLD_LAND_PATH, country_flag, dot_radius, project
+from app.services.geoip_display import (
+    WORLD_LAND_PATH,
+    country_flag,
+    dot_radius,
+    is_internal_address,
+    project,
+)
 from app.web.templating import templates
 
 router = APIRouter()
@@ -61,6 +67,12 @@ class MapDot:
     y: float
     radius: float
     label: str
+
+
+_TOP_INTERNAL_SOURCES = 10
+# Unlocated sources looked at to find that many internal ones (a public
+# address the GeoIP database simply doesn't know is unlocated too).
+_UNLOCATED_SOURCES_SCANNED = 100
 
 
 async def _build_map_context(db: AsyncSession, user: User) -> dict[str, object]:
@@ -147,9 +159,31 @@ async def _build_map_context(db: AsyncSession, user: User) -> dict[str, object]:
     total_events = total_events_result.scalar_one()
     located_events = sum(row.event_count for row in location_rows)
 
+    # Sources with no location at all: mostly the internal network, which
+    # is the whole picture on an installation that only watches a LAN.
+    unlocated_rows = (
+        await db.execute(
+            select(HoneypotEvent.src_ip, func.count().label("event_count"))
+            .where(
+                *scope_filters,
+                HoneypotEvent.src_ip.is_not(None),
+                HoneypotEvent.src_country_code.is_(None),
+            )
+            .group_by(HoneypotEvent.src_ip)
+            .order_by(func.count().desc())
+            .limit(_UNLOCATED_SOURCES_SCANNED)
+        )
+    ).all()
+    top_internal = [
+        {"src_ip": row.src_ip, "count": row.event_count}
+        for row in unlocated_rows
+        if is_internal_address(row.src_ip)
+    ][:_TOP_INTERNAL_SOURCES]
+
     return {
         "dots": dots,
         "top_countries": top_countries,
+        "top_internal": top_internal,
         "map_width": _MAP_WIDTH,
         "map_height": _MAP_HEIGHT,
         "world_land_path": WORLD_LAND_PATH,

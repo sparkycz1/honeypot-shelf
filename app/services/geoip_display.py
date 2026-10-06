@@ -11,6 +11,7 @@ concern doesn't leak into the lookup/download service.
 
 from __future__ import annotations
 
+import ipaddress
 import math
 from pathlib import Path
 
@@ -93,3 +94,36 @@ def country_flag(country_code: str | None) -> str:
         return ""
     code = country_code.upper()
     return "".join(chr(0x1F1E6 + (ord(letter) - ord("A"))) for letter in code)
+
+
+_INTERNAL_NETWORKS = tuple(
+    ipaddress.ip_network(network)
+    for network in (
+        "10.0.0.0/8",
+        "172.16.0.0/12",
+        "192.168.0.0/16",
+        "100.64.0.0/10",
+        "127.0.0.0/8",
+        "169.254.0.0/16",
+        "::1/128",
+        "fc00::/7",
+        "fe80::/10",
+    )
+)
+
+
+def is_internal_address(address: str | None) -> bool:
+    """Whether `address` can never have a place on a map: a private (RFC
+    1918, carrier-grade NAT, unique-local), loopback or link-local one.
+    What a page says instead of a blank location — "internal network", not
+    "unknown". Deliberately an explicit list rather than `is_private`,
+    which also covers documentation and other reserved ranges that are
+    not anybody's internal network."""
+    if not address:
+        return False
+    try:
+        ip = ipaddress.ip_address(address.strip())
+    except ValueError:
+        return False
+    return any(ip in network for network in _INTERNAL_NETWORKS)
+

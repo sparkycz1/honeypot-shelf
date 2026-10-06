@@ -32,8 +32,10 @@ from app.db.session import get_db
 from app.services import ignored_sources
 from app.services.event_search import (
     EventFilters,
+    count_events,
     event_types_seen,
     get_event,
+    group_repeats,
     page_of_events,
     parse_uuid,
     reported_fields,
@@ -95,6 +97,7 @@ async def events_page(
     page = max(page, 1)
     filters = _filters(honeypot_id, event_type, src_ip, country, since, until, include_ignored)
     events, has_older = await page_of_events(db, user, filters, page)
+    total = await count_events(db, user, filters)
     honeypots = (
         await db.execute(honeypots_visible_to(user).order_by(Honeypot.name))
     ).scalars()
@@ -121,7 +124,8 @@ async def events_page(
         request,
         "events/list.html",
         {
-            "events": events,
+            "rows": group_repeats(events),
+            "total": total,
             "label_of": label_of,
             "honeypots": list(honeypots),
             "event_types": [(value, label_of(value)) for value in await event_types_seen(db, user)],

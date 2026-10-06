@@ -16,7 +16,8 @@
     id="map-content"
     hx-get="/map/panel"
     hx-trigger="every 60s, live-activity from:body"
-    hx-swap="innerHTML settle:600ms"
+    hx-swap="innerHTML"
+    data-quiet-swap
   >
     {% include "partials/_map_content.html" %}
   </div>

@@ -69,3 +69,26 @@
     </table>
   {% endif %}
 </section>
+
+{% if top_internal %}
+<section class="panel">
+  <h2>{{ t(request, "map.top_internal_heading") }}</h2>
+  <p class="hint">{{ t(request, "map.top_internal_hint") }}</p>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>{{ t(request, "map.column.address") }}</th>
+        <th>{{ t(request, "map.column.events") }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for source in top_internal %}
+        <tr>
+          <td><a href="/events/source/{{ source.src_ip | urlencode }}">{{ source.src_ip }}</a></td>
+          <td>{{ source.count }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}

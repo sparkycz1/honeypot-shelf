@@ -46,7 +46,8 @@
     id="audit-content"
     hx-get="/audit/panel?q={{ q | urlencode }}&outcome={{ outcome | urlencode }}&target_type={{ target_type | urlencode }}&target_id={{ target_id | urlencode }}&page={{ page }}"
     hx-trigger="every 30s, live-audit from:body"
-    hx-swap="innerHTML settle:600ms"
+    hx-swap="innerHTML"
+    data-quiet-swap
   >
     {% include "partials/_audit_content.html" %}
   </div>

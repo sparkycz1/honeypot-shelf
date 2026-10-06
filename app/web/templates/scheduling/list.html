@@ -92,6 +92,8 @@
   {% else %}
     <div class="empty-state">
       <p>{{ t(request, "scheduling.list.empty") }}</p>
+      <p>{{ t(request, "scheduling.list.empty_hint") }}</p>
+      <a class="button" href="/scheduling/new">{{ t(request, "scheduling.list.new_task") }}</a>
     </div>
   {% endif %}
 {% endblock %}

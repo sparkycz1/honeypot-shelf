@@ -78,6 +78,9 @@ def _honeypot_tabs(request: Request, honeypot: Honeypot, user: User) -> list[tup
         ("history", t(request, "honeypots.tabs.history"), f"{base}/history"),
     ]
     if user.can_write():
+        # From here on: managing the honeypot, not watching it — the same
+        # line the read/write access levels draw. style.css sets the first
+        # of these apart with a divider (`.tab-nav a[href$="/updates"]`).
         tabs.append(("updates", t(request, "honeypots.tabs.updates"), f"{base}/updates"))
         tabs.append(("terminal", t(request, "honeypots.tabs.terminal"), f"{base}/terminal"))
         # Logs/Config/Settings all share Terminal's write gate rather than

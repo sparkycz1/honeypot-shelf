@@ -22,7 +22,8 @@
     id="companies-list-content"
     hx-get="/companies/panel?q={{ q | urlencode }}"
     hx-trigger="every 30s, live-audit from:body"
-    hx-swap="innerHTML settle:600ms"
+    hx-swap="innerHTML"
+    data-quiet-swap
   >
     {% include "partials/_companies_list_content.html" %}
   </div>

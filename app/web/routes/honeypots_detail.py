@@ -8,6 +8,7 @@ import asyncio
 import contextlib
 import re
 import uuid
+from datetime import UTC, datetime, timedelta
 
 # NOT the builtin `TimeoutError` — `celery.exceptions.TimeoutError` does not
 # subclass it, so catching the builtin around `AsyncResult.get(timeout=...)`
@@ -29,6 +30,7 @@ from app.core.security import encrypt_secret
 from app.db.models.audit_log import AuditOutcome
 from app.db.models.company import Company
 from app.db.models.honeypot import AuthMethod
+from app.db.models.honeypot_event import HoneypotEvent
 from app.db.models.honeypot_note import MAX_NOTE_LENGTH
 from app.db.models.honeypot_package import HoneypotPackage
 from app.db.models.user import User
@@ -122,11 +124,31 @@ async def honeypot_detail(
     honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
     can_write = can_write_honeypot(current_user, honeypot)
     csrf_token, new_cookie = get_or_create_csrf_token(request)
+    # The summary line at the top: what it caught last, and how much in
+    # the last day (ignored sources left out, as everywhere else).
+    counted = (HoneypotEvent.honeypot_id == honeypot.id, HoneypotEvent.ignored.is_(False))
+    last_event = (
+        await db.execute(
+            select(HoneypotEvent)
+            .where(*counted)
+            .order_by(HoneypotEvent.occurred_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    events_24h = (
+        await db.execute(
+            select(func.count())
+            .select_from(HoneypotEvent)
+            .where(*counted, HoneypotEvent.occurred_at >= datetime.now(UTC) - timedelta(days=1))
+        )
+    ).scalar_one()
     response = templates.TemplateResponse(
         request,
         "honeypots/detail.html",
         {
             "honeypot": honeypot,
+            "last_event": last_event,
+            "events_24h": events_24h,
             "maintenance_window": await maintenance_windows.active_window_for(db, honeypot),
             "can_acknowledge": can_write,
             # Installed packages are for the accounts that maintain the

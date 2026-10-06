@@ -23,6 +23,40 @@
 
   {{ render_tabnav(tabs, active_tab) }}
 
+  {# The answer to "how is it doing" before any of the detail below. #}
+  <div class="summary-row">
+    <div class="summary-item summary-item-wide">
+      <span class="summary-label">{{ t(request, 'honeypots.detail.status') }}</span>
+      <span class="summary-value">{% include "partials/honeypot_status.html" %}</span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">{{ t(request, 'honeypots.summary.last_event') }}</span>
+      <span class="summary-value">
+        {% if last_event %}
+          <a href="/events/{{ last_event.id }}">{{ last_event.occurred_at | local_time('%Y-%m-%d %H:%M') }}</a>
+          <span class="hint">{{ last_event.event_type | canary_label }}</span>
+        {% else %}{{ t(request, 'honeypots.summary.no_event') }}{% endif %}
+      </span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">{{ t(request, 'honeypots.summary.events_24h') }}</span>
+      <span class="summary-value"><a href="/honeypots/{{ honeypot.id }}/status">{{ events_24h }}</a></span>
+    </div>
+    {% if can_see_packages %}
+      <div class="summary-item">
+        <span class="summary-label">{{ t(request, 'honeypots.summary.updates') }}</span>
+        <span class="summary-value">{% include "partials/honeypot_update_status_cell.html" %}</span>
+      </div>
+    {% endif %}
+    <div class="summary-item">
+      <span class="summary-label">{{ t(request, 'honeypots.summary.last_check') }}</span>
+      <span class="summary-value">
+        {% if honeypot.opencanary_log_polled_at %}{{ honeypot.opencanary_log_polled_at | local_time('%Y-%m-%d %H:%M') }}
+        {% else %}{{ t(request, 'honeypots.summary.never') }}{% endif %}
+      </span>
+    </div>
+  </div>
+
   {% if power_sent %}
     <div class="alert alert-warn">
       <p>
@@ -65,8 +99,6 @@
         —
       {% endif %}
     </dd>
-    <dt>{{ t(request, 'honeypots.detail.status') }}</dt>
-    <dd>{% include "partials/honeypot_status.html" %}</dd>
     <dt>{{ t(request, 'honeypots.detail.tags') }}</dt>
     <dd>
       {% if honeypot.tags %}

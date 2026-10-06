@@ -102,7 +102,9 @@
 
 * { box-sizing: border-box; }
 
-html { -webkit-text-size-adjust: 100%; }
+/* `scrollbar-gutter`: a short page and a long one keep the same width, so
+   moving between them in the menu doesn't shift everything sideways. */
+html { -webkit-text-size-adjust: 100%; scrollbar-gutter: stable; }
 
 body {
   margin: 0;
@@ -592,6 +594,21 @@ img.brand-mark-lg { object-fit: contain; }
 }
 
 .tab-nav a:hover { color: var(--color-text); }
+
+/* A honeypot's tabs come in two groups: watching it (Overview … History)
+   and managing it (Updates … Settings). A rule before the first managing
+   tab, by its address — the tab partial itself is shared with the sister
+   app and stays as it is. */
+.tab-nav a[href^="/honeypots/"][href$="/updates"] { position: relative; margin-left: var(--space-5); }
+.tab-nav a[href^="/honeypots/"][href$="/updates"]::before {
+  content: "";
+  position: absolute;
+  left: calc(-1 * var(--space-3));
+  top: 22%;
+  height: 56%;
+  width: 1px;
+  background: var(--color-border-strong);
+}
 
 .tab-nav a.active {
   color: var(--color-accent);
@@ -1798,6 +1815,9 @@ a.htmx-request, .link-button.htmx-request { opacity: 0.6; cursor: progress; }
   to { background-color: transparent; }
 }
 .htmx-settling { animation: flash-update 900ms ease-out; }
+/* A whole-page panel refreshing itself is not news worth tinting the
+   entire page for (see quiet-swap.js). */
+[data-quiet-swap].htmx-settling { animation: none; }
 
 @media (prefers-reduced-motion: reduce) {
   .htmx-settling { animation: none; }
@@ -2126,4 +2146,74 @@ th[data-sort][aria-sort="descending"]::after { content: " \2193"; color: var(--c
 @media (max-width: 640px) {
   .timeline-item { grid-template-columns: 1fr; gap: var(--space-1); }
   .timeline-meta { flex-direction: row; flex-wrap: wrap; align-items: center; }
+}
+
+/* --- Honeypot overview: the summary line above the detail --- */
+.summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-6);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-5);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+.summary-item { display: flex; flex-direction: column; gap: var(--space-1); min-width: 7rem; }
+.summary-label { color: var(--color-muted); font-size: 0.82rem; }
+.summary-value { font-weight: 600; }
+.summary-value .hint { font-weight: 400; }
+
+/* "3×": this row stands for that many identical events in a row. */
+.badge-count { font-variant-numeric: tabular-nums; }
+
+/* --- Bulk actions under a selectable list (shown once something is
+   ticked, see bulk-select.js) --- */
+.bulk-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  margin-top: var(--space-3);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+}
+.bulk-bar[hidden] { display: none; }
+.bulk-bar-group { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+/* Restart, shut down, delete: pushed to the far end, behind a rule. */
+.bulk-bar-danger {
+  margin-left: auto;
+  padding-left: var(--space-5);
+  border-left: 1px solid var(--color-border-strong);
+}
+
+/* --- Honeypot table on a narrow screen: one card per honeypot instead
+   of ten squeezed columns --- */
+@media (max-width: 760px) {
+  .honeypot-table, .honeypot-table tbody, .honeypot-table tr, .honeypot-table td { display: block; }
+  .honeypot-table thead { display: none; }
+  .honeypot-table tr {
+    padding: var(--space-3);
+    margin-bottom: var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+  }
+  .honeypot-table td {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-1) var(--space-2);
+    padding: var(--space-1) 0;
+    border: 0;
+  }
+  .honeypot-table td[data-label]::before {
+    content: attr(data-label);
+    flex: 0 0 6.5rem;
+    color: var(--color-muted);
+    font-size: 0.82rem;
+  }
+  .bulk-bar-danger { margin-left: 0; padding-left: 0; border-left: 0; }
 }
