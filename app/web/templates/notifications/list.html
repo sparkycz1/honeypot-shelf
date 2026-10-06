@@ -29,7 +29,14 @@
     <h2>{{ t(request, "notifications.rules.heading") }}</h2>
     <p class="hint">{{ t(request, "notifications.rules.hint") }}</p>
 
-    <details class="stack-gap">
+    {% if not rules %}
+      <div class="empty-state stack-gap">
+        <p>{{ t(request, "notifications.rules.none") }}</p>
+      </div>
+    {% endif %}
+
+    {# With nothing set up yet the form is the page: open, not behind a click. #}
+    <details class="stack-gap" {% if not rules %}open{% endif %}>
       <summary class="button">{{ t(request, "notifications.rule.add_button") }}</summary>
       <form method="post" action="/account/notifications" class="form form-wide"
             autocomplete="off" data-rule-form>
@@ -39,9 +46,7 @@
       </form>
     </details>
 
-    {% if not rules %}
-      <p class="hint">{{ t(request, "notifications.rules.none") }}</p>
-    {% else %}
+    {% if rules %}
       <table class="data-table">
         <thead>
           <tr>

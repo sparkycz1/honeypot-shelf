@@ -27,3 +27,31 @@ document.addEventListener("change", (event) => {
     }
   }
 });
+
+// The bulk-action bar of such a table (`data-bulk-bar="<checkbox name>"`)
+// stays hidden until something is ticked, and says how many are. A hint
+// in its place (`data-bulk-empty="<name>"`) says the bar exists.
+function refreshBulkBars() {
+  for (const bar of document.querySelectorAll("[data-bulk-bar]")) {
+    const name = bar.getAttribute("data-bulk-bar");
+    const form = bar.closest("form");
+    let selected = 0;
+    for (const checkbox of document.querySelectorAll(`input[name="${name}"]`)) {
+      if (checkbox instanceof HTMLInputElement && checkbox.form === form && checkbox.checked) {
+        selected += 1;
+      }
+    }
+    bar.hidden = selected === 0;
+    const count = bar.querySelector("[data-bulk-count]");
+    if (count) count.textContent = `${count.getAttribute("data-label") || ""} ${selected}`.trim();
+    for (const hint of document.querySelectorAll(`[data-bulk-empty="${name}"]`)) {
+      hint.hidden = selected !== 0;
+    }
+  }
+}
+
+// Any tick — and live-list.js, which announces a redrawn list the same way.
+document.addEventListener("change", refreshBulkBars);
+// A browser restoring ticked boxes on back/reload fires no "change".
+window.addEventListener("pageshow", refreshBulkBars);
+refreshBulkBars();

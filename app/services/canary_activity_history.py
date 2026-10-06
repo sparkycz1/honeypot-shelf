@@ -137,20 +137,41 @@ class RecentActivityEvent:
     src_ip: str | None
     src_port: int | None
     source: str
+    # How many identical events directly after this one (same type and
+    # source address, moments apart) this row stands for.
+    count: int = 1
+
+
+# Same rule as the Events page (`app.services.event_search.group_repeats`).
+_REPEAT_WINDOW_SECONDS = 60
 
 
 def summarize_recent_events(
     events: list[HoneypotEvent], *, label_of: Callable[[object], str] = logtype_label
 ) -> list[RecentActivityEvent]:
-    return [
-        RecentActivityEvent(
-            id=event.id,
-            occurred_at=event.occurred_at,
-            label=label_of(event.event_type),
-            module=module_key(event.event_type),
-            src_ip=event.src_ip,
-            src_port=event.src_port,
-            source=event.source,
-        )
-        for event in events
-    ]
+    rows: list[RecentActivityEvent] = []
+    previous: HoneypotEvent | None = None
+    for event in events:
+        if (
+            previous is not None
+            and event.event_type == previous.event_type
+            and event.src_ip == previous.src_ip
+            and event.dst_port == previous.dst_port
+            and abs((previous.occurred_at - event.occurred_at).total_seconds())
+            <= _REPEAT_WINDOW_SECONDS
+        ):
+            rows[-1].count += 1
+        else:
+            rows.append(
+                RecentActivityEvent(
+                    id=event.id,
+                    occurred_at=event.occurred_at,
+                    label=label_of(event.event_type),
+                    module=module_key(event.event_type),
+                    src_ip=event.src_ip,
+                    src_port=event.src_port,
+                    source=event.source,
+                )
+            )
+        previous = event
+    return rows

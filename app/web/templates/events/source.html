@@ -31,6 +31,7 @@
       <dd>
         {% if source.country_code %}
           {{ geoip_flag(source.country_code) }} {{ source.country_name or source.country_code }}{% if source.city_name %}, {{ source.city_name }}{% endif %}
+        {% elif is_internal_ip(source.src_ip) %}{{ t(request, "events.internal_network") }}
         {% else %}—{% endif %}
       </dd>
     </dl>

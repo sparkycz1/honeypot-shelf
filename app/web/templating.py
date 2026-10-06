@@ -24,7 +24,7 @@ from app.core.version import APP_VERSION, get_git_commit
 from app.i18n import DEFAULT_LOCALE_CODE, get_locale
 from app.i18n import translate as _translate
 from app.services import acknowledgements, honeypot_status
-from app.services.geoip_display import country_flag
+from app.services.geoip_display import country_flag, is_internal_address
 from app.services.opencanary_logtypes import localized_logtype_label, logtype_label
 from app.ssh.updates import reboot_hint_packages
 from app.web import branding, charts
@@ -119,6 +119,22 @@ def format_uptime(seconds: int | None) -> str:
 
 
 templates.env.filters["format_uptime"] = format_uptime
+
+
+def short_duration(seconds: float | int | None) -> str:
+    """`{{ run.duration_seconds | short_duration }}` — "45 s", "12 min",
+    "1 h 05 min". Unit abbreviations only, the same in every language."""
+    total = max(int(seconds or 0), 0)
+    if total < 60:
+        return f"{total} s"
+    minutes, _ = divmod(total, 60)
+    if minutes < 60:
+        return f"{minutes} min"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours} h {minutes:02d} min"
+
+
+templates.env.filters["short_duration"] = short_duration
 
 templates.env.filters["os_badge"] = badge_for
 
@@ -297,6 +313,7 @@ templates.env.globals["git_commit"] = get_git_commit
 # A flag emoji from a 2-letter country code — see app.services.geoip_display
 # for why this and the GeoIP lookups themselves are kept separate modules.
 templates.env.globals["geoip_flag"] = country_flag
+templates.env.globals["is_internal_ip"] = is_internal_address
 
 
 def strategy_label(request: Request, value: str | None) -> str:

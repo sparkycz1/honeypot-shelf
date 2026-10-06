@@ -247,7 +247,7 @@
           {% endfor %}
         </div>
       {% else %}
-        <table class="data-table">
+        <table class="data-table honeypot-table">
           <thead>
             <tr>
               <th><input type="checkbox" data-select-all="honeypot_ids" aria-label="{{ t(request, 'honeypots.list.select_all_aria') }}"></th>
@@ -267,29 +267,29 @@
               <tr>
                 <td><input type="checkbox" name="honeypot_ids" value="{{ honeypot.id }}"
                            aria-label="{{ t(request, 'honeypots.list.select_aria', name=honeypot.name) }}"></td>
-                <td>
+                <td data-label="{{ t(request, 'honeypots.table.name') }}">
                   {{ render_os_badge(honeypot.os_id) }}
                   <a href="/honeypots/{{ honeypot.id }}">{{ honeypot.name }}</a>
                 </td>
-                <td>
+                <td data-label="{{ t(request, 'honeypots.table.tags') }}">
                   {% if honeypot.tags %}
                     {{ tag_chips(honeypot) }}
                   {% else %}
                     <span class="hint">—</span>
                   {% endif %}
                 </td>
-                <td>{{ honeypot.ip_address }}</td>
-                <td>{{ honeypot.discovered_hostname or '—' }}</td>
-                <td>
+                <td data-label="{{ t(request, 'honeypots.table.ip') }}">{{ honeypot.ip_address }}</td>
+                <td data-label="{{ t(request, 'honeypots.table.hostname') }}">{{ honeypot.discovered_hostname or '—' }}</td>
+                <td data-label="{{ t(request, 'honeypots.table.company') }}">
                   {% if honeypot.companies %}
                     {% for company in honeypot.companies %}<a href="/companies/{{ company.id }}">{{ company.name }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
                   {% else %}
                     <span class="hint">—</span>
                   {% endif %}
                 </td>
-                <td>{{ status_badge(request, honeypot) }}</td>
-                {% if request.state.user.can_write() %}<td>{% include "partials/honeypot_update_status_cell.html" %}</td>{% endif %}
-                <td>{{ host_key_badge(request, honeypot) }}</td>
+                <td data-label="{{ t(request, 'honeypots.table.status') }}">{{ status_badge(request, honeypot) }}</td>
+                {% if request.state.user.can_write() %}<td data-label="{{ t(request, 'honeypots.table.updates') }}">{% include "partials/honeypot_update_status_cell.html" %}</td>{% endif %}
+                <td data-label="{{ t(request, 'honeypots.table.host_key') }}">{{ host_key_badge(request, honeypot) }}</td>
                 <td><a href="/honeypots/{{ honeypot.id }}">{{ t(request, 'honeypots.table.details') }}</a></td>
               </tr>
             {% endfor %}
@@ -298,36 +298,46 @@
       {% endif %}
       </div>
 
-      <div class="page-header-actions" id="bulk-actions-bar">
-        <span class="hint">{{ t(request, 'honeypots.bulk.with_selected') }}</span>
-        <button type="submit" formaction="/honeypots/bulk/check-updates" class="button button-secondary">
-          {{ t(request, 'honeypots.bulk.check_updates') }}
-        </button>
-        <select name="strategy" class="inline-select" aria-label="{{ t(request, 'honeypots.list.bulk_strategy_aria') }}">
-          <option value="full_upgrade">{{ strategy_label(request, 'full_upgrade') }}</option>
-          <option value="upgrade">{{ strategy_label(request, 'upgrade') }}</option>
-          <option value="security">{{ strategy_label(request, 'security') }}</option>
-        </select>
-        <button type="submit" formaction="/honeypots/bulk/updates" class="button">{{ t(request, 'honeypots.bulk.run_update') }}</button>
-        <input type="text" name="tags" class="inline-text-input" maxlength="200"
-               aria-label="{{ t(request, 'honeypots.bulk.tags_aria') }}"
-               placeholder="{{ t(request, 'honeypots.bulk.tags_placeholder') }}">
-        <button type="submit" formaction="/honeypots/bulk/tags/add" class="button button-secondary">
-          {{ t(request, 'honeypots.bulk.add_tags') }}
-        </button>
-        <button type="submit" formaction="/honeypots/bulk/tags/remove" class="button button-secondary">
-          {{ t(request, 'honeypots.bulk.remove_tags') }}
-        </button>
-        <button type="submit" formaction="/honeypots/bulk/power-confirm/reboot" class="button button-secondary">
-          {{ t(request, 'honeypots.bulk.reboot') }}
-        </button>
-        <button type="submit" formaction="/honeypots/bulk/power-confirm/shutdown" class="button button-danger">
-          {{ t(request, 'honeypots.bulk.shutdown') }}
-        </button>
-        <button type="submit" formaction="/honeypots/bulk/delete" class="button button-danger"
-                data-confirm="{{ t(request, 'honeypots.bulk.confirm_delete') }}">
-          {{ t(request, 'honeypots.bulk.delete') }}
-        </button>
+      {# Shown by bulk-select.js once something is ticked — seven controls
+         under an untouched list were just noise, with Shut down and
+         Delete one mis-click away. #}
+      <p class="hint" data-bulk-empty="honeypot_ids">{{ t(request, 'honeypots.bulk.none_selected_hint') }}</p>
+      <div class="bulk-bar" id="bulk-actions-bar" data-bulk-bar="honeypot_ids" hidden>
+        <strong class="bulk-bar-count" data-bulk-count data-label="{{ t(request, 'honeypots.bulk.selected') }}"></strong>
+        <div class="bulk-bar-group">
+          <button type="submit" formaction="/honeypots/bulk/check-updates" class="button button-secondary">
+            {{ t(request, 'honeypots.bulk.check_updates') }}
+          </button>
+          <select name="strategy" class="inline-select" aria-label="{{ t(request, 'honeypots.list.bulk_strategy_aria') }}">
+            <option value="full_upgrade">{{ strategy_label(request, 'full_upgrade') }}</option>
+            <option value="upgrade">{{ strategy_label(request, 'upgrade') }}</option>
+            <option value="security">{{ strategy_label(request, 'security') }}</option>
+          </select>
+          <button type="submit" formaction="/honeypots/bulk/updates" class="button">{{ t(request, 'honeypots.bulk.run_update') }}</button>
+        </div>
+        <div class="bulk-bar-group">
+          <input type="text" name="tags" class="inline-text-input" maxlength="200"
+                 aria-label="{{ t(request, 'honeypots.bulk.tags_aria') }}"
+                 placeholder="{{ t(request, 'honeypots.bulk.tags_placeholder') }}">
+          <button type="submit" formaction="/honeypots/bulk/tags/add" class="button button-secondary">
+            {{ t(request, 'honeypots.bulk.add_tags') }}
+          </button>
+          <button type="submit" formaction="/honeypots/bulk/tags/remove" class="button button-secondary">
+            {{ t(request, 'honeypots.bulk.remove_tags') }}
+          </button>
+        </div>
+        <div class="bulk-bar-group bulk-bar-danger" role="group" aria-label="{{ t(request, 'honeypots.bulk.danger_aria') }}">
+          <button type="submit" formaction="/honeypots/bulk/power-confirm/reboot" class="button button-secondary">
+            {{ t(request, 'honeypots.bulk.reboot') }}
+          </button>
+          <button type="submit" formaction="/honeypots/bulk/power-confirm/shutdown" class="button button-danger">
+            {{ t(request, 'honeypots.bulk.shutdown') }}
+          </button>
+          <button type="submit" formaction="/honeypots/bulk/delete" class="button button-danger"
+                  data-confirm="{{ t(request, 'honeypots.bulk.confirm_delete') }}">
+            {{ t(request, 'honeypots.bulk.delete') }}
+          </button>
+        </div>
       </div>
     </form>
 

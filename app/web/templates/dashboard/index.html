@@ -13,7 +13,8 @@
     id="dashboard-content"
     hx-get="/dashboard/panel"
     hx-trigger="every 30s, live-status from:body, live-activity from:body"
-    hx-swap="innerHTML settle:600ms"
+    hx-swap="innerHTML"
+    data-quiet-swap
   >
     {% include "partials/_dashboard_content.html" %}
   </div>

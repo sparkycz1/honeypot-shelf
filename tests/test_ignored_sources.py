@@ -117,7 +117,10 @@ async def test_ignored_events_stay_out_of_the_pages(
     listing = await client.get("/events")
     assert listing.text.count('<td class="cell-nowrap">') == 1
     with_ignored = await client.get("/events", params={"include_ignored": "1"})
-    assert with_ignored.text.count('<td class="cell-nowrap">') == 4
+    # Four events; two identical ones in a row share one row, marked as two.
+    assert "4 events found" in with_ignored.text
+    assert with_ignored.text.count('<td class="cell-nowrap">') == 3
+    assert "2\u00d7</span>" in with_ignored.text
 
     activity = await client.get(f"/honeypots/{first_id}/status")
     assert "203.0.113.7" in activity.text and "10.9.9.9" not in activity.text
