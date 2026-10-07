@@ -12,9 +12,16 @@
   </div>
   {% if vendors_available %}
     <label for="mac_vendor_q">{{ t(request, "mac.vendor_search") }}</label>
-    <input type="search" id="mac_vendor_q" name="q" form="mac-vendor-search" maxlength="100"
-           autocomplete="off" placeholder="{{ t(request, 'mac.vendor_search_placeholder') }}">
-    <div id="mac-vendor-results"></div>
+    {# A drop-down with a search box: it opens on focus with the biggest
+       manufacturers and narrows as you type (combo.js opens and closes
+       it; the options come from GET /mac-vendors/search). #}
+    <div class="combo" data-combo>
+      <input type="search" id="mac_vendor_q" name="q" form="mac-vendor-search" maxlength="100"
+             autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list"
+             aria-controls="mac-vendor-results"
+             placeholder="{{ t(request, 'mac.vendor_search_placeholder') }}">
+      <div id="mac-vendor-results" class="combo-list" role="listbox" data-combo-list hidden></div>
+    </div>
   {% else %}
     <p class="hint">
       {{ t(request, "mac.no_list") }}
@@ -25,5 +32,5 @@
 
 {% macro search_form() %}
   <form id="mac-vendor-search" hx-get="/mac-vendors/search" hx-target="#mac-vendor-results"
-        hx-trigger="submit, input changed delay:300ms from:#mac_vendor_q"></form>
+        hx-trigger="submit, focus from:#mac_vendor_q, input changed delay:200ms from:#mac_vendor_q"></form>
 {% endmacro %}
