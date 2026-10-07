@@ -475,3 +475,19 @@ async def test_the_hourly_job_downloads_only_when_due(
     await _load_list(db_session_factory, monkeypatch)  # sets an address, downloads once
     assert await jobs._refresh_mac_vendor_list(only_if_due=True) == {"ok": True, "skipped": True}
     assert await jobs._refresh_mac_vendor_list(only_if_due=False) == {"ok": True, "count": 18}
+
+
+def test_the_open_manufacturer_list_covers_what_is_under_it() -> None:
+    """Found in a browser: the "freshly updated" tint every htmx swap gets
+    fades the background to transparent and left the open list see-through,
+    and `.form button` gave every option a form button's margin."""
+    from pathlib import Path
+
+    css = (
+        Path(__file__).resolve().parent.parent / "app" / "web" / "static" / "css" / "style.css"
+    ).read_text(encoding="utf-8")
+    assert ".combo-list.htmx-settling { animation: none; }" in css
+    assert ".form .combo-option { margin-top: 0; align-self: stretch; }" in css
+    assert css.index(".htmx-settling { animation: flash-update") < css.index(
+        ".combo-list.htmx-settling"
+    )
