@@ -2237,6 +2237,11 @@ th[data-sort][aria-sort="descending"]::after { content: " \2193"; color: var(--c
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
 }
 .combo-list[hidden] { display: none; }
+/* No "freshly updated" tint here (`.htmx-settling`, further up): that
+   animation fades the background to transparent, and on this scrolling
+   box the browser then leaves it transparent — the page shows through the
+   open list. Options arriving are not news anyway. */
+.combo-list.htmx-settling { animation: none; }
 .combo-option {
   display: flex;
   justify-content: space-between;
@@ -2252,6 +2257,9 @@ th[data-sort][aria-sort="descending"]::after { content: " \2193"; color: var(--c
   text-align: left;
   cursor: pointer;
 }
+/* Inside a `.form` every button gets a top margin and hugs the left edge
+   (`.form button`); an option is a row of the list, not a form button. */
+.form .combo-option { margin-top: 0; align-self: stretch; }
 .combo-option:hover,
 .combo-option:focus-visible { background: var(--color-surface); outline: none; }
 .combo-option .hint { flex: none; }
