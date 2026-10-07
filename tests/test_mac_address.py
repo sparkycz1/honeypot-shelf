@@ -207,7 +207,9 @@ async def test_an_address_is_drawn_from_the_picked_manufacturer(
     async with db_session_factory() as db:
         found = await mac_vendors.search_vendors(db, "cisco")
         assert found == [("Cisco Systems, Inc", 2)]
-        assert await mac_vendors.search_vendors(db, "c") == []  # too short to mean anything
+        # Nothing typed yet: the drop-down opens with the biggest manufacturers.
+        opened = await mac_vendors.search_vendors(db, "")
+        assert opened[0] == ("Cisco Systems, Inc", 2) and len(opened) == 17
 
         drawn = {await mac_vendors.generate_address(db, "Cisco Systems, Inc") for _ in range(20)}
         assert len(drawn) > 1
@@ -275,6 +277,9 @@ async def test_config_tab_shows_and_sets_the_address(
     assert "after a reboot" in panel
     assert "Apple, Inc." in panel  # the configured address's manufacturer
     assert 'form="mac-vendor-search"' in panel and 'id="mac-vendor-search"' in panel
+    # The manufacturer picker is a drop-down with a search box.
+    assert 'role="combobox"' in panel and "data-combo-list hidden" in panel
+    assert "focus from:#mac_vendor_q" in panel
 
     csrf = client.cookies.get("csrftoken")
     refused = await client.post(
@@ -358,6 +363,8 @@ async def test_picker_finds_a_manufacturer_and_draws_an_address(
     results = (await client.get("/mac-vendors/search", params={"q": "cisco"})).text
     assert "Cisco Systems, Inc" in results and "2 prefixes" in results
     assert 'hx-get="/mac-vendors/generate"' in results
+    assert 'role="option" data-combo-value="Cisco Systems, Inc"' in results
+    assert "No manufacturer" in (await client.get("/mac-vendors/search?q=zzzz")).text
 
     field = (
         await client.get("/mac-vendors/generate", params={"vendor": "Cisco Systems, Inc"})

@@ -1935,7 +1935,7 @@
     "mac.loading": "Načítám stav z honeypotu…",
     "mac.field": "MAC adresa",
     "mac.vendor_search": "Nebo vyberte výrobce",
-    "mac.vendor_search_placeholder": "např. Cisco, Hewlett Packard, Axis",
+    "mac.vendor_search_placeholder": "Hledat výrobce, např. Cisco",
     "mac.no_vendor_match": "V seznamu není žádný odpovídající výrobce.",
     "mac.prefix_count": "{count} prefixů",
     "mac.prefix_count.one": "{count} prefix",

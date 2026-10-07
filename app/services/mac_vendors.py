@@ -40,7 +40,8 @@ _MAX_ENTRIES = 200_000
 # Fewer prefixes than this is an error page or the wrong file, not a list.
 _MIN_ENTRIES = 10
 _INSERT_BATCH = 2000
-SEARCH_LIMIT = 15
+# How many manufacturers the picker's drop-down lists at once (it scrolls).
+SEARCH_LIMIT = 50
 
 _LINE_RE = re.compile(
     r"^\s*([0-9A-Fa-f]{2})[:\-.]?([0-9A-Fa-f]{2})[:\-.]?([0-9A-Fa-f]{2})\s+(\S.*?)\s*$"
@@ -160,15 +161,15 @@ def _like(text: str) -> str:
 async def search_vendors(db: AsyncSession, query: str) -> list[tuple[str, int]]:
     """Manufacturers whose name contains `query`: (name, how many prefixes
     it has), the ones with most prefixes first — the big, plausible makers
-    before the one-off registrations."""
+    before the one-off registrations. An empty `query` lists the biggest
+    ones outright, which is what the drop-down opens with."""
     query = query.strip()
-    if len(query) < 2:
-        return []
     prefixes = func.count().label("prefixes")
+    matching = select(MacVendor.vendor, prefixes)
+    if query:
+        matching = matching.where(MacVendor.vendor.ilike(_like(query), escape="\\"))
     result = await db.execute(
-        select(MacVendor.vendor, prefixes)
-        .where(MacVendor.vendor.ilike(_like(query), escape="\\"))
-        .group_by(MacVendor.vendor)
+        matching.group_by(MacVendor.vendor)
         .order_by(prefixes.desc(), MacVendor.vendor)
         .limit(SEARCH_LIMIT)
     )

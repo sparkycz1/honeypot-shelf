@@ -1920,7 +1920,7 @@
     "mac.loading": "Reading the honeypot…",
     "mac.field": "MAC address",
     "mac.vendor_search": "Or pick a manufacturer",
-    "mac.vendor_search_placeholder": "e.g. Cisco, Hewlett Packard, Axis",
+    "mac.vendor_search_placeholder": "Search manufacturers, e.g. Cisco",
     "mac.no_vendor_match": "No manufacturer in the list matches.",
     "mac.prefix_count": "{count} prefixes",
     "mac.prefix_count.one": "{count} prefix",

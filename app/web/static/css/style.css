@@ -2219,5 +2219,40 @@ th[data-sort][aria-sort="descending"]::after { content: " \2193"; color: var(--c
 }
 
 /* --- Manufacturer picker next to a MAC address field --- */
-.mac-vendor-results { list-style: none; margin: var(--space-2) 0; padding: 0; }
-.mac-vendor-results li { padding: var(--space-1) 0; }
+
+/* --- A drop-down list with a search box (combo.js) --- */
+.combo { position: relative; }
+.combo-list {
+  position: absolute;
+  z-index: 20;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 18rem;
+  overflow-y: auto;
+  margin-top: var(--space-1);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
+}
+.combo-list[hidden] { display: none; }
+.combo-option {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: none;
+  border: 0;
+  border-radius: 0;
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.combo-option:hover,
+.combo-option:focus-visible { background: var(--color-surface); outline: none; }
+.combo-option .hint { flex: none; }
+.combo-empty { margin: 0; padding: var(--space-2) var(--space-3); }
