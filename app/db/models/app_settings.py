@@ -362,6 +362,19 @@ class AppSettings(Base):
         Integer, default=168, nullable=False
     )
 
+    # --- MAC address manufacturers (Settings -> Integrations;
+    # app.services.mac_vendors) — where the list a honeypot's MAC address
+    # can be picked from is downloaded, and how often. Empty until a
+    # superadmin sets it: nothing is fetched from anywhere by default. ---
+    mac_vendor_list_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    mac_vendor_refresh_interval_hours: Mapped[int] = mapped_column(
+        Integer, default=168, server_default="168", nullable=False
+    )
+    # The last successful download; every attempt; the last failure's reason.
+    mac_vendor_list_updated_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    mac_vendor_list_attempted_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    mac_vendor_list_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # --- Automatic full backups (app.services.auto_backup) ---
     # Off until a superadmin sets a passphrase and switches it on.
     auto_backup_enabled: Mapped[bool] = mapped_column(

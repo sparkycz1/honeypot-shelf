@@ -1,0 +1,29 @@
+{# A MAC address field with a manufacturer picker — the honeypot Config
+   tab and Initialize.
+
+   `picker` goes inside the form. `search_form` goes once, anywhere
+   OUTSIDE it: the manufacturer search box belongs to that separate, empty
+   form through its `form=` attribute, so Enter in it searches instead of
+   submitting the form around it, and its text is never sent along. #}
+{% macro picker(request, mac_address, mac_vendor, vendors_available) %}
+  <label for="mac_address">{{ t(request, "mac.field") }}</label>
+  <div id="mac-address-field">
+    {% include "partials/_mac_address_field.html" %}
+  </div>
+  {% if vendors_available %}
+    <label for="mac_vendor_q">{{ t(request, "mac.vendor_search") }}</label>
+    <input type="search" id="mac_vendor_q" name="q" form="mac-vendor-search" maxlength="100"
+           autocomplete="off" placeholder="{{ t(request, 'mac.vendor_search_placeholder') }}">
+    <div id="mac-vendor-results"></div>
+  {% else %}
+    <p class="hint">
+      {{ t(request, "mac.no_list") }}
+      {% if request.state.user.is_superadmin %}<a href="/settings?tab=integrations#mac-vendors">{{ t(request, "mac.no_list_settings") }}</a>{% endif %}
+    </p>
+  {% endif %}
+{% endmacro %}
+
+{% macro search_form() %}
+  <form id="mac-vendor-search" hx-get="/mac-vendors/search" hx-target="#mac-vendor-results"
+        hx-trigger="submit, input changed delay:300ms from:#mac_vendor_q"></form>
+{% endmacro %}

@@ -62,6 +62,9 @@ from app.web.routes import (
     users,
 )
 from app.web.routes import (
+    mac_vendors as mac_vendors_routes,
+)
+from app.web.routes import (
     map as map_routes,
 )
 from app.web.routes import (
@@ -294,6 +297,7 @@ def create_app() -> FastAPI:
     app.include_router(events.router)
     app.include_router(companies.router)
     app.include_router(initialize.router)
+    app.include_router(mac_vendors_routes.router)
     app.include_router(maintenance.router)
     app.include_router(scheduling.router)
     app.include_router(search.router)

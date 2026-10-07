@@ -142,6 +142,8 @@ async def _wait_for_reboot(
     ip_address: str,
     new_ssh_port: int,
     expected_fingerprint: str | None,
+    *,
+    mac_changed: bool = False,
 ) -> str | None:
     """After the script's own final step triggers a reboot, wait for the
     device to actually come back up on `new_ssh_port` before reporting
@@ -186,6 +188,15 @@ async def _wait_for_reboot(
             return None
 
         if time.monotonic() >= deadline:
+            if mac_changed:
+                # The likeliest reason by far, and not a failure of the run.
+                return (
+                    f"The device didn't come back on {ip_address} within "
+                    f"{REBOOT_WAIT_MAX_SECONDS} seconds of rebooting. It now has a new MAC "
+                    "address, so a DHCP server will usually have given it a different IP "
+                    "address — look it up in the DHCP leases and add the honeypot with that "
+                    f"address and port {new_ssh_port}."
+                )
             return (
                 f"The device didn't come back up on port {new_ssh_port} within "
                 f"{REBOOT_WAIT_MAX_SECONDS} seconds of rebooting — it may still be "
@@ -358,6 +369,7 @@ async def initialize_websocket(websocket: WebSocket, run_id: str) -> None:
             new_ssh_port=run.new_ssh_port,
             ssh_username=run.username,
             authorized_keys=authorized_keys,
+            mac_address=run.mac_address,
         )
         script = wrap_for_sudo(
             script,
@@ -399,7 +411,13 @@ async def initialize_websocket(websocket: WebSocket, run_id: str) -> None:
                 conn.close()
             process = None
             conn = None
-            error = await _wait_for_reboot(websocket, run.ip_address, run.new_ssh_port, fingerprint)
+            error = await _wait_for_reboot(
+                websocket,
+                run.ip_address,
+                run.new_ssh_port,
+                fingerprint,
+                mac_changed=run.mac_address is not None,
+            )
     except Exception as exc:
         error = str(exc)
     finally:

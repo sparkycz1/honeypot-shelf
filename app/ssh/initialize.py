@@ -109,6 +109,7 @@ import shlex
 from collections.abc import Sequence
 
 from app.ssh.authorized_keys import build_authorized_keys_append_command
+from app.ssh.mac_address import unit_install_lines
 from app.ssh.onboarding import build_sudoers_grant_command
 from app.ssh.platform_detect import DetectedPlatform
 
@@ -431,6 +432,7 @@ def build_initialize_command(
     new_ssh_port: int = NEW_SSH_PORT,
     ssh_username: str = "",
     authorized_keys: Sequence[str] = (),
+    mac_address: str | None = None,
 ) -> str:
     """Returns one `set -e` shell script provisioning a fresh device end to
     end: base packages, timezone/locale, a full `apt` upgrade, the
@@ -751,6 +753,19 @@ def build_initialize_command(
         f'echo "SSH now listens on port {new_ssh_port} — use that port (not 22) when '
         f'adding this device as a honeypot in Honeypot Shelf."'
     )
+
+    # --- A MAC address of the operator's choosing, if one was asked for —
+    # written as the boot-time unit `app.ssh.mac_address` describes, so it
+    # takes effect with the reboot right below and not a moment earlier
+    # (this run's own connection is on the hardware address). After the
+    # SSH port move on purpose: nothing above may depend on it. ---
+    if mac_address:
+        lines.append(_step("Setting the MAC address for the next boot"))
+        lines.extend(unit_install_lines(mac_address))
+        lines.append(
+            f'echo "From the reboot on, $mac_iface uses {mac_address}. If addresses here come '
+            f'from DHCP, the device may come back on a different one."'
+        )
 
     lines.append(f"echo {INITIALIZE_SUCCESS_MARKER}")
 

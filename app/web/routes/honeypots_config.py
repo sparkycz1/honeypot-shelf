@@ -25,9 +25,11 @@ from app.db.models.audit_log import AuditOutcome
 from app.db.models.honeypot import Honeypot
 from app.db.models.user import User
 from app.db.session import get_db
+from app.services import mac_vendors
 from app.services.honeypot_tags import (
     sync_module_tags,
 )
+from app.ssh.mac_address import InvalidMacAddressError, normalize_mac
 from app.ssh.opencanary_config import (
     OPENCANARY_MODULES,
     apply_form_to_config,
@@ -37,6 +39,7 @@ from app.ssh.opencanary_config import (
 from app.tasks import jobs as tasks
 from app.web.routes.honeypots_common import (
     _get_honeypot_or_404,
+    _get_writable_honeypot_or_404,
     _honeypot_tabs,
     honeypots_router,
     need_terminal,
@@ -316,3 +319,172 @@ async def set_honeypot_readonly_endpoint(
     if request.headers.get("HX-Request") == "true":
         return Response(status_code=status.HTTP_200_OK, headers={"HX-Redirect": redirect_url})
     return RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
+
+
+# --- MAC address ---------------------------------------------------------
+#
+# Its own self-loading panel on the Config tab (see
+# partials/honeypot_mac_panel.html): every request here is one SSH round
+# trip through `tasks.honeypot_mac_address`, and all three answer with the
+# panel as it is afterwards. `_get_writable_honeypot_or_404`, not just
+# `need_terminal`: an account that writes one company and only reads
+# another must not change a honeypot of the second.
+
+
+async def _mac_task(
+    honeypot: Honeypot, app_settings: AppSettings, **action: Any
+) -> tuple[dict[str, Any] | None, str | None]:
+    """`(state, error)` from `tasks.honeypot_mac_address`."""
+    try:
+        async_result = tasks.honeypot_mac_address.delay(str(honeypot.id), **action)
+        result = await asyncio.to_thread(
+            async_result.get, timeout=app_settings.ssh_connect_timeout + 45
+        )
+    except CeleryTimeoutError:
+        return None, "The honeypot did not answer in time."
+    except Exception as exc:
+        return None, str(exc)
+    if isinstance(result, dict) and result.get("ok"):
+        return result, None
+    return None, str((result or {}).get("error") or "Unknown error.")
+
+
+async def _render_mac_panel(
+    request: Request,
+    db: AsyncSession,
+    honeypot: Honeypot,
+    *,
+    state: dict[str, Any] | None,
+    error: str | None,
+    saved: str = "",
+    mac_address: str = "",
+    mac_vendor: str = "",
+) -> Response:
+    csrf_token, new_cookie = get_or_create_csrf_token(request)
+    current = (state or {}).get("current")
+    configured = (state or {}).get("configured")
+    response = templates.TemplateResponse(
+        request,
+        "partials/honeypot_mac_panel.html",
+        {
+            "honeypot": honeypot,
+            "csrf_token": csrf_token,
+            "state": state,
+            "error": error,
+            "saved": saved,
+            # What the field starts with: what was just typed (on an
+            # error), else what the honeypot is already set to.
+            "mac_address": mac_address or configured or "",
+            "mac_vendor": mac_vendor,
+            "vendors_available": await mac_vendors.vendor_count(db) > 0,
+            "current_vendor": await mac_vendors.vendor_of(db, current) if current else None,
+            "configured_vendor": (
+                await mac_vendors.vendor_of(db, configured) if configured else None
+            ),
+        },
+    )
+    if new_cookie:
+        set_csrf_cookie(response, new_cookie)
+    return response
+
+
+@router.get("/{honeypot_id}/config/mac", dependencies=[need_terminal])
+async def honeypot_mac_panel(
+    request: Request,
+    honeypot_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
+    app_settings = await get_or_create_app_settings(db)
+    state, error = await _mac_task(honeypot, app_settings)
+    return await _render_mac_panel(request, db, honeypot, state=state, error=error)
+
+
+@router.post("/{honeypot_id}/config/mac", dependencies=[need_terminal, Depends(verify_csrf)])
+async def set_honeypot_mac_address(
+    request: Request,
+    honeypot_id: uuid.UUID,
+    mac_address: str = Form(""),
+    mac_vendor: str = Form(""),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Writes the address the honeypot will use from its next boot on.
+    Nothing changes on the wire until then — see `app.ssh.mac_address`."""
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
+    app_settings = await get_or_create_app_settings(db)
+    vendor = mac_vendor.strip()[:255] or None
+
+    error: str | None = None
+    state: dict[str, Any] | None = None
+    normalized: str | None = None
+    try:
+        normalized = normalize_mac(mac_address)
+    except InvalidMacAddressError as exc:
+        error = str(exc)
+    if normalized is not None:
+        if vendor and await mac_vendors.vendor_of(db, normalized) != vendor:
+            # The address was edited after a manufacturer was picked.
+            vendor = None
+        state, error = await _mac_task(honeypot, app_settings, mac=normalized, vendor=vendor)
+
+    await log_event(
+        db,
+        request=request,
+        action="honeypot.mac_address.set",
+        summary=f'Set the MAC address of "{honeypot.name}" to {normalized or mac_address[:40]}',
+        outcome=AuditOutcome.SUCCESS if error is None else AuditOutcome.FAILURE,
+        target_type="honeypot",
+        target_id=honeypot.id,
+        target_label=honeypot.name,
+        details={
+            "mac_address": normalized or mac_address[:40],
+            **({"vendor": vendor} if vendor else {}),
+            **({"error": error} if error else {}),
+        },
+    )
+    if state is None:
+        # Still show what the honeypot has, next to the reason it failed.
+        state, _ = await _mac_task(honeypot, app_settings)
+    return await _render_mac_panel(
+        request,
+        db,
+        honeypot,
+        state=state,
+        error=error,
+        saved="" if error else "set",
+        mac_address=mac_address.strip()[:40] if error else "",
+        mac_vendor=mac_vendor.strip()[:255] if error else "",
+    )
+
+
+@router.post(
+    "/{honeypot_id}/config/mac/reset", dependencies=[need_terminal, Depends(verify_csrf)]
+)
+async def reset_honeypot_mac_address(
+    request: Request,
+    honeypot_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Removes the unit: the hardware address is back after the next boot."""
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
+    app_settings = await get_or_create_app_settings(db)
+    state, error = await _mac_task(honeypot, app_settings, reset=True)
+    await log_event(
+        db,
+        request=request,
+        action="honeypot.mac_address.reset",
+        summary=f'Returned "{honeypot.name}" to its hardware MAC address',
+        outcome=AuditOutcome.SUCCESS if error is None else AuditOutcome.FAILURE,
+        target_type="honeypot",
+        target_id=honeypot.id,
+        target_label=honeypot.name,
+        details={"error": error} if error else None,
+    )
+    if state is None:
+        state, _ = await _mac_task(honeypot, app_settings)
+    return await _render_mac_panel(
+        request, db, honeypot, state=state, error=error, saved="" if error else "reset"
+    )
