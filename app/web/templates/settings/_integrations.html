@@ -197,3 +197,49 @@
     </form>
   </section>
 
+  <section class="panel" id="mac-vendors">
+    <h2>{{ t(request, "settings.mac_vendors.heading") }}</h2>
+    <p class="hint">{{ t(request, "settings.mac_vendors.hint") }}</p>
+
+    <p>
+      {{ t(request, "settings.mac_vendors.status_label") }}
+      {% if app_settings.mac_vendor_list_updated_at %}
+        <span class="badge badge-ok">{{ app_settings.mac_vendor_list_updated_at | local_time('%Y-%m-%d %H:%M %Z') }}</span>
+        {{ t(request, "settings.mac_vendors.prefixes", count=mac_vendor_count) }}
+      {% else %}
+        <span class="badge badge-warn">{{ t(request, "settings.mac_vendors.status_never") }}</span>
+      {% endif %}
+    </p>
+    {% if app_settings.mac_vendor_list_error %}
+      <p class="hint">
+        {{ t(request, "settings.mac_vendors.last_error_label") }}
+        {% if app_settings.mac_vendor_list_attempted_at %}{{ app_settings.mac_vendor_list_attempted_at | local_time('%Y-%m-%d %H:%M %Z') }}{% endif %}:
+        {{ app_settings.mac_vendor_list_error }}
+      </p>
+    {% endif %}
+
+    <form method="post" action="/settings/mac-vendors" id="mac-vendors-form" class="form" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label for="mac_vendor_list_url">{{ t(request, "settings.mac_vendors.url") }}</label>
+      <input type="url" id="mac_vendor_list_url" name="mac_vendor_list_url" maxlength="1000"
+             placeholder="https://example.com/mac-vendors.txt"
+             value="{{ app_settings.mac_vendor_list_url or '' }}">
+      <p class="hint">{{ t(request, "settings.mac_vendors.url_hint") }}</p>
+
+      <label for="mac_vendor_refresh_interval_hours">{{ t(request, "settings.mac_vendors.refresh_interval") }}</label>
+      <input type="number" id="mac_vendor_refresh_interval_hours" name="mac_vendor_refresh_interval_hours"
+             min="1" max="8760" step="1" class="input-narrow"
+             value="{{ app_settings.mac_vendor_refresh_interval_hours }}">
+      <p class="hint">{{ t(request, "settings.mac_vendors.refresh_interval_hint") }}</p>
+    </form>
+
+    <div class="page-header-actions">
+      <button type="submit" form="mac-vendors-form" class="button">{{ t(request, "common.save") }}</button>
+      {% if app_settings.mac_vendor_list_url %}
+        <form method="post" action="/settings/mac-vendors/refresh" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit" class="button button-secondary">{{ t(request, "settings.mac_vendors.refresh_now") }}</button>
+        </form>
+      {% endif %}
+    </div>
+  </section>

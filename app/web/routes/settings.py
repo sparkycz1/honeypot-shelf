@@ -50,7 +50,7 @@ from app.db.models.geoip_database import SINGLETON_ID as GEOIP_SINGLETON_ID
 from app.db.models.geoip_database import GeoipDatabase
 from app.db.models.honeypot import AuthMethod, Honeypot
 from app.db.session import get_db
-from app.services import auto_backup, full_backup, netbird, wireguard
+from app.services import auto_backup, full_backup, mac_vendors, netbird, wireguard
 from app.services.syslog_transport import DEFAULT_SYSLOG_PORT, SyslogProtocol
 from app.ssh.identity import (
     activate_pending_identity,
@@ -129,6 +129,8 @@ async def _render_settings(
         context["stored_backups"] = auto_backup.list_backups()
         context["auto_backup_limits"] = auto_backup
         context["notice"] = request.query_params.get("notice", "")
+    if tab == "integrations":
+        context["mac_vendor_count"] = await mac_vendors.vendor_count(db)
     if tab == "geoip" and "geoip_status" not in context:
         context["geoip_status"] = await db.get(GeoipDatabase, GEOIP_SINGLETON_ID)
     response = templates.TemplateResponse(request, "settings/index.html", context)
@@ -933,6 +935,76 @@ async def update_smtp_settings(
 
 
 _GEOIP_REFRESH_WAIT_SECONDS = 90
+
+
+@router.post("/mac-vendors", dependencies=[Depends(verify_csrf)])
+async def update_mac_vendor_settings(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    mac_vendor_list_url: str = Form(""),
+    mac_vendor_refresh_interval_hours: str = Form(str(mac_vendors.DEFAULT_REFRESH_INTERVAL_HOURS)),
+) -> Response:
+    """Where the MAC manufacturer list comes from and how often it is
+    fetched again (`app.services.mac_vendors`). Saving downloads nothing —
+    "Download now" below, or the hourly job once the interval has passed.
+    An empty address turns the periodic download off; the list already
+    stored stays."""
+    app_settings = await get_or_create_app_settings(db)
+    url = mac_vendor_list_url.strip()
+    errors: list[str] = []
+    try:
+        interval_hours = int(mac_vendor_refresh_interval_hours.strip() or "0")
+    except ValueError:
+        interval_hours = 0
+    if not 1 <= interval_hours <= 24 * 365:
+        errors.append(t(request, "settings.mac_vendors.error.interval"))
+    if url:
+        try:
+            mac_vendors.validate_list_url(url)
+        except mac_vendors.MacVendorListError as exc:
+            errors.append(str(exc))
+    if errors:
+        return await _render_settings(request, db, errors, tab="integrations")
+
+    app_settings.mac_vendor_list_url = url or None
+    app_settings.mac_vendor_refresh_interval_hours = interval_hours
+    await db.commit()
+    await log_event(
+        db,
+        request=request,
+        action="settings.mac_vendors.update",
+        summary="Updated the MAC manufacturer list source",
+        details={"url": url or None, "refresh_interval_hours": interval_hours},
+    )
+    return RedirectResponse(
+        url="/settings?tab=integrations#mac-vendors", status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
+@router.post("/mac-vendors/refresh", dependencies=[Depends(verify_csrf)])
+async def refresh_mac_vendors_now(request: Request, db: AsyncSession = Depends(get_db)) -> Response:
+    """"Download now" — the same function the hourly job calls, run here
+    directly: one small text file, done in a second or two."""
+    app_settings = await get_or_create_app_settings(db)
+    error: str | None = None
+    count = 0
+    try:
+        count = await mac_vendors.refresh_vendor_list(db, app_settings)
+    except mac_vendors.MacVendorListError as exc:
+        error = str(exc)
+    await log_event(
+        db,
+        request=request,
+        action="settings.mac_vendors.refresh",
+        summary="Downloaded the MAC manufacturer list",
+        outcome=AuditOutcome.SUCCESS if error is None else AuditOutcome.FAILURE,
+        details={"error": error} if error else {"prefixes": count},
+    )
+    if error:
+        return await _render_settings(request, db, [error], tab="integrations")
+    return RedirectResponse(
+        url="/settings?tab=integrations#mac-vendors", status_code=status.HTTP_303_SEE_OTHER
+    )
 
 
 @router.post("/geoip", dependencies=[Depends(verify_csrf)])

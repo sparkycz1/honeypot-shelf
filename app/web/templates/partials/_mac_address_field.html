@@ -1,0 +1,17 @@
+{# The MAC address input itself — its own fragment so "pick a
+   manufacturer" (GET /mac-vendors/generate) can swap a freshly drawn
+   address in. Lives inside whichever form the picker sits in. #}
+<input type="text" id="mac_address" name="mac_address" class="input-code" maxlength="17"
+       autocomplete="off" spellcheck="false" placeholder="00:1b:63:84:45:e6"
+       value="{{ mac_address or '' }}">
+<input type="hidden" name="mac_vendor" value="{{ mac_vendor or '' }}">
+{% if mac_vendor_unknown %}
+  <p class="hint">{{ t(request, "mac.vendor_unknown") }}</p>
+{% elif mac_vendor %}
+  <p class="hint">
+    {{ t(request, "mac.generated_for", vendor=mac_vendor) }}
+    <button type="button" class="link-button"
+            hx-get="/mac-vendors/generate" hx-vals='{{ {"vendor": mac_vendor} | tojson }}'
+            hx-target="#mac-address-field" hx-swap="innerHTML">{{ t(request, "mac.draw_another") }}</button>
+  </p>
+{% endif %}

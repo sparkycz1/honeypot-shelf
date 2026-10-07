@@ -1,0 +1,67 @@
+{# The Config tab's MAC address section — GET/POST
+   /honeypots/{id}/config/mac all answer with this. See app.ssh.mac_address
+   for what setting an address does on the honeypot. #}
+{% from "partials/_mac_picker.html" import picker, search_form %}
+<h2>{{ t(request, "mac.heading") }}</h2>
+<p class="hint">{{ t(request, "mac.hint") }}</p>
+
+{% if error %}
+  <div class="alert alert-error"><p>{{ error }}</p></div>
+{% endif %}
+{% if saved == 'set' %}
+  <div class="alert alert-ok">
+    <p>
+      {{ t(request, "mac.saved") }}
+      <a href="/honeypots/{{ honeypot.id }}/power/reboot">{{ t(request, "mac.reboot_link") }}</a>
+    </p>
+  </div>
+{% elif saved == 'reset' %}
+  <div class="alert alert-ok">
+    <p>
+      {{ t(request, "mac.reset_done") }}
+      <a href="/honeypots/{{ honeypot.id }}/power/reboot">{{ t(request, "mac.reboot_link") }}</a>
+    </p>
+  </div>
+{% endif %}
+
+{% if state %}
+  <dl class="detail-list">
+    <dt>{{ t(request, "mac.interface") }}</dt><dd>{{ state.interface or '—' }}</dd>
+    <dt>{{ t(request, "mac.current") }}</dt>
+    <dd>
+      <code>{{ state.current or '—' }}</code>
+      {% if current_vendor %}<span class="hint">{{ current_vendor }}</span>{% endif %}
+    </dd>
+    <dt>{{ t(request, "mac.configured") }}</dt>
+    <dd>
+      {% if state.configured %}
+        <code>{{ state.configured }}</code>
+        {% if configured_vendor %}<span class="hint">{{ configured_vendor }}</span>{% endif %}
+        {% if state.pending %}<span class="badge badge-warn">{{ t(request, "mac.pending") }}</span>
+        {% else %}<span class="badge badge-ok">{{ t(request, "mac.in_effect") }}</span>{% endif %}
+      {% else %}
+        {{ t(request, "mac.hardware") }}
+      {% endif %}
+    </dd>
+  </dl>
+
+  {% if state.readonly_root %}
+    <p class="hint">{{ t(request, "mac.readonly_root") }}</p>
+  {% else %}
+    <form hx-post="/honeypots/{{ honeypot.id }}/config/mac" hx-target="#mac-panel" hx-swap="innerHTML"
+          class="form" autocomplete="off" hx-confirm="{{ t(request, 'mac.confirm_set') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {{ picker(request, mac_address, mac_vendor, vendors_available) }}
+      <p class="hint">{{ t(request, "mac.after_reboot_hint") }}</p>
+      <button type="submit" class="button">{{ t(request, "mac.save") }}</button>
+    </form>
+    {{ search_form() }}
+    {% if state.configured %}
+      <form hx-post="/honeypots/{{ honeypot.id }}/config/mac/reset" hx-target="#mac-panel" hx-swap="innerHTML"
+            class="inline-form stack-gap" hx-confirm="{{ t(request, 'mac.confirm_reset') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="button button-secondary">{{ t(request, "mac.reset") }}</button>
+      </form>
+    {% endif %}
+  {% endif %}
+{% endif %}

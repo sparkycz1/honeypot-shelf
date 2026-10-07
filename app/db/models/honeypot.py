@@ -100,6 +100,15 @@ class Honeypot(Base):
     host_key_changed_fingerprint: Mapped[str | None] = mapped_column(String(255), nullable=True)
     host_key_changed_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
+    # --- A MAC address set from the Config tab (see app.ssh.mac_address):
+    # what the honeypot was told to use from its next boot on, and the
+    # manufacturer it was picked for, if it was picked rather than typed.
+    # A record of what this app did — the Config tab reads what the
+    # interface really has live. None = never set, or returned to the
+    # hardware address. ---
+    mac_address_override: Mapped[str | None] = mapped_column(String(17), nullable=True)
+    mac_address_vendor: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
     # Free-form, cross-cutting labels independent of `companies` above.
     tags: Mapped[list[Tag]] = relationship(
         secondary=honeypot_tags, order_by="Tag.name", lazy="selectin"

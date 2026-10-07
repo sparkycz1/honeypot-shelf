@@ -2217,3 +2217,7 @@ th[data-sort][aria-sort="descending"]::after { content: " \2193"; color: var(--c
   }
   .bulk-bar-danger { margin-left: 0; padding-left: 0; border-left: 0; }
 }
+
+/* --- Manufacturer picker next to a MAC address field --- */
+.mac-vendor-results { list-style: none; margin: var(--space-2) 0; padding: 0; }
+.mac-vendor-results li { padding: var(--space-1) 0; }

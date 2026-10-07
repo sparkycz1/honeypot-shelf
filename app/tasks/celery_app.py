@@ -273,6 +273,13 @@ celery_app.conf.beat_schedule = {
     # same tables' locks at once.
     # Cheap when nothing is due: one settings read (see
     # `app.services.auto_backup.is_due`).
+    # The MAC manufacturer list (Settings -> Integrations): an hourly look
+    # at whether its own refresh interval has passed — a no-op until an
+    # address is set there, and one settings read when nothing is due.
+    "refresh-mac-vendor-list": {
+        "task": "app.tasks.jobs.refresh_mac_vendor_list",
+        "schedule": crontab(minute=35),
+    },
     "run-due-app-backup": {
         "task": "app.tasks.jobs.run_due_app_backup",
         "schedule": crontab(minute="*/10"),

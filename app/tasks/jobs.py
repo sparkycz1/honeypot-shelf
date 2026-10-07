@@ -62,7 +62,13 @@ from app.db.models.notification_rule import (
     NotificationScope,
 )
 from app.db.models.notification_rule_state import NotificationRuleState
-from app.services import acknowledgements, auto_backup, disk_forecast, ignored_sources
+from app.services import (
+    acknowledgements,
+    auto_backup,
+    disk_forecast,
+    ignored_sources,
+    mac_vendors,
+)
 from app.services.company_stats import compute_company_stats
 from app.services.geoip import GeoipDownloadError
 from app.services.geoip import get_reader as get_geoip_reader
@@ -104,6 +110,12 @@ from app.ssh.logs import (
     list_directory,
     view_file,
     view_journal,
+)
+from app.ssh.mac_address import (
+    MacAddressError,
+    read_mac_status,
+    reset_mac_address,
+    set_mac_address,
 )
 from app.ssh.monitoring import gather_monitoring_sample
 from app.ssh.onboarding import ONBOARD_SUCCESS_MARKER, ONBOARD_USERNAME, build_onboarding_command
@@ -499,6 +511,80 @@ async def _set_honeypot_readonly(honeypot_id: str, *, enable: bool) -> dict[str,
 )
 def set_honeypot_readonly(honeypot_id: str, *, enable: bool) -> dict[str, Any]:
     return asyncio.run(_set_honeypot_readonly(honeypot_id, enable=enable))
+
+
+async def _honeypot_mac_address(
+    honeypot_id: str, *, mac: str | None = None, vendor: str | None = None, reset: bool = False
+) -> dict[str, Any]:
+    """The Config tab's MAC address section (see `app.ssh.mac_address`):
+    read what the honeypot has and is set to use, and — with `mac` or
+    `reset` — first write or remove the unit that changes it at the next
+    boot. Always answers with the state read afterwards."""
+    async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
+        honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
+        if honeypot is None:
+            return {"ok": False, "error": "Honeypot not found."}
+        if not honeypot.host_key_fingerprint:
+            return {"ok": False, "error": "No pinned host key fingerprint yet."}
+
+        secret = await resolve_honeypot_credential(honeypot, session)
+        timeout = app_settings.ssh_connect_timeout
+        try:
+            if reset:
+                await reset_mac_address(honeypot, secret, timeout)
+                honeypot.mac_address_override = None
+                honeypot.mac_address_vendor = None
+                await session.commit()
+            elif mac is not None:
+                await set_mac_address(honeypot, secret, mac, timeout)
+                honeypot.mac_address_override = mac
+                honeypot.mac_address_vendor = vendor
+                await session.commit()
+            state = await read_mac_status(honeypot, secret, timeout)
+        except (SSHConnectionError, MacAddressError) as exc:
+            logger.warning("honeypot_mac_address failed for %s: %s", honeypot.name, exc)
+            return {"ok": False, "error": str(exc)}
+
+        return {
+            "ok": True,
+            "interface": state.interface,
+            "current": state.current,
+            "configured": state.configured,
+            "pending": state.pending,
+            "readonly_root": state.readonly_root,
+        }
+
+
+@celery_app.task(
+    name="app.tasks.jobs.honeypot_mac_address",
+    time_limit=_SSH_TASK_TIME_LIMIT_SECONDS,
+)
+def honeypot_mac_address(
+    honeypot_id: str, *, mac: str | None = None, vendor: str | None = None, reset: bool = False
+) -> dict[str, Any]:
+    return asyncio.run(_honeypot_mac_address(honeypot_id, mac=mac, vendor=vendor, reset=reset))
+
+
+async def _refresh_mac_vendor_list(*, only_if_due: bool) -> dict[str, Any]:
+    """Download the MAC manufacturer list (Settings -> Integrations). The
+    hourly Beat entry passes `only_if_due`, so the interval set there needs
+    no Beat restart to take effect; "Download now" does not."""
+    async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
+        if only_if_due and not mac_vendors.is_due(app_settings):
+            return {"ok": True, "skipped": True}
+        try:
+            count = await mac_vendors.refresh_vendor_list(session, app_settings)
+        except mac_vendors.MacVendorListError as exc:
+            logger.warning("refresh_mac_vendor_list failed: %s", exc)
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "count": count}
+
+
+@celery_app.task(name="app.tasks.jobs.refresh_mac_vendor_list")
+def refresh_mac_vendor_list(*, only_if_due: bool = True) -> dict[str, Any]:
+    return asyncio.run(_refresh_mac_vendor_list(only_if_due=only_if_due))
 
 
 async def _read_honeypot_opencanary_config(honeypot_id: str) -> dict[str, Any]:

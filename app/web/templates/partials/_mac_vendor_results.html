@@ -1,0 +1,16 @@
+{# What GET /mac-vendors/search answers with: manufacturers to pick from.
+   Picking one draws an address of theirs into the field above. #}
+{% if vendors %}
+  <ul class="mac-vendor-results">
+    {% for name, prefixes in vendors %}
+      <li>
+        <button type="button" class="link-button"
+                hx-get="/mac-vendors/generate" hx-vals='{{ {"vendor": name} | tojson }}'
+                hx-target="#mac-address-field" hx-swap="innerHTML">{{ name }}</button>
+        <span class="hint">{{ t(request, "mac.prefix_count", count=prefixes) }}</span>
+      </li>
+    {% endfor %}
+  </ul>
+{% elif query | length >= 2 %}
+  <p class="hint">{{ t(request, "mac.no_vendor_match") }}</p>
+{% endif %}

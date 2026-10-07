@@ -62,7 +62,9 @@ from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie, verify_csrf
 from app.db.models.honeypot import AuthMethod
 from app.db.models.initialize_run import InitializeRun
 from app.db.session import get_db
+from app.services import mac_vendors
 from app.ssh.initialize import NEW_SSH_PORT
+from app.ssh.mac_address import InvalidMacAddressError, normalize_mac
 from app.web.templating import templates
 
 # How many past runs the history list shows — a debugging aid, not an
@@ -110,6 +112,9 @@ class PendingInitializeRun:
     # — see app.ssh.initialize.NEW_SSH_PORT (this field's own default) for
     # why that happens at all.
     new_ssh_port: int
+    # An address for the device to use from the reboot that ends the run
+    # (see app.ssh.mac_address); None leaves the hardware one.
+    mac_address: str | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
@@ -129,10 +134,16 @@ async def _render_form(
     request: Request, *, errors: list[str] | None = None, **extra: object
 ) -> Response:
     csrf_token, new_cookie = get_or_create_csrf_token(request)
+    db_session_factory = request.app.state.db_session_factory
+    async with db_session_factory() as db:
+        vendors_available = await mac_vendors.vendor_count(db) > 0
     context: dict[str, object] = {
         "errors": errors or [],
         "csrf_token": csrf_token,
         "new_ssh_port": NEW_SSH_PORT,
+        "mac_address": "",
+        "mac_vendor": "",
+        "vendors_available": vendors_available,
         **extra,
     }
     response = templates.TemplateResponse(request, "initialize/index.html", context)
@@ -187,6 +198,8 @@ async def initialize_submit(
     netbird_management_url: str = Form(""),
     wireguard_config: str = Form(""),
     new_ssh_port: int = Form(NEW_SSH_PORT),
+    mac_address: str = Form(""),
+    mac_vendor: str = Form(""),
 ) -> Response:
     ip_address = ip_address.strip()
     device_name = device_name.strip()
@@ -218,6 +231,12 @@ async def initialize_submit(
         errors.append('NetBird management URL must start with "http://" or "https://".')
     if vpn_provider == "wireguard" and not wireguard_config:
         errors.append("A WireGuard config is required when WireGuard is selected.")
+    normalized_mac: str | None = None
+    if mac_address.strip():
+        try:
+            normalized_mac = normalize_mac(mac_address)
+        except InvalidMacAddressError as exc:
+            errors.append(str(exc))
 
     if errors:
         return await _render_form(
@@ -230,6 +249,8 @@ async def initialize_submit(
             auth_method=auth_method,
             vpn_provider=vpn_provider,
             new_ssh_port=new_ssh_port,
+            mac_address=mac_address.strip()[:40],
+            mac_vendor=mac_vendor.strip()[:255],
         )
 
     _purge_stale_runs()
@@ -246,6 +267,7 @@ async def initialize_submit(
         netbird_management_url=netbird_management_url or None,
         wireguard_config=wireguard_config or None,
         new_ssh_port=new_ssh_port,
+        mac_address=normalized_mac,
     )
     return RedirectResponse(
         url=f"/initialize/run/{run_id}", status_code=status.HTTP_303_SEE_OTHER
@@ -283,6 +305,7 @@ async def initialize_run_page(request: Request, run_id: str) -> Response:
             "vpn_provider": run.vpn_provider,
             "csrf_token": csrf_token,
             "new_ssh_port": run.new_ssh_port,
+            "mac_address": run.mac_address,
         },
     )
     if new_cookie:

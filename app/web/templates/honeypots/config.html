@@ -76,6 +76,16 @@
   </section>
   {% endif %}
 
+  {% if honeypot.host_key_fingerprint %}
+  {# Reads the honeypot live, so it loads on its own rather than holding
+     the rest of the tab back. #}
+  <section class="panel" id="mac-panel"
+           hx-get="/honeypots/{{ honeypot.id }}/config/mac" hx-trigger="load" hx-swap="innerHTML">
+    <h2>{{ t(request, "mac.heading") }}</h2>
+    <p class="hint">{{ t(request, "mac.loading") }}</p>
+  </section>
+  {% endif %}
+
   {% if opencanary_config is not none %}
     <section class="panel">
       <h2>{{ t(request, 'honeypots.config.opencanary_heading') }}</h2>
