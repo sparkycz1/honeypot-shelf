@@ -69,6 +69,7 @@ async def terminal_page(
             "honeypot": honeypot,
             "tabs": _honeypot_tabs(request, honeypot, current_user),
             "active_tab": "terminal",
+            "recording": (await get_or_create_app_settings(db)).terminal_recording_enabled,
         },
     )
 

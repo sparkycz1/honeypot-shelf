@@ -70,19 +70,24 @@ async def active_window_for(
     return None
 
 
+# Muted only by a window that says so (`mute_alerts`).
+_SECURITY_KINDS = frozenset({NotificationKind.ALERT, NotificationKind.FILE_CHANGED})
+
+
 async def muting_window(
     db: AsyncSession, honeypot: Honeypot, kind: NotificationKind, now: datetime | None = None
 ) -> MaintenanceWindow | None:
     """The active window that mutes a `kind` notification about `honeypot`,
     if any. "Unavailable"/"available again" are muted by any covering
-    window; a new-alert notification only by one with `mute_alerts` set;
-    a test send never."""
+    window; a new-alert or a watched-file-changed notification (both
+    security signals) only by one with `mute_alerts` set; a test send
+    never."""
     if kind == NotificationKind.TEST:
         return None
     for window in await active_windows(db, now):
         if not covers(window, honeypot):
             continue
-        if kind == NotificationKind.ALERT and not window.mute_alerts:
+        if kind in _SECURITY_KINDS and not window.mute_alerts:
             continue
         return window
     return None

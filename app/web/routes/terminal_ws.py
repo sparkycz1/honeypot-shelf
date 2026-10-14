@@ -43,11 +43,13 @@ block — on a clean disconnect, an error, or the hard cap firing — so there
 is never a leaked SSH connection on any exit path.
 
 Only the session's start and end are audit-logged (`honeypot.terminal.open`/
-`.close`, with duration on close) — not keystrokes or output, which would
-mean recording everything typed/seen in a potentially root-capable shell,
-secrets included. This matches how the rest of this app treats "which SSH
-round trip happened, by whom" as the audit-worthy fact, not a full
-transcript of what it did (see `app/audit.py`'s module docstring).
+`.close`, with duration on close). By default nothing typed or shown is
+kept. A superadmin can turn on **recording**
+(`AppSettings.terminal_recording_enabled`): the session's output — never
+the keystrokes — is then stored encrypted as a `TerminalRecording` for a
+limited time and can be replayed from Audit → Terminal recordings; see
+`app.db.models.terminal_recording` and `app.services.terminal_recording`.
+The terminal page says so before the session starts.
 """
 
 from __future__ import annotations
@@ -75,6 +77,7 @@ from app.auth.websocket_origin import is_same_origin
 from app.core.app_settings import get_or_create_app_settings
 from app.db.models.honeypot import Honeypot
 from app.db.models.user import User
+from app.services import terminal_recording
 from app.ssh.client import open_shell_session
 from app.ssh.credentials import resolve_honeypot_credential
 from app.ssh.exceptions import SSHConnectionError
@@ -160,7 +163,9 @@ async def _authenticate(
 
 
 async def _relay_output(
-    websocket: WebSocket, process: asyncssh.SSHClientProcess[bytes]
+    websocket: WebSocket,
+    process: asyncssh.SSHClientProcess[bytes],
+    recorder: terminal_recording.Recorder | None = None,
 ) -> None:
     """Reads raw bytes from the remote PTY and forwards them as binary
     WebSocket frames — see the module docstring's protocol note (binary
@@ -169,10 +174,16 @@ async def _relay_output(
         chunk = await process.stdout.read(65536)
         if not chunk:
             return
+        if recorder is not None:
+            recorder.output(chunk)
         await websocket.send_bytes(chunk)
 
 
-async def _relay_input(websocket: WebSocket, process: asyncssh.SSHClientProcess[bytes]) -> None:
+async def _relay_input(
+    websocket: WebSocket,
+    process: asyncssh.SSHClientProcess[bytes],
+    recorder: terminal_recording.Recorder | None = None,
+) -> None:
     """Reads from the WebSocket and either writes raw bytes to the remote
     shell's stdin (binary frames) or handles a control message (text
     frames — currently just `resize`)."""
@@ -202,6 +213,8 @@ async def _relay_input(websocket: WebSocket, process: asyncssh.SSHClientProcess[
         ):
             with contextlib.suppress(Exception):
                 process.change_terminal_size(cols, rows)
+            if recorder is not None:
+                recorder.resize(cols, rows)
 
 
 async def _log_terminal_event(
@@ -257,6 +270,7 @@ async def terminal_websocket(websocket: WebSocket, honeypot_id: uuid.UUID) -> No
     # that never got established (see the `SSHConnectionError` branch below)
     # never started a session worth recording the end of.
     session_opened = False
+    recorder: terminal_recording.Recorder | None = None
     try:
         try:
             conn, process = await open_shell_session(
@@ -280,10 +294,18 @@ async def terminal_websocket(websocket: WebSocket, honeypot_id: uuid.UUID) -> No
             details=None,
         )
 
+        # Only the output is recorded, never what is typed — see
+        # app.db.models.terminal_recording.
+        if app_settings.terminal_recording_enabled:
+            recorder = terminal_recording.Recorder(
+                cols=_DEFAULT_TERM_SIZE[0], rows=_DEFAULT_TERM_SIZE[1]
+            )
         output_task: asyncio.Task[None] = asyncio.ensure_future(
-            _relay_output(websocket, process)
+            _relay_output(websocket, process, recorder)
         )
-        input_task: asyncio.Task[None] = asyncio.ensure_future(_relay_input(websocket, process))
+        input_task: asyncio.Task[None] = asyncio.ensure_future(
+            _relay_input(websocket, process, recorder)
+        )
         timeout_task: asyncio.Task[None] = asyncio.ensure_future(
             asyncio.sleep(TERMINAL_SESSION_MAX_SECONDS)
         )
@@ -308,13 +330,29 @@ async def terminal_websocket(websocket: WebSocket, honeypot_id: uuid.UUID) -> No
 
         if session_opened:
             duration_seconds = (datetime.now(UTC) - started_at).total_seconds()
+            close_details: dict[str, object] = {"duration_seconds": round(duration_seconds, 1)}
+            if recorder is not None:
+                # Storing the recording must never keep the session from
+                # being closed and logged.
+                with contextlib.suppress(Exception):
+                    async with db_session_factory() as db:
+                        recording = await terminal_recording.save(
+                            db,
+                            recorder,
+                            honeypot=honeypot,
+                            user=user,
+                            started_at=started_at,
+                            duration_seconds=duration_seconds,
+                        )
+                    if recording is not None:
+                        close_details["recording_id"] = str(recording.id)
             await _log_terminal_event(
                 db_session_factory,
                 action="honeypot.terminal.close",
                 summary=f'Closed terminal to "{honeypot.name}" after {duration_seconds:.0f}s',
                 honeypot=honeypot,
                 user=user,
-                details={"duration_seconds": round(duration_seconds, 1)},
+                details=close_details,
             )
             with contextlib.suppress(Exception):
                 await websocket.close(code=status.WS_1000_NORMAL_CLOSURE, reason=close_reason)

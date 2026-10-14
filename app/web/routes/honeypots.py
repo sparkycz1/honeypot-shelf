@@ -14,6 +14,7 @@ The routes themselves live in one module per area, each with its own
 - `honeypots_monitoring` — the Monitoring tab and its "Refresh now".
 - `honeypots_activity` — the Activity tab, its export and "Refresh now".
 - `honeypots_logs` — the Logs tab and the Terminal page.
+- `honeypots_files` — the Watched files page.
 - `honeypots_config` — the Config tab: OpenCanary modules and the
   read-only root switch.
 
@@ -27,6 +28,7 @@ from app.web.routes import (
     honeypots_activity,
     honeypots_config,
     honeypots_detail,
+    honeypots_files,
     honeypots_list,
     honeypots_logs,
     honeypots_monitoring,
@@ -43,3 +45,4 @@ router.include_router(honeypots_monitoring.router)
 router.include_router(honeypots_activity.router)
 router.include_router(honeypots_logs.router)
 router.include_router(honeypots_config.router)
+router.include_router(honeypots_files.router)

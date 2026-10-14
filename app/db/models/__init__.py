@@ -20,6 +20,7 @@ from app.db.models.honeypot_reachability_sample import HoneypotReachabilitySampl
 from app.db.models.honeypot_service import HoneypotService
 from app.db.models.honeypot_tag import Tag
 from app.db.models.honeypot_update_run import HoneypotUpdateRun
+from app.db.models.honeypot_watched_file import HoneypotWatchedFile
 from app.db.models.ignored_source import IgnoredSource
 from app.db.models.initialize_run import InitializeRun
 from app.db.models.mac_vendor import MacVendor
@@ -33,6 +34,7 @@ from app.db.models.saved_log_view import SavedLogView
 from app.db.models.scheduled_task import ScheduledTask
 from app.db.models.scheduled_task_run import ScheduledTaskRun
 from app.db.models.ssh_identity import SSHIdentity
+from app.db.models.terminal_recording import TerminalRecording
 from app.db.models.totp_recovery_code import TotpRecoveryCode
 from app.db.models.user import User
 from app.db.models.user_session import UserSession
@@ -55,6 +57,7 @@ __all__ = [
     "HoneypotReachabilitySample",
     "HoneypotService",
     "HoneypotUpdateRun",
+    "HoneypotWatchedFile",
     "IgnoredSource",
     "InitializeRun",
     "MacVendor",
@@ -72,6 +75,7 @@ __all__ = [
     "ScheduledTask",
     "ScheduledTaskRun",
     "Tag",
+    "TerminalRecording",
     "TotpRecoveryCode",
     "User",
     "UserSession",

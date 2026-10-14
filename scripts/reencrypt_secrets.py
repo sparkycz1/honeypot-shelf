@@ -17,7 +17,8 @@ Touches every `*_encrypted` column across the app: `Honeypot.secret_encrypted`,
 `SSHIdentity.private_key_encrypted` / `pending_private_key_encrypted`,
 `AppSettings.ldap_bind_password_encrypted` / `oidc_client_secret_encrypted`
 / `netbird_setup_key_encrypted` / `wireguard_config_encrypted`,
-`User.totp_secret_encrypted`. Idempotent — running it again finds nothing
+`User.totp_secret_encrypted`, a watched file's stored content
+(`HoneypotWatchedFile`) and terminal recordings. Idempotent — running it again finds nothing
 left to do.
 """
 
@@ -33,7 +34,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import DecryptionError, decrypt_secret, encrypt_secret, is_legacy_ciphertext
 from app.db.models.app_settings import AppSettings
 from app.db.models.honeypot import Honeypot
+from app.db.models.honeypot_watched_file import HoneypotWatchedFile
 from app.db.models.ssh_identity import SSHIdentity
+from app.db.models.terminal_recording import TerminalRecording
 from app.db.models.user import User
 from app.db.session import AsyncSessionLocal
 
@@ -48,6 +51,9 @@ _TARGETS: Sequence[tuple[type, str]] = (
     (AppSettings, "netbird_setup_key_encrypted"),
     (AppSettings, "wireguard_config_encrypted"),
     (User, "totp_secret_encrypted"),
+    (HoneypotWatchedFile, "content_encrypted"),
+    (HoneypotWatchedFile, "previous_content_encrypted"),
+    (TerminalRecording, "data_encrypted"),
 )
 
 

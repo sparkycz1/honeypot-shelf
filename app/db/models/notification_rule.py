@@ -139,6 +139,11 @@ class NotificationRule(Base):
     notify_on_reboot_required: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false", nullable=False
     )
+    # A watched file changed (`app.services.watched_files`) — sent every
+    # time one does, naming the file and how many lines, never the content.
+    notify_on_file_changed: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
 
     def wants_alert(self, event_type: str) -> bool:
         """Whether an alert of this type is one the rule asked for."""
