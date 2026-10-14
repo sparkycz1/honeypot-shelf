@@ -875,7 +875,7 @@ async def bulk_trigger_updates(
         ),
         details={"strategy": strategy.value, "batch_id": str(batch_id), "skipped": skipped},
     )
-    redirect_url = f"/companies/batches/{batch_id}"
+    redirect_url = f"/batches/{batch_id}"
     if skipped:
         redirect_url += f"?skipped={skipped}"
     return RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)

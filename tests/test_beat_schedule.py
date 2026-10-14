@@ -34,6 +34,7 @@ _EXPECTED_SCHEDULE_TASKS = {
     "refresh-mac-vendor-list": "app.tasks.jobs.refresh_mac_vendor_list",
     "purge-old-audit-log-entries": "app.tasks.jobs.purge_old_audit_log_entries",
     "purge-old-monitoring-samples": "app.tasks.jobs.purge_old_monitoring_samples",
+    "fail-stale-update-runs": "app.tasks.jobs.fail_stale_update_runs",
     "purge-old-honeypot-update-runs": "app.tasks.jobs.purge_old_honeypot_update_runs",
     "purge-old-notification-logs": "app.tasks.jobs.purge_old_notification_logs",
     "record-company-snapshots": "app.tasks.jobs.record_company_snapshots",

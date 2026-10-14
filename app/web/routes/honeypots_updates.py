@@ -25,6 +25,7 @@ from app.db.models.audit_log import AuditOutcome
 from app.db.models.honeypot_update_run import HoneypotUpdateRun, UpdateRunStatus, UpgradeStrategy
 from app.db.models.user import User
 from app.db.session import get_db
+from app.services import update_batches
 from app.ssh.updates import PendingPackage, is_safe_package_name
 
 # Imported as a module, not name-by-name: this file already has a route
@@ -473,8 +474,21 @@ async def honeypot_update_run_detail(
     run = await _get_update_run_or_404(run_id, db)
     if run.honeypot_id != honeypot.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Update run not found.")
+    # The other honeypots updated together with this one, so the page can
+    # lead back to the batch and on to its neighbours.
+    batch_runs = (
+        await update_batches.visible_batch_runs(db, current_user, run.batch_id)
+        if run.batch_id is not None
+        else []
+    )
     return templates.TemplateResponse(
-        request, "honeypots/update_run.html", {"honeypot": honeypot, "run": run}
+        request,
+        "honeypots/update_run.html",
+        {
+            "honeypot": honeypot,
+            "run": run,
+            "batch_runs": batch_runs if len(batch_runs) > 1 else [],
+        },
     )
 
 

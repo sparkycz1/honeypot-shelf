@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t(request, "batches.batch_title") }} — Honeypot Shelf{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>{{ t(request, "batches.batch_title") }}</h1>
+    <a class="button button-secondary" href="/batches">{{ t(request, "batches.all") }}</a>
+  </div>
+  <p class="hint">{{ t(request, "batches.started", when=(runs[0].created_at | local_time('%Y-%m-%d %H:%M %Z'))) }}</p>
+
+  {% if skipped %}
+    <div class="alert alert-warn">
+      <p>
+        {{ t(request, "batches.skipped", count=skipped) }}
+      </p>
+    </div>
+  {% endif %}
+
+  <section class="panel">
+    {% include "partials/update_batch_status.html" %}
+  </section>
+{% endblock %}
