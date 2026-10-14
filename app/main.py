@@ -42,6 +42,7 @@ from app.web.routes import (
     api_v1_users,
     audit,
     auth,
+    batches,
     branding,
     companies,
     dashboard,
@@ -295,6 +296,7 @@ def create_app() -> FastAPI:
     app.include_router(map_routes.router)
     app.include_router(honeypots.router)
     app.include_router(events.router)
+    app.include_router(batches.router)
     app.include_router(companies.router)
     app.include_router(initialize.router)
     app.include_router(mac_vendors_routes.router)

@@ -2382,6 +2382,65 @@ def finish_update_run(run_id: str) -> dict[str, Any]:
     return asyncio.run(_finish_update_run(run_id))
 
 
+# A run still "running" this long after the longest an update may take was
+# abandoned by its worker (the worker, or the whole Honeypot Shelf host, was
+# restarted mid-run). Nothing will ever finish it.
+_STALE_RUN_GRACE_SECONDS = 15 * 60
+_STALE_RUN_ACTOR = "update watchdog (automatic)"
+STALE_RUN_ERROR = (
+    "The update did not finish: the worker running it stopped before it was done "
+    "(for example Honeypot Shelf itself was restarted). "
+    "The honeypot may be partly updated — check it and run the update again."
+)
+
+
+async def _fail_stale_update_runs() -> int:
+    """Mark update runs nobody is running any more as failed, so they do not
+    show as "running" for ever and a rolling batch waiting on one is
+    released. Returns how many were closed."""
+    async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
+        limit = max(app_settings.update_timeout_seconds, 0) + _STALE_RUN_GRACE_SECONDS
+        cutoff = datetime.now(UTC) - timedelta(seconds=limit)
+        result = await session.execute(
+            select(HoneypotUpdateRun).where(
+                HoneypotUpdateRun.status == UpdateRunStatus.RUNNING,
+                HoneypotUpdateRun.started_at.is_not(None),
+                HoneypotUpdateRun.started_at < cutoff,
+            )
+        )
+        stale = list(result.scalars().all())
+        if not stale:
+            return 0
+        now = datetime.now(UTC)
+        for run in stale:
+            run.status = UpdateRunStatus.FAILED
+            run.error = STALE_RUN_ERROR
+            run.finished_at = now
+        await session.commit()
+        await log_event(
+            session,
+            actor=_STALE_RUN_ACTOR,
+            action="honeypot_update_runs.reap",
+            summary=(
+                f"Closed {len(stale)} update run{'s' if len(stale) != 1 else ''} "
+                "left running by a worker that stopped"
+            ),
+            outcome=AuditOutcome.FAILURE,
+            details={"run_ids": [str(run.id) for run in stale][:50], "count": len(stale)},
+        )
+        waiting_batches = [str(run.id) for run in stale if run.rollout_position is not None]
+    # A rolling batch stops at a failed run: let it mark what was waiting.
+    for run_id in waiting_batches:
+        finish_update_run.delay(run_id)
+    return len(stale)
+
+
+@celery_app.task(name="app.tasks.jobs.fail_stale_update_runs")
+def fail_stale_update_runs() -> int:
+    return asyncio.run(_fail_stale_update_runs())
+
+
 async def _rollback_honeypot_update(run_id: str) -> None:
     """Execute one rollback `HoneypotUpdateRun` (`rollback_of_run_id` set) —
     re-install every package whose version changed since the source run's
