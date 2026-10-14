@@ -6,10 +6,6 @@ actually shows Czech text on this page, not an English fallback."""
 
 from __future__ import annotations
 
-import pytest
-
-pytestmark = pytest.mark.asyncio
-
 
 async def test_account_page_renders_in_czech(client, login_as):
     await login_as(client, is_superadmin=True, locale="cs", api_access_enabled=True)

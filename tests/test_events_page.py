@@ -27,8 +27,10 @@ async def _seed(db_session_factory: Any) -> tuple[Any, Any, Any]:
     atlas = await create_company(db_session_factory, name="Atlas")
     borealis = await create_company(db_session_factory, name="Borealis")
     async with db_session_factory() as db:
-        first = Honeypot(companies=[await db.get(Company, atlas.id)], name="atlas-honey")
-        second = Honeypot(companies=[await db.get(Company, borealis.id)], name="borealis-honey")
+        atlas_row = await db.get(Company, atlas.id)
+        borealis_row = await db.get(Company, borealis.id)
+        first = Honeypot(companies=[atlas_row], name="atlas-honey")
+        second = Honeypot(companies=[borealis_row], name="borealis-honey")
         db.add_all([first, second])
         await db.flush()
         rows = [

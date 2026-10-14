@@ -13,8 +13,6 @@ from fastapi.responses import FileResponse
 from app.web import branding
 from app.web.routes import branding as branding_routes
 
-pytestmark = pytest.mark.asyncio
-
 
 @pytest.fixture(autouse=True)
 def _clear_remote_cache():

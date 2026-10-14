@@ -4,12 +4,8 @@ app/web/routes/api_docs.py."""
 
 from __future__ import annotations
 
-import pytest
-
 from app.db.models.user import AccessLevel
 from tests.conftest import create_company
-
-pytestmark = pytest.mark.asyncio
 
 
 async def test_read_only_user_cannot_reach_api_docs(client, login_as, db_session_factory):

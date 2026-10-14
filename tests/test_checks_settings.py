@@ -8,11 +8,7 @@ from __future__ import annotations
 
 import re
 
-import pytest
-
 from app.core.app_settings import get_or_create_app_settings
-
-pytestmark = pytest.mark.asyncio
 
 
 def _csrf_from(response) -> str:

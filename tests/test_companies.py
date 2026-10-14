@@ -7,14 +7,10 @@ from __future__ import annotations
 
 import re
 
-import pytest
-
 from app.db.models.company import Company
 from app.db.models.company_membership import CompanyMembership
 from app.db.models.honeypot import Honeypot
 from app.db.models.user import AccessLevel, AuthProvider, User
-
-pytestmark = pytest.mark.asyncio
 
 
 def _csrf_from(response) -> str:

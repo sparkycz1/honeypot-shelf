@@ -12,7 +12,6 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime, timedelta
 
-import pytest
 from sqlalchemy import select
 
 from app.db.models.company import Company
@@ -22,8 +21,6 @@ from app.services.monitoring_history import build_monitoring_history
 from app.ssh.monitoring import parse_monitoring_output
 from app.tasks.jobs import _sample_honeypot_monitoring
 from tests.conftest import create_company
-
-pytestmark = pytest.mark.asyncio
 
 
 def _fake_output(opencanary_section: str) -> str:

@@ -22,8 +22,6 @@ from app.services.geoip import (
     refresh_geoip_database,
 )
 
-pytestmark = pytest.mark.asyncio
-
 
 def test_extract_mmdb_returns_raw_bytes_unchanged():
     assert _extract_mmdb(b"not-really-an-mmdb") == b"not-really-an-mmdb"

@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import re
 
-import pytest
 from sqlalchemy import select
 
 from app.db.models.company import Company
@@ -16,8 +15,6 @@ from app.db.models.notification_rule import NotificationRule, NotificationScope
 from app.db.models.user import AccessLevel, AuthProvider, User
 from app.services.notifications import resolve_target
 from tests.conftest import create_company
-
-pytestmark = pytest.mark.asyncio
 
 
 def _csrf_from(response) -> str:
@@ -65,12 +62,10 @@ async def test_rule_form_only_lists_visible_companies_and_honeypots(
     own_company = await create_company(db_session_factory, name="Own Co")
     other_company = await create_company(db_session_factory, name="Other Co")
     async with db_session_factory() as db:
-        visible = Honeypot(
-            companies=[await db.get(Company, own_company.id)], name="visible-honey"
-        )
-        hidden = Honeypot(
-            companies=[await db.get(Company, other_company.id)], name="hidden-honey"
-        )
+        own_row = await db.get(Company, own_company.id)
+        other_row = await db.get(Company, other_company.id)
+        visible = Honeypot(companies=[own_row], name="visible-honey")
+        hidden = Honeypot(companies=[other_row], name="hidden-honey")
         db.add_all([visible, hidden])
         await db.commit()
 

@@ -7,11 +7,7 @@ from __future__ import annotations
 
 import re
 
-import pytest
-
 from tests.conftest import create_local_user
-
-pytestmark = pytest.mark.asyncio
 
 
 async def _login_csrf(anonymous_client) -> str:

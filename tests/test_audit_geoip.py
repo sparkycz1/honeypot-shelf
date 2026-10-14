@@ -7,14 +7,11 @@ real MaxMind database, same reasoning as `tests/test_geoip.py`."""
 
 from __future__ import annotations
 
-import pytest
 from sqlalchemy import select
 
 from app.audit import _canonical_payload, _compute_entry_hash, log_event, verify_chain
 from app.db.models.audit_log import AuditLogEntry
 from app.services.geoip import GeoLocation
-
-pytestmark = pytest.mark.asyncio
 
 
 async def test_log_event_stores_the_resolved_country(db_session_factory, monkeypatch):

@@ -13,7 +13,6 @@ import json
 import re
 import uuid
 
-import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -25,8 +24,6 @@ from app.db.models.user import AccessLevel, User
 from app.ssh.updates import build_rollback_command, parse_package_snapshot
 from app.tasks.jobs import _rollback_honeypot_update
 from tests.conftest import ADMIN_USERNAME, create_company
-
-pytestmark = pytest.mark.asyncio
 
 # --- parse_package_snapshot / build_rollback_command: pure, no I/O -----
 

@@ -9,12 +9,8 @@ from __future__ import annotations
 
 import re
 
-import pytest
-
 from app.db.models.user import AccessLevel, AuthProvider, User
 from tests.conftest import create_company
-
-pytestmark = pytest.mark.asyncio
 
 
 def _csrf_from(response) -> str:

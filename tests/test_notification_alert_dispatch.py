@@ -5,8 +5,6 @@ every newly ingested, non-internal `HoneypotEvent` notifies every
 
 from __future__ import annotations
 
-import pytest
-
 from app.core.app_settings import get_or_create_app_settings
 from app.db.models.company import Company
 from app.db.models.honeypot import Honeypot
@@ -15,8 +13,6 @@ from app.db.models.user import AuthProvider, User
 from app.ssh.canary_activity import LogPollResult
 from app.tasks.jobs import _poll_honeypot_canary_log
 from tests.conftest import create_company
-
-pytestmark = pytest.mark.asyncio
 
 
 async def _setup(db_session_factory, *, smtp_enabled: bool = True):

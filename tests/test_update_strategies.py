@@ -35,9 +35,6 @@ from app.ssh.updates import (
 from app.tasks import jobs
 from tests.conftest import ADMIN_USERNAME, create_company
 
-pytestmark = pytest.mark.asyncio
-
-
 # --- pure helpers ------------------------------------------------------------
 
 

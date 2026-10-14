@@ -5,14 +5,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-import pytest
-
 from app.db.models.company import Company
 from app.db.models.honeypot import AuthMethod, Honeypot
 from app.db.models.honeypot_event import HoneypotEvent
 from tests.conftest import create_company
-
-pytestmark = pytest.mark.asyncio
 
 
 async def _create_pinned_honeypot_with_events(db_session_factory, company_id) -> Honeypot:
