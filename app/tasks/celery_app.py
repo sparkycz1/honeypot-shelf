@@ -296,6 +296,10 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.jobs.purge_old_monitoring_samples",
         "schedule": crontab(hour=2, minute=10),
     },
+    "fail-stale-update-runs": {
+        "task": "app.tasks.jobs.fail_stale_update_runs",
+        "schedule": crontab(minute="*/10"),
+    },
     "purge-old-honeypot-update-runs": {
         "task": "app.tasks.jobs.purge_old_honeypot_update_runs",
         "schedule": crontab(hour=2, minute=15),
