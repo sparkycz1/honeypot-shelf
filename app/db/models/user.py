@@ -45,9 +45,10 @@ from __future__ import annotations
 import enum
 import uuid
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     Integer,
     LargeBinary,
@@ -93,6 +94,10 @@ class User(Base):
     # a locale *code* (e.g. "en", "cs"). `None` means "use the default"
     # (English). See app/i18n/__init__.py.
     locale: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # This account's own Dashboard: `{"order": [...], "hidden": [...]}` of
+    # section keys, read through `app.services.dashboard_layout.resolve`.
+    # None = the default order with everything shown.
+    dashboard_layout: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
     auth_provider: Mapped[AuthProvider] = mapped_column(
         pg_enum(AuthProvider, name="auth_provider"), nullable=False

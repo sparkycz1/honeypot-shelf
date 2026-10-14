@@ -16,7 +16,8 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, date, datetime, time, timedelta
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, status
+from fastapi.responses import RedirectResponse
 from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -24,12 +25,14 @@ from sqlalchemy.orm import selectinload
 from app.auth.dependencies import get_current_user
 from app.auth.scope import visible_company_ids, writable_company_ids
 from app.core.app_settings import get_or_create_app_settings
+from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie, verify_csrf
 from app.db.models.company import Company
 from app.db.models.company_snapshot import CompanySnapshot
 from app.db.models.honeypot import Honeypot
 from app.db.models.honeypot_event import HoneypotEvent
 from app.db.models.user import User
 from app.db.session import get_db
+from app.services import dashboard_layout
 from app.services.canary_activity_history import MAX_RAW_EVENTS, build_activity_history
 from app.services.honeypot_status import is_online, offline_cutoff
 from app.services.opencanary_logtypes import localized_logtype_label
@@ -193,6 +196,9 @@ async def _build_dashboard_context(
         "trend_needs_updates": [by_day[d]["needs_updates"] for d in trend_days],
         "dashboard_trends_retention_days": settings_row.dashboard_trends_retention_days,
         "activity": activity,
+        # Which sections this account wants, and in what order
+        # (`app.services.dashboard_layout`).
+        "layout": dashboard_layout.resolve(user.dashboard_layout),
     }
 
 
@@ -203,7 +209,60 @@ async def dashboard(
     user: User = Depends(get_current_user),
 ) -> object:
     context = await _build_dashboard_context(request, db, user)
-    return templates.TemplateResponse(request, "dashboard/index.html", context)
+    layout = context["layout"]
+    assert isinstance(layout, dashboard_layout.Layout)
+    activity = context["activity"]
+    # Only sections with something to show are offered for arranging.
+    present = {
+        "overview": True,
+        "companies": bool(context["company_breakdown"]),
+        "trend": bool(context["trend_timestamps"]),
+        "types": bool(getattr(activity, "counts_by_type", None)),
+        "recent": True,
+    }
+    context["arrangeable"] = [key for key in layout.order if present[key]]
+    context["layout_open"] = request.query_params.get("arrange") == "1"
+    csrf_token, new_cookie = get_or_create_csrf_token(request)
+    context["csrf_token"] = csrf_token
+    response = templates.TemplateResponse(request, "dashboard/index.html", context)
+    if new_cookie:
+        set_csrf_cookie(response, new_cookie)
+    return response
+
+
+@router.post("/dashboard/layout", dependencies=[Depends(verify_csrf)])
+async def update_dashboard_layout(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+    action: str = Form(""),
+    section: str = Form(""),
+) -> Response:
+    """One step of arranging the account's own Dashboard: move a section up
+    or down, hide or show it, or go back to the default. Only the account's
+    own preference changes, so it is not audited (like the theme and the
+    list's view mode)."""
+    layout = dashboard_layout.resolve(user.dashboard_layout)
+    try:
+        if action == "reset":
+            layout = dashboard_layout.DEFAULT
+        elif action in ("up", "down"):
+            layout = dashboard_layout.move(layout, section, up=action == "up")
+        elif action in ("hide", "show"):
+            layout = dashboard_layout.set_hidden(layout, section, hidden=action == "hide")
+        else:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown action.")
+    except dashboard_layout.UnknownSectionError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown section."
+        ) from None
+    # The signed-in user comes from the auth middleware's own session;
+    # the change has to be made on this request's.
+    account = await db.get(User, user.id)
+    if account is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found.")
+    account.dashboard_layout = dashboard_layout.to_store(layout)
+    await db.commit()
+    return RedirectResponse(url="/dashboard?arrange=1", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/dashboard/panel")

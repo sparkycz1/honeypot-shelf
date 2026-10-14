@@ -45,6 +45,7 @@ PAGES = [
     "/initialize/history",
     "/scheduling",
     "/scheduling/maintenance",
+    "/scheduling/calendar",
     "/companies",
     "/users",
     "/audit",

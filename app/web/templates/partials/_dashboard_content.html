@@ -1,5 +1,10 @@
 {% from "macros/charts.html" import chart_card with context %}
 
+{# The sections in this account's own order, the hidden ones left out
+   (app.services.dashboard_layout). Each still checks it has something to
+   show. #}
+{% for section_key in layout.visible %}
+{% if section_key == 'overview' %}
 <section class="panel">
   <h2>
     {% if current_user.is_superadmin %}{{ t(request, "dashboard.all_companies") }}
@@ -38,7 +43,7 @@
     {% if current_user.is_superadmin %} · <a href="/companies">{{ t(request, "dashboard.companies_count", count=company_count) }}</a>{% endif %}
   </p>
 </section>
-
+{% elif section_key == 'companies' %}
 {% if company_breakdown %}
 <section class="panel">
   <h2>{{ t(request, "dashboard.by_company") }}</h2>
@@ -58,7 +63,7 @@
   </table>
 </section>
 {% endif %}
-
+{% elif section_key == 'trend' %}
 {# Trend and activity charts: the same chart cards as a honeypot's
    Monitoring tab (debcontrol's Dashboard lays its fleet trends out the
    same way). #}
@@ -85,7 +90,7 @@
   </div>
 </section>
 {% endif %}
-
+{% elif section_key == 'types' %}
 {% if activity.counts_by_type %}
 <section class="panel">
   <h2>{{ t(request, "dashboard.by_type_heading") }}</h2>
@@ -121,7 +126,7 @@
   {% endif %}
 </section>
 {% endif %}
-
+{% elif section_key == 'recent' %}
 <section class="panel">
   <h2>{{ t(request, "dashboard.recent_events") }}</h2>
   {% if recent_events %}
@@ -143,3 +148,5 @@
   {% endif %}
   <p class="hint"><a href="/honeypots">{{ t(request, "dashboard.browse_by_honeypot") }}</a></p>
 </section>
+{% endif %}
+{% endfor %}

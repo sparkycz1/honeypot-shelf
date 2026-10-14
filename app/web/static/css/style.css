@@ -2190,31 +2190,42 @@ th[data-sort][aria-sort="descending"]::after { content: " \2193"; color: var(--c
 }
 
 /* --- Honeypot table on a narrow screen: one card per honeypot instead
-   of ten squeezed columns --- */
+   of ten squeezed columns. Ported from debcontrol's `.machine-table`:
+   the tick box on the left, the header keeping only "select all", and
+   only the columns marked `col-card` besides name, status and updates
+   (the rest are a click away on the honeypot's own page). --- */
 @media (max-width: 760px) {
-  .honeypot-table, .honeypot-table tbody, .honeypot-table tr, .honeypot-table td { display: block; }
-  .honeypot-table thead { display: none; }
-  .honeypot-table tr {
-    padding: var(--space-3);
-    margin-bottom: var(--space-3);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    background: var(--color-surface);
-  }
-  .honeypot-table td {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: var(--space-1) var(--space-2);
-    padding: var(--space-1) 0;
+  .honeypot-table {
+    display: block;
+    overflow-x: visible;
     border: 0;
+    background: none;
   }
-  .honeypot-table td[data-label]::before {
-    content: attr(data-label);
-    flex: 0 0 6.5rem;
-    color: var(--color-muted);
-    font-size: 0.82rem;
+  .honeypot-table thead, .honeypot-table thead tr { display: block; }
+  .honeypot-table thead th { display: none; border: 0; background: none; }
+  .honeypot-table thead th:first-child { display: block; padding: 0 0 var(--space-2) var(--space-4); }
+  .honeypot-table tbody { display: grid; gap: var(--space-3); }
+  .honeypot-table tbody tr {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: var(--space-1) var(--space-3);
+    align-items: center;
+    padding: var(--space-3) var(--space-4);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
   }
+  .honeypot-table tbody tr:nth-child(even) { background: var(--color-surface); }
+  .honeypot-table tbody td {
+    display: block;
+    grid-column: 2;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+  }
+  .honeypot-table tbody td:first-child { grid-column: 1; grid-row: 1 / span 6; }
+  .honeypot-table tbody td.col-optional { display: none; }
+  .honeypot-table tbody td.col-optional.col-card { display: block; }
   .bulk-bar-danger { margin-left: 0; padding-left: 0; border-left: 0; }
 }
 
@@ -2264,3 +2275,69 @@ th[data-sort][aria-sort="descending"]::after { content: " \2193"; color: var(--c
 .combo-option:focus-visible { background: var(--color-surface); outline: none; }
 .combo-option .hint { flex: none; }
 .combo-empty { margin: 0; padding: var(--space-2) var(--space-3); }
+
+/* --- Month calendar (Scheduling -> Calendar) --- */
+
+.calendar-scroll { overflow-x: auto; }
+.calendar-grid {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+.calendar-grid th {
+  padding: var(--space-2);
+  text-align: left;
+  font-size: 0.8rem;
+  color: var(--color-muted);
+  border-bottom: 1px solid var(--color-border);
+}
+.calendar-grid td {
+  vertical-align: top;
+  height: 6.5rem;
+  padding: var(--space-1) var(--space-2) var(--space-2);
+  border: 1px solid var(--color-border);
+}
+.calendar-day { font-size: 0.8rem; color: var(--color-muted); margin-bottom: var(--space-1); }
+.calendar-outside .calendar-day { opacity: 0.45; }
+.calendar-today { box-shadow: inset 0 0 0 2px var(--color-accent); }
+.calendar-today .calendar-day { color: var(--color-text); font-weight: 600; }
+.calendar-entry {
+  display: block;
+  margin-bottom: 2px;
+  padding: 1px var(--space-1);
+  border-left: 3px solid var(--color-border-strong);
+  border-radius: 2px;
+  font-size: 0.8rem;
+  line-height: 1.3;
+  color: var(--color-text);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+a.calendar-entry:hover { background: var(--color-surface-raised); }
+.calendar-time { color: var(--color-muted); }
+.calendar-task { border-left-color: var(--color-accent); }
+.calendar-window { border-left-color: var(--color-warn); }
+.calendar-batch { border-left-color: var(--color-ok); }
+.calendar-batch.calendar-flag { border-left-color: var(--color-danger); }
+.calendar-task.calendar-flag { opacity: 0.6; }
+.calendar-legend { display: flex; gap: var(--space-3); flex-wrap: wrap; }
+.calendar-legend .calendar-entry { display: inline-block; margin: 0; }
+
+/* Dashboard: the account's own order of sections. */
+.dashboard-arrange { margin: 0 0 var(--space-3); }
+.dashboard-arrange > summary { cursor: pointer; color: var(--color-muted); }
+.dashboard-arrange-list { list-style: none; margin: var(--space-2) 0; padding: 0; max-width: 34rem; }
+.dashboard-arrange-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.dashboard-arrange-name { flex: 1; }
+.dashboard-arrange-list li.is-hidden .dashboard-arrange-name { color: var(--color-muted); }
