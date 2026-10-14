@@ -166,6 +166,17 @@ class AppSettings(Base):
         Integer, nullable=True, default=90
     )
 
+    # Recording of browser terminal sessions (app.db.models.
+    # terminal_recording). Off unless a superadmin turns it on: a
+    # recording holds everything a session printed. Recordings are kept
+    # for a bounded time by default (30 days); NULL = keep forever.
+    terminal_recording_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+    terminal_recording_retention_days: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=30, server_default="30"
+    )
+
     # Same idea again, for `HoneypotMonitoringSample`/`HoneypotReachabilitySample`
     # rows (app.tasks.jobs.purge_old_monitoring_samples) — a row is taken
     # every `MONITORING_INTERVAL_SECONDS` for every honeypot with a pinned

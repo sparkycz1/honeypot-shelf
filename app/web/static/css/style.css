@@ -2264,3 +2264,12 @@ th[data-sort][aria-sort="descending"]::after { content: " \2193"; color: var(--c
 .combo-option:focus-visible { background: var(--color-surface); outline: none; }
 .combo-option .hint { flex: none; }
 .combo-empty { margin: 0; padding: var(--space-2) var(--space-3); }
+
+/* Audit -> Terminal recordings: the player's controls. */
+.player-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; margin: 0 0 var(--space-2); }
+
+/* --- A watched file's last change (honeypot -> Watched files) --- */
+.file-diff span { display: block; }
+.file-diff .diff-add { color: var(--color-ok); }
+.file-diff .diff-del { color: var(--color-danger); }
+.file-diff .diff-hunk { color: var(--color-muted); }
