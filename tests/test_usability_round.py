@@ -291,16 +291,24 @@ async def test_bulk_bar_waits_for_a_selection_and_sets_danger_apart(
 
 
 @pytest.mark.asyncio
-async def test_honeypot_table_cells_carry_their_column_name_for_the_card_layout(
+async def test_honeypot_table_becomes_cards_on_a_phone(
     client: Any, db_session_factory: Any
 ) -> None:
+    """Ported from debcontrol's `.machine-table`: one markup, drawn as a
+    card per honeypot on a narrow screen, with the tick box on the left,
+    "select all" kept, and only the `col-card` columns besides name,
+    status and updates."""
     await _honeypot(db_session_factory)
     page = (await client.get("/honeypots")).text
     assert '<table class="data-table honeypot-table">' in page
-    for label in ("Name", "Tags", "Company", "Status"):
-        assert f'<td data-label="{label}">' in page, label
+    assert 'data-select-all="honeypot_ids"' in page
+    # IP address, company and host key stay on the card; tags, hostname
+    # and the "Details" link do not.
+    assert page.count('class="col-optional col-card') == 3
+    assert page.count('<td class="col-optional">') == 3
     css = (_STATIC / "css" / "style.css").read_text(encoding="utf-8")
-    assert ".honeypot-table td[data-label]::before" in css
+    assert ".honeypot-table thead th:first-child { display: block;" in css
+    assert ".honeypot-table tbody td.col-optional.col-card { display: block; }" in css
 
 
 # --- Tabs, empty pages, quiet refreshes ----------------------------------

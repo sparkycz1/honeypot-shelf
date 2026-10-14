@@ -5,6 +5,37 @@
 {% block content %}
   <h1 data-live-fleet>{{ t(request, "nav.dashboard") }}</h1>
 
+  {% if arrangeable | length > 1 %}
+  <details class="dashboard-arrange" {{ 'open' if layout_open else '' }}>
+    <summary>{{ t(request, "dashboard.arrange.summary") }}</summary>
+    <p class="hint">{{ t(request, "dashboard.arrange.hint") }}</p>
+    <ol class="dashboard-arrange-list">
+      {% for key in arrangeable %}
+        {% set is_hidden = key in layout.hidden %}
+        <li class="{{ 'is-hidden' if is_hidden else '' }}">
+          <span class="dashboard-arrange-name">{{ t(request, "dashboard.section." ~ key) }}</span>
+          {% if is_hidden %}<span class="badge">{{ t(request, "dashboard.arrange.hidden") }}</span>{% endif %}
+          <form method="post" action="/dashboard/layout" class="inline-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="section" value="{{ key }}">
+            <button type="submit" name="action" value="up" class="link-button" {{ 'disabled' if loop.first else '' }}
+                    aria-label="{{ t(request, 'dashboard.arrange.up', section=t(request, 'dashboard.section.' ~ key)) }}">&uarr;</button>
+            <button type="submit" name="action" value="down" class="link-button" {{ 'disabled' if loop.last else '' }}
+                    aria-label="{{ t(request, 'dashboard.arrange.down', section=t(request, 'dashboard.section.' ~ key)) }}">&darr;</button>
+            <button type="submit" name="action" value="{{ 'show' if is_hidden else 'hide' }}" class="link-button">{{ t(request, "dashboard.arrange.show" if is_hidden else "dashboard.arrange.hide") }}</button>
+          </form>
+        </li>
+      {% endfor %}
+    </ol>
+    {% if not layout.is_default %}
+      <form method="post" action="/dashboard/layout" class="inline-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" name="action" value="reset" class="button button-secondary">{{ t(request, "dashboard.arrange.reset") }}</button>
+      </form>
+    {% endif %}
+  </details>
+  {% endif %}
+
   {# Live-refreshed the moment any honeypot's reachability changes or a new
      OpenCanary event comes in anywhere in view — see
      app/web/static/js/live-updates.js and app/services/live_updates.py.

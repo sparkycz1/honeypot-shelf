@@ -1,7 +1,7 @@
 """Hardware inventory and warranties
 
 Revision ID: d1e3f5a7b9c4
-Revises: b8c0d2e4f6a9
+Revises: c9d1e3f5a7b2
 Create Date: 2026-10-14
 
 Eight nullable columns on honeypots (what the hardware says it is, and
@@ -21,7 +21,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "d1e3f5a7b9c4"
-down_revision: str | None = "b8c0d2e4f6a9"
+down_revision: str | None = "c9d1e3f5a7b2"
 branch_labels: Sequence[str] | str | None = None
 depends_on: Sequence[str] | str | None = None
 
