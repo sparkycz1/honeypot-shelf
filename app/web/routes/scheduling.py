@@ -42,6 +42,7 @@ from app.scheduling.cron import compute_next_run, next_runs
 from app.scheduling.jobs import run_scheduled_task
 from app.scheduling.targets import decode_target, encode_target, task_within_scope
 from app.schemas.scheduled_task import ScheduledTaskCreate
+from app.services import month_calendar
 from app.web.templating import t, templates
 
 router = APIRouter(prefix="/scheduling")
@@ -198,6 +199,27 @@ async def list_scheduled_tasks(
     if new_cookie:
         set_csrf_cookie(response, new_cookie)
     return response
+
+
+@router.get("/calendar", dependencies=[_write])
+async def scheduling_calendar(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    month: str = "",
+) -> Response:
+    """One month of scheduled runs, maintenance windows and update
+    batches (`app.services.month_calendar`)."""
+    today = datetime.now(zone(get_settings().tz)).date()
+    year, month_number = month_calendar.parse_month(month, today)
+    return templates.TemplateResponse(
+        request,
+        "scheduling/calendar.html",
+        {
+            "calendar": await month_calendar.build(db, current_user, year, month_number),
+            "this_month": f"{today.year:04d}-{today.month:02d}",
+        },
+    )
 
 
 @router.get("/new", dependencies=[_write])

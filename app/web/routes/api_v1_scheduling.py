@@ -18,7 +18,8 @@ from sqlalchemy.orm import selectinload
 from app.audit import log_event
 from app.auth.dependencies import get_api_token_user, require_api_write
 from app.auth.scope import has_company_access
-from app.core.timezones import is_valid_timezone
+from app.core.config import get_settings
+from app.core.timezones import is_valid_timezone, zone
 from app.db.models.honeypot import Honeypot
 from app.db.models.scheduled_task import ScheduledTask
 from app.db.models.user import User
@@ -27,6 +28,7 @@ from app.scheduling.cron import compute_next_run, next_runs
 from app.scheduling.jobs import run_scheduled_task
 from app.scheduling.targets import task_within_scope
 from app.schemas.scheduled_task import ScheduledTaskCreate
+from app.services import month_calendar
 
 router = APIRouter(prefix="/api/v1/scheduling")
 
@@ -129,6 +131,27 @@ async def list_scheduled_tasks_api(
 ) -> list[dict[str, object]]:
     result = await db.execute(select(ScheduledTask).order_by(ScheduledTask.name))
     return [_task_to_dict(t) for t in result.scalars().all() if task_within_scope(user, t)]
+
+
+@router.get("/calendar", dependencies=[_view])
+async def scheduling_calendar_api(
+    month: str = "",
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_token_user),
+) -> dict[str, object]:
+    """One month (`YYYY-MM`, default the current one) of what is planned
+    and what happened, per day of the instance's time zone: `task` entries
+    (a scheduled task due; `count` > 1 when it runs many times that day,
+    `flag` when it is disabled), `window` entries (a maintenance window
+    covering the day; `flag` when it pauses scheduled tasks) and `batch`
+    entries (an update batch started that day; `label` is the number of
+    honeypots, `count` how many failed). Limited to what the account may
+    see: maintenance windows and batches need write access, like their own
+    pages."""
+    today = datetime.now(zone(get_settings().tz)).date()
+    year, month_number = month_calendar.parse_month(month, today)
+    built = await month_calendar.build(db, user, year, month_number)
+    return {"month": built.key, "days": [day.as_dict() for day in built.days]}
 
 
 @router.get("/cron-preview", dependencies=[_view])

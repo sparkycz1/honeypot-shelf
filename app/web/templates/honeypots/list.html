@@ -248,6 +248,8 @@
           {% endfor %}
         </div>
       {% else %}
+        {# On a phone each row is drawn as a card (`.honeypot-table` in
+           style.css) — same markup, no second view to keep in step. #}
         <table class="data-table honeypot-table">
           <thead>
             <tr>
@@ -268,30 +270,30 @@
               <tr>
                 <td><input type="checkbox" name="honeypot_ids" value="{{ honeypot.id }}"
                            aria-label="{{ t(request, 'honeypots.list.select_aria', name=honeypot.name) }}"></td>
-                <td data-label="{{ t(request, 'honeypots.table.name') }}">
+                <td>
                   {{ render_os_badge(honeypot.os_id) }}
                   <a href="/honeypots/{{ honeypot.id }}">{{ honeypot.name }}</a>
                 </td>
-                <td data-label="{{ t(request, 'honeypots.table.tags') }}">
+                <td class="col-optional">
                   {% if honeypot.tags %}
                     {{ tag_chips(honeypot) }}
                   {% else %}
                     <span class="hint">—</span>
                   {% endif %}
                 </td>
-                <td data-label="{{ t(request, 'honeypots.table.ip') }}">{{ honeypot.ip_address }}</td>
-                <td data-label="{{ t(request, 'honeypots.table.hostname') }}">{{ honeypot.discovered_hostname or '—' }}</td>
-                <td data-label="{{ t(request, 'honeypots.table.company') }}">
+                <td class="col-optional col-card table-muted">{{ honeypot.ip_address }}</td>
+                <td class="col-optional">{{ honeypot.discovered_hostname or '—' }}</td>
+                <td class="col-optional col-card">
                   {% if honeypot.companies %}
                     {% for company in honeypot.companies %}<a href="/companies/{{ company.id }}">{{ company.name }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
                   {% else %}
                     <span class="hint">—</span>
                   {% endif %}
                 </td>
-                <td data-label="{{ t(request, 'honeypots.table.status') }}">{{ status_badge(request, honeypot) }}</td>
-                {% if request.state.user.can_write() %}<td data-label="{{ t(request, 'honeypots.table.updates') }}">{% include "partials/honeypot_update_status_cell.html" %}</td>{% endif %}
-                <td data-label="{{ t(request, 'honeypots.table.host_key') }}">{{ host_key_badge(request, honeypot) }}</td>
-                <td><a href="/honeypots/{{ honeypot.id }}">{{ t(request, 'honeypots.table.details') }}</a></td>
+                <td>{{ status_badge(request, honeypot) }}</td>
+                {% if request.state.user.can_write() %}<td>{% include "partials/honeypot_update_status_cell.html" %}</td>{% endif %}
+                <td class="col-optional col-card">{{ host_key_badge(request, honeypot) }}</td>
+                <td class="col-optional"><a href="/honeypots/{{ honeypot.id }}">{{ t(request, 'honeypots.table.details') }}</a></td>
               </tr>
             {% endfor %}
           </tbody>
