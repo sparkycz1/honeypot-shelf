@@ -103,6 +103,10 @@ _DEFAULT_TEMPLATES: dict[str, dict[str, tuple[str, str]]] = {
             "Honeypot Shelf: {honeypot_name} needs a reboot",
             "{honeypot_name} reports a reboot is pending after an update. As of {timestamp}.",
         ),
+        "file_changed": (
+            "Honeypot Shelf: a watched file changed on {honeypot_name}",
+            "Watched files that changed on {honeypot_name}: {details}. As of {timestamp}.",
+        ),
         "warranty_ending": (
             "Honeypot Shelf: the warranty of {honeypot_name} ends soon",
             "{honeypot_name}: {details}. As of {timestamp}.",
@@ -135,6 +139,10 @@ _DEFAULT_TEMPLATES: dict[str, dict[str, tuple[str, str]]] = {
         "reboot_required": (
             "Honeypot Shelf: {honeypot_name} potřebuje restart",
             "{honeypot_name} hlásí, že po aktualizaci čeká na restart. Stav k {timestamp}.",
+        ),
+        "file_changed": (
+            "Honeypot Shelf: na {honeypot_name} se změnil hlídaný soubor",
+            "Hlídané soubory, které se na {honeypot_name} změnily: {details}. Stav k {timestamp}.",
         ),
         "warranty_ending": (
             "Honeypot Shelf: záruka {honeypot_name} brzy končí",
@@ -535,8 +543,9 @@ async def notify_health(
     db: AsyncSession | None = None,
 ) -> None:
     """Tell `rules` about a health problem that just appeared on `honeypot`
-    (`kind` is DISK_FULL, SERVICE_FAILED, REBOOT_REQUIRED or WARRANTY_ENDING;
-    `details` names the mounts or units, or the warranty's end). The caller decides *when* — see
+    (`kind` is DISK_FULL, SERVICE_FAILED, REBOOT_REQUIRED, FILE_CHANGED or
+    WARRANTY_ENDING; `details` names the mounts, units or files, or the
+    warranty's end). The caller decides *when* — see
     `app.tasks.jobs._announce_health`."""
     timestamp = datetime.now(UTC).isoformat()
     context = {"honeypot_name": honeypot.name, "details": details, "timestamp": timestamp}

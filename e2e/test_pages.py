@@ -50,6 +50,7 @@ PAGES = [
     "/companies",
     "/users",
     "/audit",
+    "/audit/terminal-recordings",
     "/settings",
     "/settings?tab=checks",
     "/settings?tab=security",
@@ -64,6 +65,13 @@ PAGES = [
 # The app's live updates need Redis pub/sub, which this run does not have:
 # the socket is refused and the page falls back to polling, by design.
 _EXPECTED_NOISE = ("/live/ws",)
+
+# xterm.js creates its DOM renderer when the terminal opens, and that one
+# injects <style> elements this app's CSP refuses — on purpose: the WebGL
+# addon takes over right after and `css/xterm-csp.css` covers the fallback
+# (see static/js/terminal.js). Expected on a page with a terminal, and only
+# there. Chromium has worded it both ways.
+_XTERM_NOISE = ("Applying inline style violates", "Refused to apply inline style")
 
 
 def _free_port() -> int:
@@ -131,12 +139,13 @@ def page(server: tuple[str, str], browser: Any) -> Iterator[Any]:
             return
         location = message.location.get("url", "")
         text = f"{message.text} ({location})"
-        if not any(noise in text for noise in _EXPECTED_NOISE):
+        if not any(noise in text for noise in page.expected_noise):
             problems.append(text)
 
     page.on("console", on_console)
     page.on("pageerror", lambda error: problems.append(f"uncaught: {error}"))
     page.problems = problems
+    page.expected_noise = list(_EXPECTED_NOISE)
     yield page
     context.close()
 
@@ -175,13 +184,21 @@ def _first_href(page: Any, list_path: str, prefix: str) -> str:
 def test_honeypot_tabs_load_without_browser_errors(page: Any) -> None:
     honeypot = _first_href(page, "/honeypots", "/honeypots/")
     # Not Terminal or Config: both open an SSH session to the honeypot.
-    for tab in ("", "/monitoring", "/status", "/history", "/updates", "/logs"):
+    for tab in ("", "/monitoring", "/status", "/history", "/updates", "/logs", "/files"):
         _open(page, honeypot + tab)
 
 
 def test_detail_pages_load_without_browser_errors(page: Any) -> None:
     _open(page, _first_href(page, "/companies", "/companies/"))
     _open(page, _first_href(page, "/events", "/events/"))
+    recording = _first_href(page, "/audit/terminal-recordings", "/audit/terminal-recordings/")
+    page.expected_noise.extend(_XTERM_NOISE)
+    _open(page, recording)
+    # The player fetched the recording and drew a terminal for it.
+    page.locator("#player-play:not([disabled])").wait_for()
+    page.locator("#player-play").click()
+    page.locator("#terminal-player .xterm").wait_for()
+    assert page.problems == []
 
 
 def test_slash_focuses_the_header_search(page: Any) -> None:

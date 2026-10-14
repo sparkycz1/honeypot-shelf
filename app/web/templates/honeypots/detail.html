@@ -111,6 +111,7 @@
     </dd>
     <dt>{{ t(request, 'honeypots.detail.notes') }}</dt><dd>{{ honeypot.description or '—' }}</dd>
   </dl>
+  <p class="hint"><a href="/honeypots/{{ honeypot.id }}/files">{{ t(request, "watched_files.link") }}</a></p>
 
   {% if honeypot.runbook %}
     <section class="panel runbook">

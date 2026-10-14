@@ -368,6 +368,7 @@ def _parse_rule_form(
             "notify_on_disk_full",
             "notify_on_service_failed",
             "notify_on_reboot_required",
+            "notify_on_file_changed",
             "notify_on_warranty_ending",
         )
     }

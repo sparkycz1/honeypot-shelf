@@ -88,7 +88,7 @@
 
     <p class="hint">{{ t(request, "notifications.rule.health_hint") }}</p>
     {# "Reboot needed" and a warranty are about maintaining honeypots: only for accounts that may. #}
-    {% for name in ("disk_full", "service_failed", "reboot_required", "warranty_ending") if name not in ("reboot_required", "warranty_ending") or user.can_write() %}
+    {% for name in ("disk_full", "service_failed", "reboot_required", "file_changed", "warranty_ending") if name not in ("reboot_required", "warranty_ending") or user.can_write() %}
       <label class="checkbox-row">
         <input type="checkbox" name="notify_on_{{ name }}" {% if rule and rule["notify_on_" ~ name] %}checked{% endif %}>
         {{ t(request, "notifications.rule.event_" ~ name) }}

@@ -142,6 +142,11 @@ class NotificationRule(Base):
     notify_on_reboot_required: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false", nullable=False
     )
+    # A watched file changed (`app.services.watched_files`) — sent every
+    # time one does, naming the file and how many lines, never the content.
+    notify_on_file_changed: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
     # A honeypot's warranty ends within `warranty_notice_days` days
     # (`app.services.hardware_inventory`, `app.tasks.jobs.
     # _announce_warranties`) — once per rule and recorded end date.

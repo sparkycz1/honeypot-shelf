@@ -95,6 +95,7 @@ from app.services import (
     honeypot_compare,
     honeypot_timeline,
     update_batches,
+    watched_files,
 )
 from app.services.honeypot_actions import (
     send_power_to_honeypots,
@@ -2157,6 +2158,77 @@ async def set_honeypot_asset_api(
         },
     )
     return hardware_inventory.as_dict(honeypot) or {}
+
+
+class _WatchedFiles(BaseModel):
+    paths: list[str] = Field(max_length=watched_files.MAX_FILES)
+
+
+@router.get("/honeypots/{honeypot_id}/watched-files", dependencies=[_view_honeypots])
+async def watched_files_api(
+    honeypot_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_token_user),
+) -> list[dict[str, object]]:
+    """The files watched for changes on this honeypot: path, state
+    (`pending` / `ok` / `missing` / `unreadable` / `too_large`), when last
+    read and last changed, and by how many lines. Never the content."""
+    honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
+    return [watched_files.as_dict(row) for row in await watched_files.list_files(db, honeypot.id)]
+
+
+@router.put("/honeypots/{honeypot_id}/watched-files", dependencies=[_manage_honeypots])
+async def set_watched_files_api(
+    request: Request,
+    honeypot_id: uuid.UUID,
+    payload: _WatchedFiles,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_token_user),
+) -> list[dict[str, object]]:
+    """Replace the list of watched files (full paths; at most 20). A file
+    dropped from the list is forgotten together with what was stored of
+    it, and the default list is never put back on this honeypot."""
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, user)
+    try:
+        wanted = watched_files.parse_paths("\n".join(payload.paths))
+    except watched_files.WatchedFilesError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
+    added, removed = await watched_files.set_paths(db, honeypot, wanted)
+    if added or removed:
+        await log_event(
+            db,
+            request=request,
+            action="honeypot.watched_files.update",
+            summary=f'Changed the watched files of "{honeypot.name}"',
+            target_type="honeypot",
+            target_id=honeypot.id,
+            target_label=honeypot.name,
+            details={"file": wanted, "added": added, "removed": removed},
+        )
+    if wanted and honeypot.host_key_fingerprint:
+        tasks.check_watched_files.delay(str(honeypot.id))
+    return [watched_files.as_dict(row) for row in await watched_files.list_files(db, honeypot.id)]
+
+
+@router.get(
+    "/honeypots/{honeypot_id}/watched-files/{file_id}/diff", dependencies=[_manage_honeypots]
+)
+async def watched_file_diff_api(
+    honeypot_id: uuid.UUID,
+    file_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_token_user),
+) -> dict[str, object]:
+    """The last change of one watched file as a unified diff. File
+    content, hence write access to the honeypot."""
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, user)
+    rows = await watched_files.list_files(db, honeypot.id)
+    row = next((r for r in rows if r.id == file_id), None)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found.")
+    return {**watched_files.as_dict(row), "diff": "\n".join(watched_files.diff_of(row))}
 
 
 @router.post("/honeypots/{honeypot_id}/acknowledge", dependencies=[_manage_honeypots])

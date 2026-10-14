@@ -67,4 +67,8 @@ async def get_settings_api(db: AsyncSession = Depends(get_db)) -> dict[str, obje
         "login_max_failed_attempts": app_settings.login_max_failed_attempts,
         "login_lockout_minutes": app_settings.login_lockout_minutes,
         "login_allowed_networks": (app_settings.login_allowed_networks or "").split() or [],
+        # Read-only here: whether terminal sessions are recorded is decided
+        # by a person on Settings -> Security, not by a script.
+        "terminal_recording_enabled": app_settings.terminal_recording_enabled,
+        "terminal_recording_retention_days": app_settings.terminal_recording_retention_days,
     }
