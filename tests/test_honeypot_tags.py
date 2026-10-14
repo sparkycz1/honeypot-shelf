@@ -6,11 +6,7 @@ partials/honeypot_search_form.html)."""
 
 from __future__ import annotations
 
-import pytest
-
 from tests.conftest import create_company
-
-pytestmark = pytest.mark.asyncio
 
 
 async def _create_honeypot(

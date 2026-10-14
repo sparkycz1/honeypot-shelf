@@ -7,7 +7,6 @@ database - same reasoning as `tests/test_geoip.py`."""
 
 from __future__ import annotations
 
-import pytest
 from sqlalchemy import select
 
 from app.db.models.company import Company
@@ -17,8 +16,6 @@ from app.services.geoip import GeoLocation
 from app.ssh.canary_activity import LogPollResult
 from app.tasks.jobs import _poll_honeypot_canary_log
 from tests.conftest import create_company
-
-pytestmark = pytest.mark.asyncio
 
 
 async def _make_honeypot(db_session_factory, company_id):

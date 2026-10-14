@@ -21,8 +21,6 @@ from app.db.models.user import AccessLevel, AuthProvider, User
 from app.services.webhook import UnsafeWebhookTargetError, validate_webhook_url
 from tests.conftest import _create_user, create_company
 
-pytestmark = pytest.mark.asyncio
-
 
 def _csrf_from(response) -> str:
     match = re.search(r'name="csrf_token" value="([^"]+)"', response.text)

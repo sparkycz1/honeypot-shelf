@@ -9,7 +9,6 @@ import re
 import uuid
 from datetime import UTC, datetime, timedelta
 
-import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
@@ -27,8 +26,6 @@ from app.scheduling.jobs import _run_scheduled_task
 from app.services import maintenance_windows
 from app.services.notifications import notify_alert, notify_unavailable
 from tests.conftest import create_company
-
-pytestmark = pytest.mark.asyncio
 
 NOW = datetime.now(UTC)
 

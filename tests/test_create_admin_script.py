@@ -16,8 +16,6 @@ from sqlalchemy import select
 
 from app.db.models.user import AuthProvider, User
 
-pytestmark = pytest.mark.asyncio
-
 
 async def test_create_admin_creates_a_superadmin_with_no_memberships(
     db_session_factory, monkeypatch

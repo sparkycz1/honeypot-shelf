@@ -8,12 +8,8 @@ import json
 import uuid
 from datetime import UTC, datetime
 
-import pytest
-
 from app.audit_syslog import _rfc5424_message, forward_to_syslog
 from app.db.models.audit_log import AuditLogEntry, AuditOutcome
-
-pytestmark = pytest.mark.asyncio
 
 
 def _make_entry(**overrides: object) -> AuditLogEntry:

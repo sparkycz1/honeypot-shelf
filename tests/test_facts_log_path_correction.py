@@ -9,16 +9,12 @@ triggers a canary-log poll, rather than making an operator wait."""
 
 from __future__ import annotations
 
-import pytest
-
 from app.db.models.company import Company
 from app.db.models.honeypot import AuthMethod, Honeypot
 from app.ssh.facts import HoneypotFacts
 from app.ssh.hardware import Hardware
 from app.tasks.jobs import _refresh_honeypot_facts
 from tests.conftest import create_company
-
-pytestmark = pytest.mark.asyncio
 
 
 def _fake_facts(*, opencanary_log_path: str | None) -> HoneypotFacts:

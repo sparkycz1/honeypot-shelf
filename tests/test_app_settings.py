@@ -3,11 +3,7 @@
 
 from __future__ import annotations
 
-import pytest
-
 from app.core.app_settings import get_or_create_app_settings
-
-pytestmark = pytest.mark.asyncio
 
 
 async def test_audit_log_retention_defaults_to_90_days(db_session_factory):

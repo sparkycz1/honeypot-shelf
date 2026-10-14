@@ -1,6 +1,6 @@
 [project]
 name = "honeypot-shelf"
-version = "0.81.0"
+version = "0.81.1"
 description = "Management and monitoring overview for a fleet of OpenCanary honeypots, across multiple companies"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -100,6 +100,9 @@ e2e = [
 
 [tool.uv]
 package = false
+# `.python-version` pins Python 3.14.8, which older uv releases can't
+# download — fail with a clear "update uv" message instead.
+required-version = ">=0.13"
 # Never resolve to an alpha/beta/rc, even when a newer stable dependency
 # (e.g. redis-py beyond kombu's cap) is only satisfiable by one.
 prerelease = "disallow"
@@ -194,3 +197,7 @@ check_untyped_defs = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+filterwarnings = [
+    # ldap3 still imports pyasn1's deprecated tagMap/typeMap; not ours to fix.
+    "ignore:(tag|type)Map is deprecated:DeprecationWarning:ldap3",
+]

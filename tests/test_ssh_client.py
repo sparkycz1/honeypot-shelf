@@ -13,7 +13,6 @@ from app.ssh.exceptions import HostKeyMismatchError, UnknownHostKeyError
 
 FINGERPRINT_HASH = "sha256"
 
-pytestmark = pytest.mark.asyncio
 
 
 # --- FIPS-aligned channel algorithms — see wiki/Architecture.md's "FIPS

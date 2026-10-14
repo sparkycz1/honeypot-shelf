@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-import pytest
 from sqlalchemy import select
 
 from app.auth.api_tokens import create_api_token
@@ -15,8 +14,6 @@ from app.db.models.honeypot import Honeypot
 from app.db.models.honeypot_event import HoneypotEvent
 from app.db.models.user import AccessLevel, User
 from tests.conftest import create_company
-
-pytestmark = pytest.mark.asyncio
 
 
 async def _bearer_user_and_events(

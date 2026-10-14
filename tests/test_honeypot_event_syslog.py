@@ -13,16 +13,12 @@ import json
 import uuid
 from datetime import UTC, datetime
 
-import pytest
-
 from app.core.app_settings import get_or_create_app_settings
 from app.db.models.company import Company
 from app.db.models.honeypot import Honeypot
 from app.db.models.honeypot_event import HoneypotEvent
 from app.services.honeypot_event_syslog import _rfc5424_message, forward_honeypot_event_to_syslog
 from app.services.syslog_transport import SyslogProtocol
-
-pytestmark = pytest.mark.asyncio
 
 
 def _make_trio() -> tuple[Company, Honeypot, HoneypotEvent]:

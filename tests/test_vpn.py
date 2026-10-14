@@ -17,8 +17,6 @@ import pytest
 
 from app.services import netbird, wireguard
 
-pytestmark = pytest.mark.asyncio
-
 
 @pytest.fixture(autouse=True)
 def _assume_netbird_socket_exists(monkeypatch):

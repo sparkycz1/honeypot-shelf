@@ -10,7 +10,6 @@ which logs its own startup banner every few seconds. See
 
 from __future__ import annotations
 
-import pytest
 from sqlalchemy import select
 
 from app.db.models.company import Company
@@ -19,8 +18,6 @@ from app.db.models.honeypot_event import HoneypotEvent
 from app.ssh.canary_activity import LogPollResult
 from app.tasks.jobs import _poll_honeypot_canary_log
 from tests.conftest import create_company
-
-pytestmark = pytest.mark.asyncio
 
 
 async def test_poll_skips_internal_logtypes_but_keeps_real_alerts(db_session_factory, monkeypatch):

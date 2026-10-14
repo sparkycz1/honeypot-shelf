@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import pytest
 from sqlalchemy import select
 
 from app.db.models.company import Company
 from app.db.models.honeypot import Honeypot
 from app.db.models.user import AccessLevel
 from tests.conftest import create_company
-
-pytestmark = pytest.mark.asyncio
 
 
 async def test_superadmin_can_create_a_honeypot(client, db_session_factory):

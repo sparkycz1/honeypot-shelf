@@ -17,8 +17,6 @@ from app.db.models.user import User
 from app.scheduling.cron import compute_next_run, next_runs
 from tests.conftest import create_company
 
-pytestmark = pytest.mark.asyncio
-
 
 def _csrf_from(response) -> str:
     match = re.search(r'name="csrf_token" value="([^"]+)"', response.text)

@@ -5,16 +5,12 @@ alongside the existing "send command"/"update"/"power" actions. See
 
 from __future__ import annotations
 
-import pytest
-
 from app.db.models.company import Company
 from app.db.models.honeypot import Honeypot
 from app.scheduling.actions import get_action
 from app.scheduling.builtin_actions import register_builtin_actions
 from app.services.honeypot_actions import trigger_canary_log_poll, trigger_monitoring_sample
 from tests.conftest import create_company
-
-pytestmark = pytest.mark.asyncio
 
 
 async def _pinned_honeypot(db_session_factory, company_id) -> Honeypot:

@@ -14,8 +14,6 @@ from app.db.models.user import AccessLevel
 from app.ssh.authorized_keys import build_authorized_keys_append_command
 from tests.conftest import create_company
 
-pytestmark = pytest.mark.asyncio
-
 _KEY_A = (
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJnUyBtmK6VX3dwD/W4wtBOuCSSvlrE6vilNRvPhSlwj alice@laptop"
 )

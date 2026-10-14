@@ -8,13 +8,9 @@ modes" gap, not a missing translation."""
 
 from __future__ import annotations
 
-import pytest
-
 from app.db.models.company import Company
 from app.db.models.honeypot import Honeypot
 from tests.conftest import create_company
-
-pytestmark = pytest.mark.asyncio
 
 
 async def _make_honeypot(db_session_factory, *, name: str = "acme-honey1"):

@@ -22,15 +22,17 @@ async def _seed(db_session_factory: Any) -> tuple[Any, Any]:
     atlas = await create_company(db_session_factory, name="Atlas Corp")
     other = await create_company(db_session_factory, name="Borealis")
     async with db_session_factory() as db:
+        atlas_row = await db.get(Company, atlas.id)
+        other_row = await db.get(Company, other.id)
         db.add_all(
             [
                 Honeypot(
-                    companies=[await db.get(Company, atlas.id)],
+                    companies=[atlas_row],
                     name="atlas-honey1",
                     ip_address="10.0.0.1",
                 ),
                 Honeypot(
-                    companies=[await db.get(Company, other.id)],
+                    companies=[other_row],
                     name="borealis-atlas-decoy",
                     ip_address="10.0.0.2",
                 ),

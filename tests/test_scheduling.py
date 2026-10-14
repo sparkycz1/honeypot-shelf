@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import re
 
-import pytest
 from sqlalchemy import select
 
 from app.db import session as db_session_module
@@ -14,8 +13,6 @@ from app.db.models.scheduled_task_run import ScheduledTaskRun, ScheduledTaskRunO
 from app.db.models.user import AccessLevel
 from app.scheduling.jobs import _run_scheduled_task
 from tests.conftest import create_company
-
-pytestmark = pytest.mark.asyncio
 
 
 def _csrf_from(response) -> str:

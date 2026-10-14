@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-import pytest
-
 from app.core.app_settings import get_or_create_app_settings
 from app.db.models.company import Company
 from app.db.models.honeypot import Honeypot
@@ -19,8 +17,6 @@ from app.db.models.user import AuthProvider, User
 from app.ssh.reachability import ReachabilityResult
 from app.tasks.jobs import _ping_all_honeypots
 from tests.conftest import create_company
-
-pytestmark = pytest.mark.asyncio
 
 
 async def _setup_honeypot_and_rule(

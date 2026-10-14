@@ -22,8 +22,6 @@ from app.db.models.user import User
 from app.services.notifications import notify_alert
 from tests.conftest import _create_user, create_company
 
-pytestmark = pytest.mark.asyncio
-
 
 async def _setup(db_session_factory: Any, *, throttle: int | None) -> tuple[Any, Any, Any]:
     company = await create_company(db_session_factory)
