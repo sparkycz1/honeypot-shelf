@@ -46,6 +46,8 @@ class NotificationKind(enum.StrEnum):
     REBOOT_REQUIRED = "reboot_required"
     # A watched file changed — see `app.services.watched_files`.
     FILE_CHANGED = "file_changed"
+    # A honeypot's warranty ends soon — see `app.services.hardware_inventory`.
+    WARRANTY_ENDING = "warranty_ending"
 
 
 

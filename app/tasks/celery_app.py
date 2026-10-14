@@ -308,6 +308,10 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.jobs.purge_old_terminal_recordings",
         "schedule": crontab(hour=2, minute=16),
     },
+    "announce-warranties": {
+        "task": "app.tasks.jobs.announce_warranties",
+        "schedule": crontab(hour=8, minute=7),
+    },
     "purge-old-notification-logs": {
         "task": "app.tasks.jobs.purge_old_notification_logs",
         "schedule": crontab(hour=2, minute=17),

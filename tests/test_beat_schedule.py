@@ -37,6 +37,7 @@ _EXPECTED_SCHEDULE_TASKS = {
     "fail-stale-update-runs": "app.tasks.jobs.fail_stale_update_runs",
     "purge-old-honeypot-update-runs": "app.tasks.jobs.purge_old_honeypot_update_runs",
     "purge-old-terminal-recordings": "app.tasks.jobs.purge_old_terminal_recordings",
+    "announce-warranties": "app.tasks.jobs.announce_warranties",
     "purge-old-notification-logs": "app.tasks.jobs.purge_old_notification_logs",
     "record-company-snapshots": "app.tasks.jobs.record_company_snapshots",
     "purge-old-company-snapshots": "app.tasks.jobs.purge_old_company_snapshots",

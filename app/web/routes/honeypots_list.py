@@ -11,7 +11,7 @@ import uuid
 from datetime import UTC, datetime
 from urllib.parse import urlparse
 
-from fastapi import Depends, Form, Query, Request, Response, status
+from fastapi import Depends, Form, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 from pydantic import ValidationError
 from sqlalchemy import func, select
@@ -40,6 +40,7 @@ from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.honeypot import HoneypotCreate
 from app.schemas.honeypot_config import HoneypotConfigExport
+from app.services import hardware_inventory, honeypot_compare
 from app.services.honeypot_actions import (
     send_power_to_honeypots,
     trigger_check_updates,
@@ -199,6 +200,7 @@ async def list_honeypots(
             "latest_monitoring": latest_monitoring,
             "csrf_token": csrf_token,
             "bulk_error": request.query_params.get("bulk_error"),
+            "compare_error": request.query_params.get("compare_error") == "1",
             "power_skipped": request.query_params.get("power_skipped"),
         },
     )
@@ -586,6 +588,24 @@ def _inventory_row(honeypot: Honeypot, *, with_updates: bool) -> dict[str, objec
     }
 
 
+@router.get("/hardware")
+async def hardware_inventory_page(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Physical honeypots with what they are and when their warranty ends
+    (`app.services.hardware_inventory`)."""
+    return templates.TemplateResponse(
+        request,
+        "honeypots/hardware.html",
+        {
+            "rows": await hardware_inventory.inventory(db, current_user),
+            "serial_of": hardware_inventory.serial_of,
+        },
+    )
+
+
 @router.get("/inventory.csv")
 async def export_honeypot_inventory(
     request: Request,
@@ -879,6 +899,68 @@ async def bulk_trigger_updates(
     if skipped:
         redirect_url += f"?skipped={skipped}"
     return RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/bulk/compare", dependencies=[need_manage, Depends(verify_csrf)])
+async def bulk_compare(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    honeypot_ids: list[uuid.UUID] = Form(default=[]),
+) -> Response:
+    """"Compare" in the honeypot list's bulk bar: exactly two ticked
+    honeypots lead to their comparison page. A POST only because the bar
+    is one form with a CSRF token; it changes nothing."""
+    honeypots = await _writable_pair(honeypot_ids, db, current_user)
+    if honeypots is None:
+        return RedirectResponse(
+            url="/honeypots?compare_error=1", status_code=status.HTTP_303_SEE_OTHER
+        )
+    first, second = sorted(honeypots, key=lambda h: h.name.lower())
+    return RedirectResponse(
+        url=f"/honeypots/compare?a={first.id}&b={second.id}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+async def _writable_pair(
+    honeypot_ids: list[uuid.UUID], db: AsyncSession, user: User
+) -> list[Honeypot] | None:
+    """Exactly two distinct honeypots the account may write, or None.
+    Write, not just read: the comparison shows installed packages, which
+    are for the accounts that maintain a honeypot."""
+    if len(set(honeypot_ids)) != 2:
+        return None
+    honeypots = [
+        h
+        for h in await _get_honeypots_by_ids(list(set(honeypot_ids)), db, user)
+        if can_write_honeypot(user, h)
+    ]
+    return honeypots if len(honeypots) == 2 else None
+
+
+@router.get("/compare", dependencies=[need_manage])
+async def compare_honeypots(
+    request: Request,
+    a: uuid.UUID,
+    b: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Two honeypots side by side: differing facts, packages and services
+    (`app.services.honeypot_compare`). Both must be honeypots the account
+    may write; nothing is run on either."""
+    pair = await _writable_pair([a, b], db, current_user)
+    if pair is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Honeypot not found.")
+    by_id = {h.id: h for h in pair}
+    return templates.TemplateResponse(
+        request,
+        "honeypots/compare.html",
+        {
+            "cmp": await honeypot_compare.compare(db, by_id[a], by_id[b]),
+            "max_rows": honeypot_compare.MAX_ROWS,
+        },
+    )
 
 
 @router.post("/bulk/power-confirm/{action}", dependencies=[need_power, Depends(verify_csrf)])

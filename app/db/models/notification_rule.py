@@ -72,6 +72,9 @@ MIN_DEBOUNCE_MINUTES = 1
 MAX_DEBOUNCE_MINUTES = 10_080  # 7 days
 # Upper bound for `NotificationRule.alert_throttle_minutes`.
 MAX_THROTTLE_MINUTES = 10_080  # 7 days
+# Bounds for `NotificationRule.warranty_notice_days`.
+MIN_WARRANTY_NOTICE_DAYS = 1
+MAX_WARRANTY_NOTICE_DAYS = 365
 # A disk is "about to fill" for `notify_on_disk_full` when its forecast
 # (`Honeypot.disk_forecast`) says it has this many days left or fewer.
 HEALTH_DISK_FULL_DAYS = 7
@@ -143,6 +146,15 @@ class NotificationRule(Base):
     # time one does, naming the file and how many lines, never the content.
     notify_on_file_changed: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false", nullable=False
+    )
+    # A honeypot's warranty ends within `warranty_notice_days` days
+    # (`app.services.hardware_inventory`, `app.tasks.jobs.
+    # _announce_warranties`) — once per rule and recorded end date.
+    notify_on_warranty_ending: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+    warranty_notice_days: Mapped[int] = mapped_column(
+        Integer, default=60, server_default="60", nullable=False
     )
 
     def wants_alert(self, event_type: str) -> bool:

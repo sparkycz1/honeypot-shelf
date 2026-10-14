@@ -107,6 +107,10 @@ _DEFAULT_TEMPLATES: dict[str, dict[str, tuple[str, str]]] = {
             "Honeypot Shelf: a watched file changed on {honeypot_name}",
             "Watched files that changed on {honeypot_name}: {details}. As of {timestamp}.",
         ),
+        "warranty_ending": (
+            "Honeypot Shelf: the warranty of {honeypot_name} ends soon",
+            "{honeypot_name}: {details}. As of {timestamp}.",
+        ),
     },
     "cs": {
         "alert": (
@@ -139,6 +143,10 @@ _DEFAULT_TEMPLATES: dict[str, dict[str, tuple[str, str]]] = {
         "file_changed": (
             "Honeypot Shelf: na {honeypot_name} se změnil hlídaný soubor",
             "Hlídané soubory, které se na {honeypot_name} změnily: {details}. Stav k {timestamp}.",
+        ),
+        "warranty_ending": (
+            "Honeypot Shelf: záruka {honeypot_name} brzy končí",
+            "{honeypot_name}: {details}. Stav k {timestamp}.",
         ),
     },
 }
@@ -535,8 +543,9 @@ async def notify_health(
     db: AsyncSession | None = None,
 ) -> None:
     """Tell `rules` about a health problem that just appeared on `honeypot`
-    (`kind` is DISK_FULL, SERVICE_FAILED, REBOOT_REQUIRED or FILE_CHANGED;
-    `details` names the mounts, units or files). The caller decides *when* — see
+    (`kind` is DISK_FULL, SERVICE_FAILED, REBOOT_REQUIRED, FILE_CHANGED or
+    WARRANTY_ENDING; `details` names the mounts, units or files, or the
+    warranty's end). The caller decides *when* — see
     `app.tasks.jobs._announce_health`."""
     timestamp = datetime.now(UTC).isoformat()
     context = {"honeypot_name": honeypot.name, "details": details, "timestamp": timestamp}
