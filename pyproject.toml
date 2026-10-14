@@ -1,18 +1,18 @@
 [project]
 name = "honeypot-shelf"
-version = "0.77.2"
+version = "0.77.3"
 description = "Management and monitoring overview for a fleet of OpenCanary honeypots, across multiple companies"
 readme = "README.md"
 requires-python = ">=3.14"
 license = { text = "PolyForm-Noncommercial-1.0.0" }
 
 dependencies = [
-    "fastapi>=0.142.2",
+    "fastapi>=0.143.0",
     "uvicorn[standard]>=0.54.0",
-    "pydantic>=2.13.5",
+    "pydantic>=2.14.1",
     "pydantic-settings>=2.15.0",
-    "sqlalchemy[asyncio]>=2.1.2",
-    "asyncpg>=0.31.0",
+    "sqlalchemy[asyncio]>=2.1.4",
+    "asyncpg>=0.32.0",
     "alembic>=1.20.0",
     # Note: the `redis-py` client library is independent from the Redis SERVER
     # version. Only the lower bound is pinned here — the real upper bound
@@ -24,7 +24,7 @@ dependencies = [
     # purge, snapshot rollups) — event ingestion itself is a plain, fast
     # synchronous DB write, not queued. See app/tasks/celery_app.py.
     "celery[redis]>=5.6.3",
-    "asyncssh>=2.24.0",
+    "asyncssh>=2.24.1",
     "jinja2>=3.1.6",
     "python-multipart>=0.0.32",
     "cryptography>=50.0.2",
@@ -43,7 +43,7 @@ dependencies = [
     # validation. Used together with Starlette's own SessionMiddleware (no
     # new dependency needed for that) to carry state/nonce across the
     # redirect to/from the provider.
-    "authlib>=1.8.0",
+    "authlib>=1.9.0",
     # HTTP client for this app's own outbound requests (push/chat
     # notifications, the GeoIP download, a remote logo) and for Authlib:
     # authlib.integrations.starlette_client (app/auth/oidc.py) imports its
@@ -78,11 +78,11 @@ dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "aiosqlite>=0.22.1",
-    "ruff>=0.16.10",
+    "ruff>=0.17.0",
     "mypy>=2.4.0",
     "python-dotenv>=1.2.4",
     "types-authlib>=1.8.0.20260911",
-    "types-croniter>=6.2.4.20260711",
+    "types-croniter>=6.2.4.20261006",
     "types-ldap3>=2.9.13.20260827",
     "types-qrcode>=8.2.0.20260518",
 ]
@@ -95,7 +95,7 @@ fuzz = [
 # The browser smoke test (`e2e/`, the `browser` job in ci.yml): every main
 # page in Chromium under the real CSP. Not part of the default `pytest` run.
 e2e = [
-    "playwright>=1.55.0",
+    "playwright>=1.64.0",
 ]
 
 [tool.uv]
