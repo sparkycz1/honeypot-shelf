@@ -32,7 +32,9 @@ from app.db.models.notification_log import NotificationChannel, NotificationLog
 from app.db.models.notification_rule import (
     MAX_DEBOUNCE_MINUTES,
     MAX_THROTTLE_MINUTES,
+    MAX_WARRANTY_NOTICE_DAYS,
     MIN_DEBOUNCE_MINUTES,
+    MIN_WARRANTY_NOTICE_DAYS,
     NotificationRule,
     NotificationScope,
 )
@@ -304,6 +306,25 @@ def _parse_delivery(
     return delivery
 
 
+def _warranty_notice_days(raw: str, errors: list[str]) -> int:
+    """How many days before a warranty ends to tell; 60 when empty. A bad
+    value adds to `errors` (and keeps the default)."""
+    text = raw.strip()
+    if not text:
+        return 60
+    try:
+        days = int(text)
+    except ValueError:
+        errors.append("The warranty notice must be a whole number of days.")
+        return 60
+    if not MIN_WARRANTY_NOTICE_DAYS <= days <= MAX_WARRANTY_NOTICE_DAYS:
+        errors.append(
+            f"The warranty notice must be {MIN_WARRANTY_NOTICE_DAYS} to "
+            f"{MAX_WARRANTY_NOTICE_DAYS} days."
+        )
+    return days
+
+
 def _parse_rule_form(
     form: FormData, *, has_token: bool = False
 ) -> tuple[dict[str, object], list[uuid.UUID], list[uuid.UUID], list[str]]:
@@ -343,7 +364,12 @@ def _parse_rule_form(
     notify_on_recovered = get("notify_on_recovered") == "on"
     health = {
         name: get(name) == "on"
-        for name in ("notify_on_disk_full", "notify_on_service_failed", "notify_on_reboot_required")
+        for name in (
+            "notify_on_disk_full",
+            "notify_on_service_failed",
+            "notify_on_reboot_required",
+            "notify_on_warranty_ending",
+        )
     }
     reachability = notify_on_alert or notify_on_unavailable or notify_on_recovered
     if not (reachability or any(health.values())):
@@ -380,6 +406,8 @@ def _parse_rule_form(
                     f"The alert throttle window must be 1 to {MAX_THROTTLE_MINUTES} minutes."
                 )
 
+    warranty_notice_days = _warranty_notice_days(str(get("warranty_notice_days") or ""), errors)
+
     def _text_override(field: str) -> str | None:
         return str(get(field) or "").strip() or None
 
@@ -395,6 +423,7 @@ def _parse_rule_form(
         "alert_throttle_minutes": alert_throttle_minutes,
         "alert_event_types": alert_event_types or None,
         **health,
+        "warranty_notice_days": warranty_notice_days,
         "alert_subject": _text_override("alert_subject"),
         "alert_body": _text_override("alert_body"),
         "unavailable_subject": _text_override("unavailable_subject"),

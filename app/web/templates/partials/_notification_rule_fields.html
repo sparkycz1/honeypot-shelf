@@ -87,13 +87,19 @@
            value="{{ rule.recovered_after_minutes if rule else 5 }}">
 
     <p class="hint">{{ t(request, "notifications.rule.health_hint") }}</p>
-    {# "Reboot needed" is about updates: only for accounts that maintain honeypots. #}
-    {% for name in ("disk_full", "service_failed", "reboot_required") if name != "reboot_required" or user.can_write() %}
+    {# "Reboot needed" and a warranty are about maintaining honeypots: only for accounts that may. #}
+    {% for name in ("disk_full", "service_failed", "reboot_required", "warranty_ending") if name not in ("reboot_required", "warranty_ending") or user.can_write() %}
       <label class="checkbox-row">
         <input type="checkbox" name="notify_on_{{ name }}" {% if rule and rule["notify_on_" ~ name] %}checked{% endif %}>
         {{ t(request, "notifications.rule.event_" ~ name) }}
       </label>
     {% endfor %}
+    {% if user.can_write() %}
+      <label for="{{ prefix }}-warranty-days">{{ t(request, "notifications.rule.warranty_days_label") }}</label>
+      <input type="number" id="{{ prefix }}-warranty-days" name="warranty_notice_days"
+             min="1" max="365" class="input-narrow"
+             value="{{ rule.warranty_notice_days if rule else 60 }}">
+    {% endif %}
   </fieldset>
 
   {# --- How: email or webhook --- #}

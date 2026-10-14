@@ -38,6 +38,7 @@ from app.db.session import get_db
 from app.schemas.honeypot import HoneypotUpdate
 from app.services import (
     acknowledgements,
+    hardware_inventory,
     honeypot_timeline,
     maintenance_windows,
 )
@@ -151,6 +152,15 @@ async def honeypot_detail(
             "events_24h": events_24h,
             "maintenance_window": await maintenance_windows.active_window_for(db, honeypot),
             "can_acknowledge": can_write,
+            "hardware_applies": hardware_inventory.applies(honeypot),
+            "hardware_serial": hardware_inventory.serial_of(honeypot),
+            "warranty_days_left": hardware_inventory.warranty_days_left(honeypot),
+            "warranty_soon_days": hardware_inventory.WARRANTY_SOON_DAYS,
+            "asset_error": (
+                request.query_params.get("asset_error")
+                if request.query_params.get("asset_error") in ("date", "year", "order")
+                else None
+            ),
             # Installed packages are for the accounts that maintain the
             # honeypot; a read-only account gets neither the panel nor the
             # counts.
@@ -1111,6 +1121,57 @@ async def delete_honeypot(
 
 
 # --- Acknowledging a problem (app.services.acknowledgements) ---------------
+
+
+@router.post("/{honeypot_id}/asset", dependencies=[need_manage, Depends(verify_csrf)])
+async def save_honeypot_asset(
+    request: Request,
+    honeypot_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    purchase_date: str = Form(""),
+    warranty_until: str = Form(""),
+    asset_serial: str = Form(""),
+    asset_note: str = Form(""),
+) -> Response:
+    """What a person records about a physical honeypot: when it was bought,
+    until when its warranty runs, a serial the hardware does not give."""
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
+    if not hardware_inventory.applies(honeypot):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A virtual machine has no hardware record.",
+        )
+    try:
+        hardware_inventory.apply_asset(
+            honeypot,
+            purchase_date=hardware_inventory.parse_date(purchase_date, "Purchased"),
+            warranty_until=hardware_inventory.parse_date(warranty_until, "Warranty until"),
+            asset_serial=asset_serial,
+            asset_note=asset_note,
+        )
+    except hardware_inventory.AssetError as exc:
+        return RedirectResponse(
+            url=f"/honeypots/{honeypot.id}?asset_error={exc.code}#hardware",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+    await db.commit()
+    await log_event(
+        db,
+        request=request,
+        action="honeypot.asset.update",
+        summary=f'Changed the hardware record of "{honeypot.name}"',
+        target_type="honeypot",
+        target_id=honeypot.id,
+        target_label=honeypot.name,
+        details={
+            "purchase_date": purchase_date.strip() or None,
+            "warranty_until": warranty_until.strip() or None,
+        },
+    )
+    return RedirectResponse(
+        url=f"/honeypots/{honeypot.id}#hardware", status_code=status.HTTP_303_SEE_OTHER
+    )
 
 
 @router.post("/{honeypot_id}/acknowledge", dependencies=[need_manage, Depends(verify_csrf)])

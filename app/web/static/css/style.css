@@ -2284,3 +2284,8 @@ th[data-sort][aria-sort="descending"]::after { content: " \2193"; color: var(--c
 }
 .batch-strip-item.is-current { border-color: var(--color-accent); font-weight: 600; }
 .batch-progress { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; }
+
+/* Compare two honeypots: a fact that differs stands out. */
+.compare-differs > th, .compare-differs > td { background: var(--color-surface-raised); }
+.compare-differs > th { border-left: 3px solid var(--color-warn); }
+.compare-added { color: var(--color-ok); }

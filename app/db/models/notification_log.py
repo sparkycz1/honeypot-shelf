@@ -44,6 +44,8 @@ class NotificationKind(enum.StrEnum):
     DISK_FULL = "disk_full"
     SERVICE_FAILED = "service_failed"
     REBOOT_REQUIRED = "reboot_required"
+    # A honeypot's warranty ends soon — see `app.services.hardware_inventory`.
+    WARRANTY_ENDING = "warranty_ending"
 
 
 

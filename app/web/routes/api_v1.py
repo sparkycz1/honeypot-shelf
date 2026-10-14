@@ -50,7 +50,7 @@ import asyncio
 import contextlib
 import re
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 # NOT the builtin `TimeoutError` — `celery.exceptions.TimeoutError` does not
@@ -89,7 +89,13 @@ from app.schemas.acknowledgement import AcknowledgeRequest
 from app.schemas.company import CompanyCreate
 from app.schemas.honeypot import HoneypotCreate, HoneypotUpdate
 from app.schemas.honeypot_config import HoneypotConfigExport
-from app.services import acknowledgements, honeypot_timeline, update_batches
+from app.services import (
+    acknowledgements,
+    hardware_inventory,
+    honeypot_compare,
+    honeypot_timeline,
+    update_batches,
+)
 from app.services.honeypot_actions import (
     send_power_to_honeypots,
     trigger_check_updates,
@@ -201,6 +207,9 @@ def _honeypot_to_dict(honeypot: Honeypot) -> dict[str, object]:
         # {mount: {bytes_per_day, days_until_full, used_bytes, size_bytes}}
         # — the hourly disk-full forecast (app.services.disk_forecast).
         "disk_forecast": honeypot.disk_forecast,
+        # Vendor, model, serial, purchase and warranty; null for a honeypot
+        # known to be virtual (app.services.hardware_inventory).
+        "hardware": hardware_inventory.as_dict(honeypot),
     }
 
 
@@ -338,6 +347,31 @@ async def list_honeypots_api(
     query = apply_tag_filter(query, tag, tag_mode if tag_mode == "and" else "or")
     result = await db.execute(query)
     return [_honeypot_for(user, m) for m in result.scalars().all()]
+
+
+@router.get("/honeypots/compare", dependencies=[_manage_honeypots])
+async def compare_honeypots_api(
+    a: uuid.UUID,
+    b: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_token_user),
+) -> dict[str, object]:
+    """What differs between honeypots `a` and `b`: tracked facts, installed
+    packages and systemd services, from what is already stored — the API
+    equivalent of the "Compare" page. Both must be honeypots this account
+    may write (packages are for the accounts that maintain a honeypot).
+    Package and service lists are not capped here. See
+    `app.services.honeypot_compare`."""
+    honeypots = {
+        h.id: h
+        for h in await visible_honeypots_by_ids(db, user, [a, b])
+        if can_write_honeypot(user, h)
+    }
+    if a == b or a not in honeypots or b not in honeypots:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Honeypot not found.")
+    return honeypot_compare.as_dict(
+        await honeypot_compare.compare(db, honeypots[a], honeypots[b])
+    )
 
 
 @router.get("/honeypots/package-search", dependencies=[_view_honeypots])
@@ -2051,6 +2085,78 @@ async def company_power_action_api(
     )
     return {"ok": True, "skipped": skipped}
 
+
+
+class _Asset(BaseModel):
+    purchase_date: date | None = None
+    warranty_until: date | None = None
+    serial: str | None = Field(default=None, max_length=128)
+    note: str | None = Field(default=None, max_length=255)
+
+
+@router.get("/hardware-inventory", dependencies=[_view_honeypots])
+async def hardware_inventory_api(
+    db: AsyncSession = Depends(get_db), user: User = Depends(get_api_token_user)
+) -> list[dict[str, object]]:
+    """Every honeypot that is not known to be virtual: vendor, model and
+    serial from its hardware, the purchase and warranty dates someone
+    recorded, and `warranty_days_left` (negative once it has ended).
+    Soonest warranty end first."""
+    return [
+        {
+            "honeypot_id": str(row.honeypot.id),
+            "honeypot_name": row.honeypot.name,
+            **(hardware_inventory.as_dict(row.honeypot) or {}),
+        }
+        for row in await hardware_inventory.inventory(db, user)
+    ]
+
+
+@router.put("/honeypots/{honeypot_id}/asset", dependencies=[_manage_honeypots])
+async def set_honeypot_asset_api(
+    request: Request,
+    honeypot_id: uuid.UUID,
+    payload: _Asset,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_token_user),
+) -> dict[str, object]:
+    """Record when a physical honeypot was bought, until when its warranty
+    runs, a serial number to use instead of the hardware's, and a note.
+    Sends the whole record: a field left out is cleared. 400 for a
+    virtual machine."""
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, user)
+    if not hardware_inventory.applies(honeypot):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A virtual machine has no hardware record.",
+        )
+    try:
+        hardware_inventory.apply_asset(
+            honeypot,
+            purchase_date=payload.purchase_date,
+            warranty_until=payload.warranty_until,
+            asset_serial=payload.serial or "",
+            asset_note=payload.note or "",
+        )
+    except hardware_inventory.AssetError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
+    await db.commit()
+    await log_event(
+        db,
+        request=request,
+        action="honeypot.asset.update",
+        summary=f'Changed the hardware record of "{honeypot.name}"',
+        target_type="honeypot",
+        target_id=honeypot.id,
+        target_label=honeypot.name,
+        details={
+            "purchase_date": str(payload.purchase_date) if payload.purchase_date else None,
+            "warranty_until": str(payload.warranty_until) if payload.warranty_until else None,
+        },
+    )
+    return hardware_inventory.as_dict(honeypot) or {}
 
 
 @router.post("/honeypots/{honeypot_id}/acknowledge", dependencies=[_manage_honeypots])

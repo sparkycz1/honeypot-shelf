@@ -72,7 +72,7 @@
                 {% if rule.notify_on_alert %}<span class="badge">{{ t(request, "notifications.rule.event_alert") }}</span>{% endif %}
                 {% if rule.notify_on_unavailable %}<span class="badge">{{ t(request, "notifications.rule.event_unavailable") }} ({{ rule.unavailable_after_minutes }}m)</span>{% endif %}
                 {% if rule.notify_on_recovered %}<span class="badge">{{ t(request, "notifications.rule.event_recovered") }} ({{ rule.recovered_after_minutes }}m)</span>{% endif %}
-                {% for name in ("disk_full", "service_failed", "reboot_required") %}
+                {% for name in ("disk_full", "service_failed", "reboot_required", "warranty_ending") %}
                   {% if rule["notify_on_" ~ name] %}<span class="badge">{{ t(request, "notifications.rule.event_" ~ name) }}</span>{% endif %}
                 {% endfor %}
               </td>

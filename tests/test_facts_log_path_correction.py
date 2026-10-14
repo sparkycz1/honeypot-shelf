@@ -14,6 +14,7 @@ import pytest
 from app.db.models.company import Company
 from app.db.models.honeypot import AuthMethod, Honeypot
 from app.ssh.facts import HoneypotFacts
+from app.ssh.hardware import Hardware
 from app.tasks.jobs import _refresh_honeypot_facts
 from tests.conftest import create_company
 
@@ -39,6 +40,7 @@ def _fake_facts(*, opencanary_log_path: str | None) -> HoneypotFacts:
         network_interfaces=[],
         supports_readonly_root=False,
         opencanary_log_path=opencanary_log_path,
+        hardware=Hardware(vendor=None, model=None, serial=None, is_physical=None),
     )
 
 

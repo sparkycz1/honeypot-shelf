@@ -13,6 +13,7 @@ from typing import Any, TypedDict
 
 from app.db.models.honeypot import Honeypot
 from app.ssh.client import open_connection
+from app.ssh.hardware import HARDWARE_COMMAND, Hardware, parse_hardware
 
 _SECTION_MARKERS = (
     "HOSTNAME",
@@ -32,6 +33,7 @@ _SECTION_MARKERS = (
     "NETWORK",
     "RASPI_CONFIG",
     "OPENCANARY_LOG",
+    "HARDWARE",
 )
 
 # One round trip: each section is delimited by a "===NAME===" marker so the
@@ -112,7 +114,10 @@ FACTS_COMMAND = (
     "echo ===OPENCANARY_LOG===; "
     "python3 -c \"import json; print(json.load(open("
     "'/etc/opencanaryd/opencanary.conf'))['logger']['kwargs']['handlers']"
-    "['file']['filename'])\" 2>/dev/null"
+    "['file']['filename'])\" 2>/dev/null; "
+    # What the box is: vendor, model, serial, bare metal or not
+    # (app.ssh.hardware, app.services.hardware_inventory).
+    f"{HARDWARE_COMMAND}"
 )
 
 
@@ -140,6 +145,8 @@ class HoneypotFacts(TypedDict):
     # existing value alone) rather than a guess when it couldn't be read.
     supports_readonly_root: bool
     opencanary_log_path: str | None
+    # Vendor / model / serial / bare metal — see app.ssh.hardware.
+    hardware: Hardware
 
 
 def _split_sections(raw: str) -> dict[str, str]:
@@ -250,6 +257,7 @@ def parse_facts_output(raw: str) -> HoneypotFacts:
         network_interfaces=network_interfaces,
         supports_readonly_root=sections.get("RASPI_CONFIG", "").strip() == "yes",
         opencanary_log_path=opencanary_log_path,
+        hardware=parse_hardware(sections.get("HARDWARE", "")),
     )
 
 

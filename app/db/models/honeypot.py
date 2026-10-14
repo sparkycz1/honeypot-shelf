@@ -37,13 +37,14 @@ from __future__ import annotations
 
 import enum
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
+    Date,
     Integer,
     LargeBinary,
     String,
@@ -212,6 +213,21 @@ class Honeypot(Base):
     # succeeds. Kept so the failure stays visible in the list and on the
     # Updates tab after the request that ran the check is long gone.
     updates_check_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # --- Hardware inventory (app.services.hardware_inventory) ---
+    # From the hardware, with the facts (app.ssh.hardware): DMI on a PC,
+    # the device tree on a Raspberry Pi. Kept when a later reading fails.
+    hw_vendor: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    hw_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    hw_serial: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # True on bare metal, False in a VM or container (no hardware record
+    # then), None when it could not be told.
+    is_physical: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Recorded by a person; `asset_serial` overrides a serial the hardware
+    # does not give or gets wrong.
+    asset_serial: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    purchase_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    warranty_until: Mapped[date | None] = mapped_column(Date, nullable=True)
+    asset_note: Mapped[str | None] = mapped_column(String(255), nullable=True)
     apt_upgradable_packages: Mapped[list[dict[str, Any]] | None] = mapped_column(
         JSON, nullable=True
     )

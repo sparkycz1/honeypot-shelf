@@ -66,6 +66,7 @@ from app.services import (
     acknowledgements,
     auto_backup,
     disk_forecast,
+    hardware_inventory,
     ignored_sources,
     mac_vendors,
 )
@@ -1398,6 +1399,14 @@ async def _refresh_honeypot_facts(honeypot_id: str) -> dict[str, Any]:
         honeypot.filesystems = facts["filesystems"]
         honeypot.network_interfaces = facts["network_interfaces"]
         honeypot.supports_readonly_root = facts["supports_readonly_root"]
+        # A fact that stopped being readable keeps its last value: a serial
+        # number does not change because dmidecode failed once.
+        hardware = facts["hardware"]
+        honeypot.hw_vendor = hardware["vendor"] or honeypot.hw_vendor
+        honeypot.hw_model = hardware["model"] or honeypot.hw_model
+        honeypot.hw_serial = hardware["serial"] or honeypot.hw_serial
+        if hardware["is_physical"] is not None:
+            honeypot.is_physical = hardware["is_physical"]
         log_path_changed = False
         if (
             facts["opencanary_log_path"] is not None
@@ -1435,6 +1444,70 @@ async def _refresh_honeypot_facts(honeypot_id: str) -> dict[str, Any]:
             poll_honeypot_canary_log.delay(honeypot_id)
 
         return {"ok": True}
+
+
+async def _announce_warranties() -> int:
+    """Tell the rules that asked for it about every honeypot whose warranty
+    ends within the rule's own `warranty_notice_days` (or has ended) —
+    once per rule and recorded end date: `Honeypot.health_announced`
+    remembers `warranty:<rule id>` -> the end date already announced, so a
+    renewed warranty (a new date) is announced again when its time comes.
+    Only to rule owners who may write the honeypot: a warranty is about
+    maintaining it, like a pending reboot. Returns how many were sent."""
+    sent = 0
+    async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
+        result = await session.execute(
+            select(Honeypot)
+            .options(selectinload(Honeypot.companies))
+            .where(Honeypot.warranty_until.is_not(None))
+        )
+        honeypots = [h for h in result.scalars().all() if hardware_inventory.applies(h)]
+        if not honeypots:
+            return 0
+        rules_by_honeypot = await _matching_notification_rules(
+            session, honeypots, NotificationRule.notify_on_warranty_ending
+        )
+        today = datetime.now(UTC).date()
+        for honeypot in honeypots:
+            days_left = hardware_inventory.warranty_days_left(honeypot, today)
+            if days_left is None or honeypot.warranty_until is None:
+                continue
+            ends = honeypot.warranty_until.isoformat()
+            announced = dict(honeypot.health_announced or {})
+            due = [
+                rule
+                for rule in rules_by_honeypot.get(honeypot.id, [])
+                if days_left <= rule.warranty_notice_days
+                and announced.get(f"warranty:{rule.id}") != [ends]
+                and can_write_honeypot(rule.user, honeypot)
+            ]
+            if not due:
+                continue
+            for rule in due:
+                announced[f"warranty:{rule.id}"] = [ends]
+            honeypot.health_announced = announced
+            await session.commit()
+            details = (
+                f"warranty ended on {ends}"
+                if days_left < 0
+                else f"warranty ends on {ends}, in {days_left} day(s)"
+            )
+            await notify_health(
+                app_settings,
+                rules=due,
+                honeypot=honeypot,
+                kind=NotificationKind.WARRANTY_ENDING,
+                details=details,
+                db=session,
+            )
+            sent += len(due)
+    return sent
+
+
+@celery_app.task(name="app.tasks.jobs.announce_warranties")
+def announce_warranties() -> int:
+    return asyncio.run(_announce_warranties())
 
 
 @celery_app.task(name="app.tasks.jobs.refresh_honeypot_facts")
