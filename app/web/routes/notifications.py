@@ -343,7 +343,12 @@ def _parse_rule_form(
     notify_on_recovered = get("notify_on_recovered") == "on"
     health = {
         name: get(name) == "on"
-        for name in ("notify_on_disk_full", "notify_on_service_failed", "notify_on_reboot_required")
+        for name in (
+            "notify_on_disk_full",
+            "notify_on_service_failed",
+            "notify_on_reboot_required",
+            "notify_on_file_changed",
+        )
     }
     reachability = notify_on_alert or notify_on_unavailable or notify_on_recovered
     if not (reachability or any(health.values())):

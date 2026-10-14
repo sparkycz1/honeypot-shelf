@@ -19,6 +19,9 @@
     {{ t(request, "honeypots.terminal.connecting_as") }} <code>{{ honeypot.username }}</code> ({{ honeypot.ip_address }}).
     {{ t(request, "honeypots.terminal.hint") }}
   </p>
+  {% if recording %}
+    <div class="alert alert-warn"><p>{{ t(request, "honeypots.terminal.recorded") }}</p></div>
+  {% endif %}
   <div id="terminal-status" class="hint" role="status"></div>
   <div
     id="terminal-container"

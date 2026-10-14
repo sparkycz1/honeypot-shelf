@@ -55,6 +55,7 @@ from app.db.models.honeypot_package import HoneypotPackage
 from app.db.models.honeypot_reachability_sample import HoneypotReachabilitySample
 from app.db.models.honeypot_service import HoneypotService
 from app.db.models.honeypot_update_run import HoneypotUpdateRun, UpdateRunStatus, UpgradeStrategy
+from app.db.models.honeypot_watched_file import HoneypotWatchedFile
 from app.db.models.notification_log import NotificationKind, NotificationLog
 from app.db.models.notification_rule import (
     HEALTH_DISK_FULL_DAYS,
@@ -62,12 +63,14 @@ from app.db.models.notification_rule import (
     NotificationScope,
 )
 from app.db.models.notification_rule_state import NotificationRuleState
+from app.db.models.terminal_recording import TerminalRecording
 from app.services import (
     acknowledgements,
     auto_backup,
     disk_forecast,
     ignored_sources,
     mac_vendors,
+    watched_files,
 )
 from app.services.company_stats import compute_company_stats
 from app.services.geoip import GeoipDownloadError
@@ -1423,6 +1426,13 @@ async def _refresh_honeypot_facts(honeypot_id: str) -> dict[str, Any]:
         )
         await publish_honeypot_event(honeypot_id, KIND_FACTS)
 
+        # The default list applies until someone edits it, so every
+        # honeypot is read unless its list was deliberately emptied.
+        rows = await watched_files.list_files(session, honeypot.id)
+        has_watched_files = bool(rows) or watched_files.needs_defaults(honeypot, rows)
+        if has_watched_files:
+            check_watched_files.delay(honeypot_id)
+
         if log_path_changed:
             # Don't make an operator who just fixed their config (or
             # re-ran Initialize) wait out a full poll interval on top of
@@ -1435,6 +1445,113 @@ async def _refresh_honeypot_facts(honeypot_id: str) -> dict[str, Any]:
             poll_honeypot_canary_log.delay(honeypot_id)
 
         return {"ok": True}
+
+
+_WATCHED_FILES_ACTOR = "watched files (automatic)"
+
+
+async def _apply_default_watched_files(
+    session: AsyncSession, honeypot: Honeypot, secret: str | None, app_settings: AppSettings
+) -> list[HoneypotWatchedFile]:
+    """Give a honeypot nobody has edited the list of the default watched
+    files, with the login account's own `authorized_keys` (its home found
+    with `getent`, never `~`)."""
+    home: str | None = None
+    if honeypot.username:
+        try:
+            result = await run_command(
+                honeypot,
+                secret,
+                watched_files.home_lookup_command(honeypot.username),
+                app_settings.ssh_connect_timeout,
+                app_settings.ssh_connect_timeout + _SSH_COMMAND_EXTRA_SECONDS,
+            )
+            output = result.output.strip()
+            home = output.splitlines()[0] if output else None
+        except (SSHConnectionError, TimeoutError, ValueError) as exc:
+            logger.warning("watched files: home lookup failed for %s: %s", honeypot.name, exc)
+    await watched_files.set_paths(
+        session, honeypot, watched_files.default_paths(home), by_person=False
+    )
+    return await watched_files.list_files(session, honeypot.id)
+
+
+async def _check_watched_files(honeypot_id: str) -> dict[str, Any]:
+    """Read one honeypot's watched files and record what changed since the
+    last reading (`app.services.watched_files`): an audit entry per file
+    (so it is on the History tab) and a notification to the rules that
+    asked for one."""
+    async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
+        honeypot = await session.get(Honeypot, uuid.UUID(honeypot_id))
+        if honeypot is None:
+            return {"ok": False, "error": "Honeypot not found."}
+        if not honeypot.host_key_fingerprint:
+            return {"ok": False, "error": "No pinned host key fingerprint yet."}
+        secret = await resolve_honeypot_credential(honeypot, session)
+        rows = await watched_files.list_files(session, honeypot.id)
+        if watched_files.needs_defaults(honeypot, rows):
+            rows = await _apply_default_watched_files(session, honeypot, secret, app_settings)
+        if not rows:
+            return {"ok": True, "changed": 0}
+        try:
+            result = await run_command(
+                honeypot,
+                secret,
+                watched_files.build_command([row.path for row in rows]),
+                app_settings.ssh_connect_timeout,
+                app_settings.ssh_connect_timeout + _SSH_COMMAND_EXTRA_SECONDS,
+            )
+        except (SSHConnectionError, TimeoutError, ValueError) as exc:
+            logger.warning("check_watched_files failed for %s: %s", honeypot.name, exc)
+            return {"ok": False, "error": str(exc)}
+        readings = watched_files.parse_output(result.output, len(rows))
+        now = datetime.now(UTC)
+        changes = []
+        for index, row in enumerate(rows):
+            if index not in readings:
+                continue
+            state, content = readings[index]
+            change = watched_files.apply_reading(row, state, content, now)
+            if change is not None:
+                changes.append(change)
+        await session.commit()
+        for change in changes:
+            await log_event(
+                session,
+                actor=_WATCHED_FILES_ACTOR,
+                action="honeypot.watched_file.change",
+                summary=f"Watched file {change.path} changed: {change.summary}",
+                target_type="honeypot",
+                target_id=honeypot.id,
+                target_label=honeypot.name,
+                details={"path": change.path},
+            )
+        if changes:
+            await session.refresh(honeypot, attribute_names=["companies"])
+            rules = (
+                await _matching_notification_rules(
+                    session, [honeypot], NotificationRule.notify_on_file_changed
+                )
+            ).get(honeypot.id, [])
+            if rules:
+                await notify_health(
+                    app_settings,
+                    rules=rules,
+                    honeypot=honeypot,
+                    kind=NotificationKind.FILE_CHANGED,
+                    details="; ".join(f"{c.path} ({c.summary})" for c in changes),
+                    db=session,
+                )
+        return {"ok": True, "changed": len(changes)}
+
+
+@celery_app.task(
+    name="app.tasks.jobs.check_watched_files",
+    time_limit=_SSH_TASK_TIME_LIMIT_SECONDS,
+)
+def check_watched_files(honeypot_id: str) -> dict[str, Any]:
+    return asyncio.run(_check_watched_files(honeypot_id))
 
 
 @celery_app.task(name="app.tasks.jobs.refresh_honeypot_facts")
@@ -2382,6 +2499,65 @@ def finish_update_run(run_id: str) -> dict[str, Any]:
     return asyncio.run(_finish_update_run(run_id))
 
 
+# A run still "running" this long after the longest an update may take was
+# abandoned by its worker (the worker, or the whole Honeypot Shelf host, was
+# restarted mid-run). Nothing will ever finish it.
+_STALE_RUN_GRACE_SECONDS = 15 * 60
+_STALE_RUN_ACTOR = "update watchdog (automatic)"
+STALE_RUN_ERROR = (
+    "The update did not finish: the worker running it stopped before it was done "
+    "(for example Honeypot Shelf itself was restarted). "
+    "The honeypot may be partly updated — check it and run the update again."
+)
+
+
+async def _fail_stale_update_runs() -> int:
+    """Mark update runs nobody is running any more as failed, so they do not
+    show as "running" for ever and a rolling batch waiting on one is
+    released. Returns how many were closed."""
+    async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
+        limit = max(app_settings.update_timeout_seconds, 0) + _STALE_RUN_GRACE_SECONDS
+        cutoff = datetime.now(UTC) - timedelta(seconds=limit)
+        result = await session.execute(
+            select(HoneypotUpdateRun).where(
+                HoneypotUpdateRun.status == UpdateRunStatus.RUNNING,
+                HoneypotUpdateRun.started_at.is_not(None),
+                HoneypotUpdateRun.started_at < cutoff,
+            )
+        )
+        stale = list(result.scalars().all())
+        if not stale:
+            return 0
+        now = datetime.now(UTC)
+        for run in stale:
+            run.status = UpdateRunStatus.FAILED
+            run.error = STALE_RUN_ERROR
+            run.finished_at = now
+        await session.commit()
+        await log_event(
+            session,
+            actor=_STALE_RUN_ACTOR,
+            action="honeypot_update_runs.reap",
+            summary=(
+                f"Closed {len(stale)} update run{'s' if len(stale) != 1 else ''} "
+                "left running by a worker that stopped"
+            ),
+            outcome=AuditOutcome.FAILURE,
+            details={"run_ids": [str(run.id) for run in stale][:50], "count": len(stale)},
+        )
+        waiting_batches = [str(run.id) for run in stale if run.rollout_position is not None]
+    # A rolling batch stops at a failed run: let it mark what was waiting.
+    for run_id in waiting_batches:
+        finish_update_run.delay(run_id)
+    return len(stale)
+
+
+@celery_app.task(name="app.tasks.jobs.fail_stale_update_runs")
+def fail_stale_update_runs() -> int:
+    return asyncio.run(_fail_stale_update_runs())
+
+
 async def _rollback_honeypot_update(run_id: str) -> None:
     """Execute one rollback `HoneypotUpdateRun` (`rollback_of_run_id` set) —
     re-install every package whose version changed since the source run's
@@ -2963,6 +3139,51 @@ async def _purge_old_honeypot_update_runs() -> None:
 @celery_app.task(name="app.tasks.jobs.purge_old_honeypot_update_runs")
 def purge_old_honeypot_update_runs() -> None:
     asyncio.run(_purge_old_honeypot_update_runs())
+
+
+_TERMINAL_RECORDING_PURGE_ACTOR = "retention policy (automatic)"
+
+
+async def _purge_old_terminal_recordings() -> None:
+    """Delete `TerminalRecording` rows older than `AppSettings.
+    terminal_recording_retention_days` — the same shape as the purges above,
+    skipped when retention is unset (None = keep forever). Runs whether or
+    not recording is currently on: recordings made while it was on still
+    age out."""
+    async with db_session.AsyncSessionLocal() as session:
+        app_settings = await get_or_create_app_settings(session)
+        retention_days = app_settings.terminal_recording_retention_days
+        if not retention_days:
+            return
+        cutoff = datetime.now(UTC) - timedelta(days=retention_days)
+        deleted_count = (
+            await session.execute(
+                select(func.count())
+                .select_from(TerminalRecording)
+                .where(TerminalRecording.started_at < cutoff)
+            )
+        ).scalar_one()
+        if not deleted_count:
+            return
+        await session.execute(
+            delete(TerminalRecording).where(TerminalRecording.started_at < cutoff)
+        )
+        await session.commit()
+        await log_event(
+            session,
+            actor=_TERMINAL_RECORDING_PURGE_ACTOR,
+            action="terminal_recordings.purge",
+            summary=(
+                f"Purged {deleted_count} terminal recording"
+                f"{'s' if deleted_count != 1 else ''} older than {retention_days} day(s)"
+            ),
+            details={"deleted_count": deleted_count, "retention_days": retention_days},
+        )
+
+
+@celery_app.task(name="app.tasks.jobs.purge_old_terminal_recordings")
+def purge_old_terminal_recordings() -> None:
+    asyncio.run(_purge_old_terminal_recordings())
 
 
 _NOTIFICATION_LOG_PURGE_ACTOR = "retention policy (automatic)"

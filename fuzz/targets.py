@@ -30,6 +30,7 @@ from app.db.models.honeypot import Honeypot
 from app.services.event_search import parse_time as _parse_iso
 from app.services.honeypot_events import build_event
 from app.services.honeypot_tags import parse_tag_names_from_text
+from app.services.watched_files import WatchedFilesError, is_usable_path, parse_output, parse_paths
 from app.ssh.canary_activity import parse_read_output
 from app.ssh.facts import parse_facts_output
 from app.ssh.logs import is_path_allowed, parse_directory_listing
@@ -174,6 +175,19 @@ def tags(data: bytes) -> None:
         assert name and name == name.strip()
 
 
+def watched_files(data: bytes) -> None:
+    """What a watched-files read prints (anything a file on the honeypot
+    holds), and the list of paths a person types: the reader never raises,
+    and every path the list accepts is one the read script may quote."""
+    text = _text(data)
+    for state, content in parse_output(text, 20).values():
+        assert state in ("ok", "missing", "unreadable", "too_large")
+        assert (content is None) == (state != "ok")
+    with contextlib.suppress(WatchedFilesError):
+        for path in parse_paths(text):
+            assert is_usable_path(path)
+
+
 TARGETS: dict[str, Callable[[bytes], None]] = {
     fn.__name__: fn
     for fn in (
@@ -194,5 +208,6 @@ TARGETS: dict[str, Callable[[bytes], None]] = {
         redirect,
         event_time_filter,
         tags,
+        watched_files,
     )
 }

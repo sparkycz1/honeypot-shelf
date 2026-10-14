@@ -89,7 +89,7 @@ from app.schemas.acknowledgement import AcknowledgeRequest
 from app.schemas.company import CompanyCreate
 from app.schemas.honeypot import HoneypotCreate, HoneypotUpdate
 from app.schemas.honeypot_config import HoneypotConfigExport
-from app.services import acknowledgements, honeypot_timeline
+from app.services import acknowledgements, honeypot_timeline, update_batches, watched_files
 from app.services.honeypot_actions import (
     send_power_to_honeypots,
     trigger_check_updates,
@@ -1664,6 +1664,92 @@ async def honeypot_power_api(
 
 
 
+# --- Update batches ---------------------------------------------------------
+# All three registered before `/companies/{company_id}`: "batches" would
+# otherwise be read as a company id. Every batch is narrowed to the
+# honeypots this account may write (`app.services.update_batches`).
+
+
+@router.get("/companies/batches", dependencies=[_action_updates])
+async def update_batch_list_api(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_token_user),
+) -> dict[str, object]:
+    """The newest update batches of more than one honeypot, newest first,
+    with the number of runs in each state — the API equivalent of the
+    "Update batches" page."""
+    batches = await update_batches.recent_batches(db, user)
+    return {
+        "batches": [
+            {
+                "batch_id": str(batch.batch_id),
+                "started_at": _isoformat(batch.started_at),
+                "strategy": batch.strategy.value,
+                **batch.counts.as_dict(),
+            }
+            for batch in batches
+        ]
+    }
+
+
+@router.get("/companies/batches/{batch_id}", dependencies=[_view_honeypots])
+async def update_batch_detail_api(
+    batch_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_token_user),
+) -> dict[str, object]:
+    # Restricted to this account's own honeypots, so a batch that straddles
+    # the boundary (a superadmin's "All honeypots" run) reports only the part
+    # this account may write: packages are not for read-only access.
+    runs = await update_batches.visible_batch_runs(db, user, batch_id)
+    if not runs:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found.")
+    return {
+        "batch_id": str(batch_id),
+        **update_batches.count_runs(runs).as_dict(),
+        "runs": [_update_run_to_dict(r) for r in runs],
+    }
+
+
+@router.post("/companies/batches/{batch_id}/retry", dependencies=[_action_updates])
+async def retry_update_batch_api(
+    request: Request,
+    batch_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_token_user),
+) -> dict[str, object]:
+    """Run a finished batch again on the honeypots where it failed: a new
+    batch with the same strategy and reboot choice (rolling again if the
+    first one was). 409 while the batch is still running, or when nothing
+    in it failed."""
+    try:
+        new_batch_id, skipped = await update_batches.retry_failed(db, user, batch_id)
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found."
+        ) from exc
+    except update_batches.BatchNotFinishedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="The batch is still running."
+        ) from exc
+    except update_batches.NothingFailedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="No run of this batch failed."
+        ) from exc
+    await log_event(
+        db,
+        request=request,
+        action="update_batch.retry",
+        summary="Ran an update batch again on the honeypots where it failed",
+        details={
+            "batch_id": str(new_batch_id),
+            "retry_of_batch_id": str(batch_id),
+            "skipped": skipped,
+        },
+    )
+    return {"batch_id": str(new_batch_id), "skipped": skipped}
+
+
 # --- Honeypot companies ----------------------------------------------------------
 
 
@@ -1967,30 +2053,75 @@ async def company_power_action_api(
 
 
 
-@router.get("/companies/batches/{batch_id}", dependencies=[_view_honeypots])
-async def update_batch_detail_api(
-    batch_id: uuid.UUID,
+class _WatchedFiles(BaseModel):
+    paths: list[str] = Field(max_length=watched_files.MAX_FILES)
+
+
+@router.get("/honeypots/{honeypot_id}/watched-files", dependencies=[_view_honeypots])
+async def watched_files_api(
+    honeypot_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_token_user),
+) -> list[dict[str, object]]:
+    """The files watched for changes on this honeypot: path, state
+    (`pending` / `ok` / `missing` / `unreadable` / `too_large`), when last
+    read and last changed, and by how many lines. Never the content."""
+    honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
+    return [watched_files.as_dict(row) for row in await watched_files.list_files(db, honeypot.id)]
+
+
+@router.put("/honeypots/{honeypot_id}/watched-files", dependencies=[_manage_honeypots])
+async def set_watched_files_api(
+    request: Request,
+    honeypot_id: uuid.UUID,
+    payload: _WatchedFiles,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_token_user),
+) -> list[dict[str, object]]:
+    """Replace the list of watched files (full paths; at most 20). A file
+    dropped from the list is forgotten together with what was stored of
+    it, and the default list is never put back on this honeypot."""
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, user)
+    try:
+        wanted = watched_files.parse_paths("\n".join(payload.paths))
+    except watched_files.WatchedFilesError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
+    added, removed = await watched_files.set_paths(db, honeypot, wanted)
+    if added or removed:
+        await log_event(
+            db,
+            request=request,
+            action="honeypot.watched_files.update",
+            summary=f'Changed the watched files of "{honeypot.name}"',
+            target_type="honeypot",
+            target_id=honeypot.id,
+            target_label=honeypot.name,
+            details={"file": wanted, "added": added, "removed": removed},
+        )
+    if wanted and honeypot.host_key_fingerprint:
+        tasks.check_watched_files.delay(str(honeypot.id))
+    return [watched_files.as_dict(row) for row in await watched_files.list_files(db, honeypot.id)]
+
+
+@router.get(
+    "/honeypots/{honeypot_id}/watched-files/{file_id}/diff", dependencies=[_manage_honeypots]
+)
+async def watched_file_diff_api(
+    honeypot_id: uuid.UUID,
+    file_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_token_user),
 ) -> dict[str, object]:
-    # Restricted to this account's own honeypots, so a batch that straddles
-    # the boundary (an unrestricted admin's "All honeypots" run) reports only
-    # the part this account can see.
-    # Only honeypots the account may write: packages are not for read-only access.
-    visible_ids = honeypots_writable_by(user).with_only_columns(Honeypot.id)
-    result = await db.execute(
-        select(HoneypotUpdateRun)
-        .options(selectinload(HoneypotUpdateRun.honeypot))
-        .where(
-            HoneypotUpdateRun.batch_id == batch_id,
-            HoneypotUpdateRun.honeypot_id.in_(visible_ids),
-        )
-        .order_by(HoneypotUpdateRun.created_at)
-    )
-    runs = list(result.scalars().all())
-    if not runs:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found.")
-    return {"batch_id": str(batch_id), "runs": [_update_run_to_dict(r) for r in runs]}
+    """The last change of one watched file as a unified diff. File
+    content, hence write access to the honeypot."""
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, user)
+    rows = await watched_files.list_files(db, honeypot.id)
+    row = next((r for r in rows if r.id == file_id), None)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found.")
+    return {**watched_files.as_dict(row), "diff": "\n".join(watched_files.diff_of(row))}
 
 
 @router.post("/honeypots/{honeypot_id}/acknowledge", dependencies=[_manage_honeypots])

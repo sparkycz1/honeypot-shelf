@@ -42,6 +42,7 @@ from app.web.routes import (
     api_v1_users,
     audit,
     auth,
+    batches,
     branding,
     companies,
     dashboard,
@@ -57,6 +58,7 @@ from app.web.routes import (
     notifications,
     scheduling,
     search,
+    terminal_recordings,
     terminal_ws,
     theme,
     users,
@@ -295,12 +297,14 @@ def create_app() -> FastAPI:
     app.include_router(map_routes.router)
     app.include_router(honeypots.router)
     app.include_router(events.router)
+    app.include_router(batches.router)
     app.include_router(companies.router)
     app.include_router(initialize.router)
     app.include_router(mac_vendors_routes.router)
     app.include_router(maintenance.router)
     app.include_router(scheduling.router)
     app.include_router(search.router)
+    app.include_router(terminal_recordings.router)
     app.include_router(audit.router)
     app.include_router(inform.router)
     app.include_router(api_v1.router)
@@ -308,6 +312,7 @@ def create_app() -> FastAPI:
     app.include_router(api_v1_maintenance.router)
     app.include_router(api_v1_users.router)
     app.include_router(api_v1_audit.router)
+    app.include_router(api_v1_audit.recordings_router)
     app.include_router(api_v1_settings.router)
     app.include_router(api_v1_backup.router)
     app.include_router(api_v1_dashboard.router)

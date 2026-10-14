@@ -54,9 +54,11 @@ from app.db.models.honeypot_update_run import (
     UpdateRunStatus,
     UpgradeStrategy,
 )
+from app.db.models.terminal_recording import TerminalRecording
 from app.db.models.user import AuthProvider, User
 from app.db.session import get_db
 from app.main import app
+from app.services import terminal_recording
 from tests.conftest import FakeAsyncResult, FakeRedis
 
 DEFAULT_PORT = 8766
@@ -226,6 +228,25 @@ async def seed() -> str:
             )
         await db.flush()
         _session, token = await create_session(db, user, ip_address=None, user_agent=None)
+        # One recorded terminal session, so the player page has something
+        # to load (Audit -> Terminal recordings).
+        db.add(
+            TerminalRecording(
+                honeypot_id=None,
+                honeypot_name="acme-honey1",
+                username="admin",
+                started_at=now - timedelta(hours=1),
+                duration_seconds=42.0,
+                cols=80,
+                rows=24,
+                output_bytes=22,
+                data_encrypted=terminal_recording.pack(
+                    '{"version": 2, "width": 80, "height": 24}\n'
+                    '[0.2, "o", "$ uptime\\r\\n"]\n'
+                    '[0.9, "o", " up 3 days\\r\\n"]\n'
+                ),
+            )
+        )
         await db.commit()
     return token
 

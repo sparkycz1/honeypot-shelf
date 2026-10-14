@@ -212,6 +212,12 @@ class Honeypot(Base):
     # succeeds. Kept so the failure stays visible in the list and on the
     # Updates tab after the request that ran the check is long gone.
     updates_check_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Someone has edited this honeypot's list of watched files (even to
+    # empty it): from then on the default list is never put back
+    # (`app.services.watched_files`).
+    watched_files_customized: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
     apt_upgradable_packages: Mapped[list[dict[str, Any]] | None] = mapped_column(
         JSON, nullable=True
     )

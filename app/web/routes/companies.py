@@ -30,7 +30,7 @@ from app.db.models.company_membership import CompanyMembership
 from app.db.models.honeypot import Honeypot
 from app.db.models.honeypot_company import honeypot_companies
 from app.db.models.honeypot_tag import Tag
-from app.db.models.honeypot_update_run import HoneypotUpdateRun, UpdateRunStatus
+from app.db.models.honeypot_update_run import HoneypotUpdateRun
 from app.db.models.user import AccessLevel, User
 from app.db.session import get_db
 from app.schemas.company import CompanyCreate
@@ -576,7 +576,7 @@ async def attach_existing_user(
         target_id=company.id,
         target_label=company.name,
     )
-    return RedirectResponse(url=f"/companies/{company_id}", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=f"/companies/{company.id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/{company_id}/users/{user_id}/detach", dependencies=[Depends(verify_csrf)])
@@ -609,7 +609,7 @@ async def detach_user(
         target_id=company.id,
         target_label=company.name,
     )
-    return RedirectResponse(url=f"/companies/{company_id}", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=f"/companies/{company.id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/{company_id}/honeypots/attach", dependencies=[Depends(verify_csrf)])
@@ -644,7 +644,7 @@ async def attach_existing_honeypot(
         target_id=company.id,
         target_label=company.name,
     )
-    return RedirectResponse(url=f"/companies/{company_id}", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=f"/companies/{company.id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post(
@@ -679,7 +679,7 @@ async def detach_honeypot(
         target_id=company.id,
         target_label=company.name,
     )
-    return RedirectResponse(url=f"/companies/{company_id}", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=f"/companies/{company.id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/{company_id}/integrations")
@@ -786,61 +786,20 @@ async def update_company_integrations(
     )
 
 
-async def _visible_batch_runs(
-    batch_id: uuid.UUID, db: AsyncSession, user: User
-) -> list[HoneypotUpdateRun]:
-    """One batch's update runs, restricted to honeypots `user` can see.
-
-    A batch is an ad-hoc set of honeypots, so it can straddle the boundary
-    (an unrestricted admin triggering "All honeypots" produces one batch
-    covering everything). Showing a restricted account only its own rows
-    keeps the page useful without leaking the rest."""
-    visible_ids = (honeypots_visible_to(user)).with_only_columns(Honeypot.id)
-    result = await db.execute(
-        select(HoneypotUpdateRun)
-        .options(selectinload(HoneypotUpdateRun.honeypot))
-        .where(
-            HoneypotUpdateRun.batch_id == batch_id,
-            HoneypotUpdateRun.honeypot_id.in_(visible_ids),
-        )
-        .order_by(HoneypotUpdateRun.created_at)
-    )
-    return list(result.scalars().all())
-
-
+# Update batches moved to `/batches` (`app/web/routes/batches.py`), open to
+# every account that may write; an old link (a bookmark) still leads there.
+# The target is built from the loaded run, never from the request path.
 @router.get("/batches/{batch_id}")
-async def update_batch_detail(
-    request: Request,
-    batch_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-    skipped: int = 0,
-) -> Response:
-    runs = await _visible_batch_runs(batch_id, db, current_user)
-    if not runs:
+async def update_batch_moved(batch_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> Response:
+    run = (
+        await db.execute(
+            select(HoneypotUpdateRun).where(HoneypotUpdateRun.batch_id == batch_id).limit(1)
+        )
+    ).scalar_one_or_none()
+    if run is None or run.batch_id is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found.")
-
-    has_pending = any(r.status in (UpdateRunStatus.PENDING, UpdateRunStatus.RUNNING) for r in runs)
-    return templates.TemplateResponse(
-        request,
-        "companies/batch.html",
-        {"runs": runs, "batch_id": batch_id, "skipped": skipped, "has_pending": has_pending},
-    )
-
-
-@router.get("/batches/{batch_id}/status")
-async def update_batch_status(
-    request: Request,
-    batch_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> Response:
-    runs = await _visible_batch_runs(batch_id, db, current_user)
-    has_pending = any(r.status in (UpdateRunStatus.PENDING, UpdateRunStatus.RUNNING) for r in runs)
-    return templates.TemplateResponse(
-        request,
-        "partials/update_batch_status.html",
-        {"runs": runs, "batch_id": batch_id, "has_pending": has_pending},
+    return RedirectResponse(
+        url=f"/batches/{run.batch_id}", status_code=status.HTTP_308_PERMANENT_REDIRECT
     )
 
 
