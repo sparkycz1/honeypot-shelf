@@ -1390,6 +1390,7 @@ pre code { background: none; padding: 0; }
    (up to MAX_LINE_LIMIT), so it scrolls in place rather than growing the
    whole page. */
 .log-output { max-height: 32rem; overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
+.run-output { max-height: 60vh; overflow: auto; white-space: pre-wrap; word-break: break-word; }
 
 /* --- Logs tab (honeypots/logs.html, static/js/log-viewer.js) — ported from debcontrol --- */
 .log-sources {

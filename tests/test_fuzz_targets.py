@@ -29,7 +29,7 @@ _POLL_END = b"\n\n===READ=== 0\n"
 _SEEDS: list[bytes] = [
     b"",
     # A redirect target browsers read as `//evil.example`.
-    b"/\evil.example",
+    b"/\\evil.example",
     b"/\t/evil.example",
     # OpenCanary log lines a compromised honeypot could write: an oversized
     # logtype, an out-of-range port, a non-string source, a non-object

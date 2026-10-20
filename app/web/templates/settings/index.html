@@ -26,6 +26,8 @@
     {% include "settings/_geoip.html" %}
   {% elif active_tab == 'backup' %}
     {% include "settings/_backup.html" %}
+  {% elif active_tab == 'update' %}
+    {% include "settings/_update.html" %}
   {% else %}
     {% include "settings/_general.html" %}
   {% endif %}
