@@ -18,7 +18,7 @@ from app.web.routes.honeypots_list import _safe_honeypots_redirect
         ("/dashboard", "/honeypots"),
         ("//evil.example/honeypots", "/honeypots"),
         ("https://evil.example/honeypots", "/honeypots"),
-        ("/\evil.example/honeypots", "/honeypots"),
+        ("/\\evil.example/honeypots", "/honeypots"),
         ("", "/honeypots"),
     ],
 )

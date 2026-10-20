@@ -6,6 +6,14 @@ debcontrol's own reasoning verbatim:
 - **Version/commit info** and the **SSH public key/fingerprint** — safe to
   read over a bearer-token API; the public key is *meant* to be copied
   elsewhere (into `authorized_keys`).
+- **Updating Honeypot Shelf itself** (Settings -> Update):
+  `GET /api/v1/settings/update` reports what the host watcher last saw;
+  `POST .../update/check` and `POST .../update/upgrade` ask it for a
+  check or an upgrade, the same two buttons and audit action codes as the
+  page (`app.services.app_update`). An upgrade only ever installs what the
+  checkout's own branch has upstream — nothing in the request picks a
+  version or a source. The only writes here, and superadmin-only like the
+  rest.
 - **Background-check intervals**, **audit log retention** and the **sign-in
   policy** (session lifetime, lockout, allowed networks) — operational
   facts, not secrets. Read-only like everything here: a wrong network
@@ -30,13 +38,15 @@ What's deliberately **not** exposed here, even to a superadmin token:
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit import log_event
 from app.auth.dependencies import require_api_superadmin
 from app.core.app_settings import effective_event_retention_days, get_or_create_app_settings
 from app.core.version import APP_VERSION, commit_url, get_git_commit
 from app.db.session import get_db
+from app.services import app_update
 from app.ssh.identity import get_or_create_identity
 
 router = APIRouter(prefix="/api/v1/settings")
@@ -72,3 +82,60 @@ async def get_settings_api(db: AsyncSession = Depends(get_db)) -> dict[str, obje
         "terminal_recording_enabled": app_settings.terminal_recording_enabled,
         "terminal_recording_retention_days": app_settings.terminal_recording_retention_days,
     }
+
+
+@router.get("/update", dependencies=[_view])
+async def get_app_update_api() -> dict[str, object]:
+    """What the host watcher behind Settings -> Update last reported:
+    whether it is installed, the last check, the last upgrade."""
+    return app_update.read_status().as_dict()
+
+
+async def _request_app_update_api(
+    request: Request, db: AsyncSession, kind: str
+) -> dict[str, object]:
+    try:
+        app_update.request(kind)
+    except app_update.WatcherNotInstalledError:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="The update watcher is not installed on the host "
+            "(scripts/install_update_watcher.sh).",
+        ) from None
+    except app_update.UpgradeInProgressError:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, detail="An update is already requested or running."
+        ) from None
+    if kind == app_update.UPGRADE:
+        await log_event(
+            db,
+            request=request,
+            action="settings.app_update.upgrade",
+            summary=f"Requested an update of Honeypot Shelf (running {APP_VERSION}) via the API",
+            details={"from_version": APP_VERSION},
+        )
+    else:
+        await log_event(
+            db,
+            request=request,
+            action="settings.app_update.check",
+            summary="Requested a check for a Honeypot Shelf update via the API",
+        )
+    return {"requested": kind}
+
+
+@router.post("/update/check", dependencies=[_view], status_code=status.HTTP_202_ACCEPTED)
+async def check_app_update_api(
+    request: Request, db: AsyncSession = Depends(get_db)
+) -> dict[str, object]:
+    return await _request_app_update_api(request, db, app_update.CHECK)
+
+
+@router.post("/update/upgrade", dependencies=[_view], status_code=status.HTTP_202_ACCEPTED)
+async def upgrade_app_api(
+    request: Request, db: AsyncSession = Depends(get_db)
+) -> dict[str, object]:
+    """Install the newest commit of the checkout's branch — the same as
+    `scripts/upgrade.sh`. Honeypot Shelf restarts during it; poll
+    `GET /api/v1/settings/update` for the outcome."""
+    return await _request_app_update_api(request, db, app_update.UPGRADE)

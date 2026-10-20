@@ -152,7 +152,10 @@ async def set_paths(
     removed = [row for path, row in existing.items() if path not in paths]
     for row in removed:
         await db.delete(row)
-    db.add_all(HoneypotWatchedFile(honeypot_id=honeypot.id, path=path) for path in added)
+    db.add_all(
+        HoneypotWatchedFile(honeypot_id=honeypot.id, path=path, state=STATE_PENDING)
+        for path in added
+    )
     if by_person:
         honeypot.watched_files_customized = True
     await db.commit()

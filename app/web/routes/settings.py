@@ -36,6 +36,7 @@ from app.core.app_settings import get_or_create_app_settings
 from app.core.config import get_settings
 from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie, verify_csrf
 from app.core.security import decrypt_secret, encrypt_secret
+from app.core.version import APP_VERSION
 from app.db.models.app_settings import (
     DEFAULT_LDAP_USER_SEARCH_FILTER,
     DEFAULT_OIDC_SCOPES,
@@ -50,7 +51,7 @@ from app.db.models.geoip_database import SINGLETON_ID as GEOIP_SINGLETON_ID
 from app.db.models.geoip_database import GeoipDatabase
 from app.db.models.honeypot import AuthMethod, Honeypot
 from app.db.session import get_db
-from app.services import auto_backup, full_backup, mac_vendors, netbird, wireguard
+from app.services import app_update, auto_backup, full_backup, mac_vendors, netbird, wireguard
 from app.services.syslog_transport import DEFAULT_SYSLOG_PORT, SyslogProtocol
 from app.ssh.identity import (
     activate_pending_identity,
@@ -68,7 +69,16 @@ router = APIRouter(prefix="/settings", dependencies=[Depends(require_superadmin)
 # why: there's only ever one GET route here, not one per tab, since every
 # POST handler below redirects back to /settings regardless of which tab
 # it belongs to).
-_TAB_KEYS = ("general", "checks", "security", "integrations", "vpn", "geoip", "backup")
+_TAB_KEYS = (
+    "general",
+    "checks",
+    "security",
+    "integrations",
+    "vpn",
+    "geoip",
+    "backup",
+    "update",
+)
 _VALID_TABS = set(_TAB_KEYS)
 _DEFAULT_TAB = "general"
 
@@ -131,6 +141,9 @@ async def _render_settings(
         context["notice"] = request.query_params.get("notice", "")
     if tab == "integrations":
         context["mac_vendor_count"] = await mac_vendors.vendor_count(db)
+    if tab == "update":
+        # Settings -> Update: what the host watcher last reported.
+        context["app_update"] = app_update.read_status()
     if tab == "geoip" and "geoip_status" not in context:
         context["geoip_status"] = await db.get(GeoipDatabase, GEOIP_SINGLETON_ID)
     response = templates.TemplateResponse(request, "settings/index.html", context)
@@ -1633,3 +1646,58 @@ async def delete_stored_backup(
     return RedirectResponse(
         url=f"{_BACKUP_TAB}&notice=deleted", status_code=status.HTTP_303_SEE_OTHER
     )
+
+
+# Settings -> Update: updating Honeypot Shelf itself. The app only asks; a
+# watcher on the host does the work — see app/services/app_update.py and
+# scripts/self_update.py.
+
+
+@router.get("/update/status")
+async def app_update_status(request: Request) -> Response:
+    """The status panel on its own, polled while a check or an upgrade
+    is under way (and while the app restarts in the middle of one)."""
+    return templates.TemplateResponse(
+        request,
+        "partials/app_update_status.html",
+        {"app_update": app_update.read_status()},
+    )
+
+
+async def _request_app_update(request: Request, db: AsyncSession, kind: str) -> Response:
+    try:
+        app_update.request(kind)
+    except app_update.WatcherNotInstalledError:
+        return await _render_settings(
+            request, db, [t(request, "settings.update.error.not_installed")], tab="update"
+        )
+    except app_update.UpgradeInProgressError:
+        return await _render_settings(
+            request, db, [t(request, "settings.update.error.in_progress")], tab="update"
+        )
+    if kind == app_update.UPGRADE:
+        await log_event(
+            db,
+            request=request,
+            action="settings.app_update.upgrade",
+            summary=f"Requested an update of Honeypot Shelf (running {APP_VERSION})",
+            details={"from_version": APP_VERSION},
+        )
+    else:
+        await log_event(
+            db,
+            request=request,
+            action="settings.app_update.check",
+            summary="Requested a check for a Honeypot Shelf update",
+        )
+    return RedirectResponse(url="/settings?tab=update", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/update/check", dependencies=[Depends(verify_csrf)])
+async def check_app_update(request: Request, db: AsyncSession = Depends(get_db)) -> Response:
+    return await _request_app_update(request, db, app_update.CHECK)
+
+
+@router.post("/update/upgrade", dependencies=[Depends(verify_csrf)])
+async def upgrade_app(request: Request, db: AsyncSession = Depends(get_db)) -> Response:
+    return await _request_app_update(request, db, app_update.UPGRADE)
