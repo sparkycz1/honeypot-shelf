@@ -24,7 +24,7 @@ from app.auth.scope import (
     can_write_honeypot,
     honeypots_visible_to,
     honeypots_writable_by,
-    visible_honeypots_by_ids,
+    writable_honeypots_by_ids,
 )
 from app.core.config import get_settings
 from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie, verify_csrf
@@ -838,7 +838,7 @@ async def _get_honeypots_by_ids(
     hand-crafted. Out-of-scope ids are dropped silently rather than
     rejected with an error naming them (see
     `app.services.access_scope.filter_honeypots`)."""
-    return await visible_honeypots_by_ids(db, user, honeypot_ids)
+    return await writable_honeypots_by_ids(db, user, honeypot_ids)
 
 
 @router.post("/bulk/check-updates", dependencies=[need_updates, Depends(verify_csrf)])

@@ -73,6 +73,7 @@ from app.auth.scope import (
     honeypots_visible_to,
     honeypots_writable_by,
     visible_honeypots_by_ids,
+    writable_honeypots_by_ids,
 )
 from app.core.app_settings import get_or_create_app_settings
 from app.core.security import encrypt_secret
@@ -308,6 +309,17 @@ async def _get_company_or_404(company_id: uuid.UUID, db: AsyncSession, user: Use
     return company
 
 
+async def _get_writable_company_or_404(
+    company_id: uuid.UUID, db: AsyncSession, user: User
+) -> Company:
+    """`_get_company_or_404`, then 403 for a company this account may only
+    read — for the company-wide updates and power actions."""
+    company = await _get_company_or_404(company_id, db, user)
+    if not has_company_access(user, company.id, write=True):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Read-only access.")
+    return company
+
+
 async def _require_companies_in_scope(
     db: AsyncSession, user: User, company_ids: list[uuid.UUID]
 ) -> list[Company]:
@@ -331,6 +343,13 @@ async def _visible_honeypots(db: AsyncSession, user: User) -> list[Honeypot]:
     """Every honeypot this token's account can see — what "All honeypots"
     means for it. Same reasoning as the web UI's `_all_visible_honeypots`."""
     result = await db.execute(honeypots_visible_to(user))
+    return list(result.scalars().all())
+
+
+async def _writable_honeypots(db: AsyncSession, user: User) -> list[Honeypot]:
+    """Every honeypot this token's account may write — what the "All
+    honeypots" updates and power actions act on."""
+    result = await db.execute(honeypots_writable_by(user))
     return list(result.scalars().all())
 
 
@@ -712,7 +731,7 @@ async def update_honeypot_api(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_token_user),
 ) -> dict[str, object]:
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, user)
     companies = await _require_companies_in_scope(db, user, payload.company_ids)
     # Preserve any company this honeypot is *also* attached to outside this
     # token's write scope, invisible to (and unvalidated by) the call above
@@ -758,7 +777,7 @@ async def update_honeypot_api(
         honeypot.facts_updated_at = None
 
     await db.commit()
-    honeypot = await _get_honeypot_or_404(honeypot.id, db, user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot.id, db, user)
 
     await log_event(
         db,
@@ -788,7 +807,7 @@ async def delete_honeypot_api(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_token_user),
 ) -> Response:
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, user)
     if payload.confirm_name.strip() != honeypot.name:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -821,7 +840,7 @@ async def test_connection_api(
     request: Request, honeypot_id: uuid.UUID, db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_token_user),
 ) -> dict[str, object]:
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, user)
     app_settings = await get_or_create_app_settings(db)
 
     async_result = tasks.test_honeypot_connection.delay(str(honeypot.id))
@@ -857,7 +876,7 @@ async def discover_host_key_api(
     request: Request, honeypot_id: uuid.UUID, db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_token_user),
 ) -> dict[str, object]:
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, user)
     app_settings = await get_or_create_app_settings(db)
 
     fingerprint: str | None = None
@@ -900,7 +919,7 @@ async def trust_host_key_api(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_token_user),
 ) -> dict[str, object]:
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, user)
     fingerprint = payload.fingerprint.strip()
     if not _FINGERPRINT_RE.match(fingerprint):
         raise HTTPException(
@@ -931,7 +950,7 @@ async def refresh_facts_api(
     request: Request, honeypot_id: uuid.UUID, db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_token_user),
 ) -> dict[str, object]:
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, user)
     app_settings = await get_or_create_app_settings(db)
 
     async_result = tasks.refresh_honeypot_facts.delay(str(honeypot.id))
@@ -948,7 +967,7 @@ async def refresh_facts_api(
         error = str(exc)
 
     if error is None:
-        honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
+        honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, user)
 
     await log_event(
         db,
@@ -971,7 +990,7 @@ async def refresh_packages_api(
     request: Request, honeypot_id: uuid.UUID, db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_token_user),
 ) -> dict[str, object]:
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, user)
     app_settings = await get_or_create_app_settings(db)
 
     async_result = tasks.refresh_honeypot_packages.delay(str(honeypot.id))
@@ -1008,7 +1027,7 @@ async def refresh_services_api(
     request: Request, honeypot_id: uuid.UUID, db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_token_user),
 ) -> dict[str, object]:
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, user)
     app_settings = await get_or_create_app_settings(db)
 
     async_result = tasks.refresh_honeypot_services.delay(str(honeypot.id))
@@ -1048,7 +1067,7 @@ async def run_onboarding_api(
     """Runs initial setup using the credential already stored on the
     honeypot record. See this module's docstring for why the "Fix it"
     variant that submits a fresh one-time credential is not exposed here."""
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, user)
     app_settings = await get_or_create_app_settings(db)
 
     async_result = tasks.run_honeypot_onboarding.delay(str(honeypot.id))
@@ -1097,7 +1116,7 @@ async def fix_readiness_directly_api(
     `app.ssh.readiness`'s module docstring). Uses only the credential
     already on file, same as `run_onboarding_api` above, so it's exposed
     here for the same reason that one is."""
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, user)
     app_settings = await get_or_create_app_settings(db)
 
     async_result = tasks.fix_root_readiness.delay(str(honeypot.id))
@@ -1134,7 +1153,7 @@ async def recheck_readiness_api(
     request: Request, honeypot_id: uuid.UUID, db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_token_user),
 ) -> dict[str, object]:
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, user)
     app_settings = await get_or_create_app_settings(db)
 
     async_result = tasks.check_honeypot_readiness.delay(str(honeypot.id))
@@ -1169,7 +1188,7 @@ async def honeypot_logs_api(
     `hide_own` (drop this app's own SSH logins). A journal response also
     carries `entries` (each line with its numeric priority, 0-7 or null)
     and `hidden` (how many lines `hide_own` dropped)."""
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, user)
     app_settings = await get_or_create_app_settings(db)
 
     if not honeypot.host_key_fingerprint:
@@ -1270,7 +1289,7 @@ async def _get_honeypots_by_ids(
 ) -> list[Honeypot]:
     """Submitted ids, minus anything outside this account's scope — dropped
     silently, same as the web UI's bulk endpoints."""
-    return await visible_honeypots_by_ids(db, user, honeypot_ids)
+    return await writable_honeypots_by_ids(db, user, honeypot_ids)
 
 
 @router.post("/honeypots/bulk/check-updates", dependencies=[_action_updates])
@@ -1409,7 +1428,7 @@ async def preview_honeypot_update_api(
     wants to render its own preview UI), not a mandatory gate — see this
     module's docstring for how that compares to the destructive actions
     here that *do* require an explicit `confirm`/`confirm_name` field."""
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, user)
     if not honeypot.host_key_fingerprint:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1451,7 +1470,7 @@ async def trigger_honeypot_update_api(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_token_user),
 ) -> dict[str, object]:
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, user)
     if not honeypot.host_key_fingerprint:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1487,7 +1506,7 @@ async def rollback_honeypot_update_api(
     """The API equivalent of `POST /honeypots/{id}/updates/{run_id}/rollback`
     — see `app/web/routes/honeypots.py`'s `rollback_honeypot_update_endpoint`
     and `app.tasks.jobs._rollback_honeypot_update`."""
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, user)
     source_run = await db.get(HoneypotUpdateRun, run_id)
     if source_run is None or source_run.honeypot_id != honeypot.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Update run not found.")
@@ -1527,7 +1546,7 @@ async def check_honeypot_updates_api(
     request: Request, honeypot_id: uuid.UUID, db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_token_user),
 ) -> dict[str, object]:
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, user)
     skipped = await trigger_check_updates([honeypot])
     await log_event(
         db,
@@ -1607,7 +1626,7 @@ async def hold_package_api(
     """`apt-mark hold` one package — no update run upgrades it until it is
     released (`DELETE` on the same path). Same access as running updates;
     needs root or a sudoers grant for `apt-mark`."""
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, user)
     return await _set_hold_api(request, honeypot, package, hold=True, db=db)
 
 
@@ -1620,7 +1639,7 @@ async def release_package_api(
     user: User = Depends(get_api_token_user),
 ) -> dict[str, object]:
     """`apt-mark unhold` — the reverse of `POST .../hold`."""
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, user)
     return await _set_hold_api(request, honeypot, package, hold=False, db=db)
 
 
@@ -1636,7 +1655,7 @@ async def package_changelog_api(
     """What changed in a pending apt update since the installed version
     (`apt-get changelog`, fetched live, trimmed to the new entries). Same
     access as the web UI's Updates tab."""
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, user)
     _require_package_and_host_key(honeypot, package)
     app_settings = await get_or_create_app_settings(db)
     result = await _wait_for_task(
@@ -1663,7 +1682,7 @@ async def honeypot_power_api(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_token_user),
 ) -> dict[str, object]:
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, user)
     if payload.confirm_name.strip() != honeypot.name:
         await log_event(
             db,
@@ -1927,7 +1946,7 @@ async def trigger_all_honeypots_update_api(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_token_user),
 ) -> dict[str, object]:
-    honeypots = await _visible_honeypots(db, user)
+    honeypots = await _writable_honeypots(db, user)
     batch_id, skipped = await trigger_updates(db, honeypots, payload.strategy)
     await log_event(
         db,
@@ -1946,7 +1965,7 @@ async def trigger_all_check_updates_api(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_token_user),
 ) -> dict[str, object]:
-    skipped = await trigger_check_updates(await _visible_honeypots(db, user))
+    skipped = await trigger_check_updates(await _writable_honeypots(db, user))
     await log_event(
         db,
         request=request,
@@ -1985,7 +2004,7 @@ async def all_power_action_api(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f'"confirm" must be exactly "{_ALL_HONEYPOTS_CONFIRM_PHRASE}".',
         )
-    honeypots = await _visible_honeypots(db, user)
+    honeypots = await _writable_honeypots(db, user)
     skipped = await send_power_to_honeypots(honeypots, payload.action)
     await log_event(
         db,
@@ -2006,7 +2025,7 @@ async def trigger_company_update_api(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_token_user),
 ) -> dict[str, object]:
-    company = await _get_company_or_404(company_id, db, user)
+    company = await _get_writable_company_or_404(company_id, db, user)
     batch_id, skipped = await trigger_updates(db, company.honeypots, payload.strategy)
     await log_event(
         db,
@@ -2026,7 +2045,7 @@ async def trigger_company_check_updates_api(
     request: Request, company_id: uuid.UUID, db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_token_user),
 ) -> dict[str, object]:
-    company = await _get_company_or_404(company_id, db, user)
+    company = await _get_writable_company_or_404(company_id, db, user)
     skipped = await trigger_check_updates(company.honeypots)
     await log_event(
         db,
@@ -2054,7 +2073,7 @@ async def company_power_action_api(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_token_user),
 ) -> dict[str, object]:
-    company = await _get_company_or_404(company_id, db, user)
+    company = await _get_writable_company_or_404(company_id, db, user)
     if payload.confirm_name.strip() != company.name:
         await log_event(
             db,

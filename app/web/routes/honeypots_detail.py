@@ -152,6 +152,9 @@ async def honeypot_detail(
             "events_24h": events_24h,
             "maintenance_window": await maintenance_windows.active_window_for(db, honeypot),
             "can_acknowledge": can_write,
+            # Write actions on this honeypot (test connection, host key,
+            # power) — per honeypot, not "may write somewhere".
+            "can_write": can_write,
             "hardware_applies": hardware_inventory.applies(honeypot),
             "hardware_serial": hardware_inventory.serial_of(honeypot),
             "warranty_days_left": hardware_inventory.warranty_days_left(honeypot),
@@ -298,7 +301,7 @@ async def edit_honeypot_form(
     request: Request, honeypot_id: uuid.UUID, db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Response:
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     csrf_token, new_cookie = get_or_create_csrf_token(request)
     response = templates.TemplateResponse(
         request,
@@ -332,7 +335,7 @@ async def run_onboarding_endpoint(
     single bounded SSH exec, not something a fleet-wide sweep repeats, and
     the honeypot's credential never leaves this process — the task resolves
     it itself from the DB, it is never passed as a task argument."""
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     app_settings = await get_or_create_app_settings(db)
 
     async_result = tasks.run_honeypot_onboarding.delay(str(honeypot.id))
@@ -374,7 +377,7 @@ async def run_onboarding_endpoint(
         # banner on the Overview tab picks up the result on next load.
         tasks.check_honeypot_readiness.delay(str(honeypot.id))
 
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     csrf_token, new_cookie = get_or_create_csrf_token(request)
     response = templates.TemplateResponse(
         request,
@@ -407,7 +410,7 @@ async def recheck_readiness_endpoint(
     """The readiness banner's "Re-check" button — blocks on one SSH round
     trip, same "Test connection"-style pattern as the other on-demand
     checks on this page."""
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     app_settings = await get_or_create_app_settings(db)
 
     async_result = tasks.check_honeypot_readiness.delay(str(honeypot.id))
@@ -452,7 +455,7 @@ async def run_onboarding_with_credential_endpoint(
     honeypot this app otherwise treats as SSH_KEY-only — the task's own
     success-path revert never gets a chance to run when the script fails.
     """
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     app_settings = await get_or_create_app_settings(db)
 
     previous_username = honeypot.username
@@ -479,7 +482,7 @@ async def run_onboarding_with_credential_endpoint(
         # The task never reached its own success-path revert — restore
         # this honeypot to what it was before this one-time attempt rather
         # than leaving it on password auth with a real credential stored.
-        honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+        honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
         honeypot.username = previous_username
         honeypot.auth_method = previous_auth_method
         honeypot.secret_encrypted = None
@@ -499,7 +502,7 @@ async def run_onboarding_with_credential_endpoint(
         details={"error": error} if error else None,
     )
 
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     redirect_url = f"/honeypots/{honeypot.id}"
     if request.headers.get("HX-Request") == "true":
         return Response(status_code=status.HTTP_200_OK, headers={"HX-Redirect": redirect_url})
@@ -521,7 +524,7 @@ async def fix_readiness_directly_endpoint(
     not re-checked here — a honeypot reconfigured to a different username
     between page load and this click just gets its own real error back
     from the SSH connection, same as any other stale-page race."""
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     app_settings = await get_or_create_app_settings(db)
 
     async_result = tasks.fix_root_readiness.delay(str(honeypot.id))
@@ -579,7 +582,7 @@ async def update_honeypot(
     tags: str = Form(""),
     current_user: User = Depends(get_current_user),
 ) -> Response:
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
 
     # A company-scoped account only ever sees/submits the companies it can
     # write (see `_get_companies`) — merge that submission with whatever
@@ -741,7 +744,7 @@ async def discover_host_key(
     request: Request, honeypot_id: uuid.UUID, db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Response:
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     app_settings = await get_or_create_app_settings(db)
     csrf_token, new_cookie = get_or_create_csrf_token(request)
 
@@ -782,7 +785,7 @@ async def trust_host_key(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Response:
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     fingerprint = fingerprint.strip()
     if not _FINGERPRINT_RE.match(fingerprint):
         raise HTTPException(
@@ -836,7 +839,7 @@ async def test_connection_endpoint(
     request: Request, honeypot_id: uuid.UUID, db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Response:
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     app_settings = await get_or_create_app_settings(db)
 
     async_result = tasks.test_honeypot_connection.delay(str(honeypot.id))
@@ -878,7 +881,7 @@ async def refresh_facts_endpoint(
     request: Request, honeypot_id: uuid.UUID, db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Response:
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     app_settings = await get_or_create_app_settings(db)
 
     async_result = tasks.refresh_honeypot_facts.delay(str(honeypot.id))
@@ -896,7 +899,7 @@ async def refresh_facts_endpoint(
 
     if error is None:
         # Facts were updated in the DB by the job — reload to pick them up.
-        honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+        honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
 
     await log_event(
         db,
@@ -931,7 +934,7 @@ async def refresh_packages_endpoint(
     held_only: bool = Form(False),
     current_user: User = Depends(get_current_user),
 ) -> Response:
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     app_settings = await get_or_create_app_settings(db)
 
     async_result = tasks.refresh_honeypot_packages.delay(str(honeypot.id))
@@ -949,7 +952,7 @@ async def refresh_packages_endpoint(
 
     if error is None:
         # Packages were updated in the DB by the job — reload to pick them up.
-        honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+        honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
 
     await log_event(
         db,
@@ -1033,7 +1036,7 @@ async def power_action(
     confirm_name: str = Form(...),
     current_user: User = Depends(get_current_user),
 ) -> Response:
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
 
     if confirm_name.strip() != honeypot.name:
         await log_event(
@@ -1104,7 +1107,7 @@ async def delete_honeypot(
     request: Request, honeypot_id: uuid.UUID, db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Response:
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     honeypot_name = honeypot.name
     await db.delete(honeypot)
     await db.commit()

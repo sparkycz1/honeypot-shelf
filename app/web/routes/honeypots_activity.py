@@ -42,6 +42,7 @@ from app.tasks import jobs as tasks
 from app.web.routes.audit import _csv_safe
 from app.web.routes.honeypots_common import (
     _get_honeypot_or_404,
+    _get_writable_honeypot_or_404,
     _honeypot_tabs,
     _window_context,
     honeypots_router,
@@ -180,7 +181,7 @@ async def refresh_activity_endpoint(
     """"Refresh now" on the Activity tab — forces an immediate OpenCanary
     log poll, waits for it synchronously, then re-renders the same
     partial the auto-poll panel does."""
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     app_settings = await get_or_create_app_settings(db)
 
     async_result = tasks.poll_honeypot_canary_log.delay(str(honeypot.id))
@@ -208,7 +209,7 @@ async def refresh_activity_endpoint(
         details={"error": error} if error else None,
     )
 
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     window = window_from_query(range_key, start, end)
     context = await _build_activity_context(request, honeypot, window, db)
     csrf_token, _ = get_or_create_csrf_token(request)

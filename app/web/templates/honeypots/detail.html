@@ -177,6 +177,7 @@
       <p class="hint">
         {{ t(request, 'honeypots.detail.host_key_missing_hint') }}
       </p>
+      {% if can_write %}
       <button
         class="button"
         hx-post="/honeypots/{{ honeypot.id }}/discover-host-key"
@@ -187,6 +188,7 @@
       >
         {{ t(request, 'honeypots.detail.discover_key_fingerprint') }}
       </button>
+      {% endif %}
     {% endif %}
   </section>
 
@@ -231,6 +233,7 @@
   </div>
   {% endif %}
 
+  {% if can_write %}
   <section class="panel">
     <h2>{{ t(request, 'honeypots.detail.test_connection_heading') }}</h2>
     <button
@@ -248,8 +251,9 @@
     {% endif %}
     <div id="test-result"></div>
   </section>
+  {% endif %}
 
-  {% if request.state.user.can_write() %}
+  {% if can_write %}
     <section class="panel">
       <h2>{{ t(request, "honeypots.power.heading") }}</h2>
       <p class="hint">

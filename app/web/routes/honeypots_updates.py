@@ -33,7 +33,6 @@ from app.ssh.updates import PendingPackage, is_safe_package_name
 # the same name.
 from app.tasks import jobs as tasks
 from app.web.routes.honeypots_common import (
-    _get_honeypot_or_404,
     _get_writable_honeypot_or_404,
     _honeypot_tabs,
     honeypots_router,
@@ -59,7 +58,7 @@ async def check_updates_endpoint(
     request: Request, honeypot_id: uuid.UUID, db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Response:
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     app_settings = await get_or_create_app_settings(db)
 
     async_result = tasks.check_honeypot_updates.delay(str(honeypot.id))
@@ -77,7 +76,7 @@ async def check_updates_endpoint(
 
     # Counts were updated in the DB by the job (even on failure, they're
     # reset to "unknown" rather than left stale) — reload either way.
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
 
     await log_event(
         db,
@@ -122,7 +121,7 @@ async def preview_honeypot_update(
     fires from this page's own confirm button, or directly via the API for
     a scripted caller (see `app/web/routes/api_v1.py`'s module docstring for
     why the API doesn't get the same forced two-step)."""
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     if not honeypot.host_key_fingerprint:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -175,7 +174,7 @@ async def trigger_honeypot_update(
     strategy: UpgradeStrategy = Form(...),
     current_user: User = Depends(get_current_user),
 ) -> Response:
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     if not honeypot.host_key_fingerprint:
         await log_event(
             db,
@@ -235,7 +234,7 @@ async def rollback_honeypot_update_endpoint(
     one), and creates a brand new `HoneypotUpdateRun` row rather than
     mutating the source run, so both stay in the history exactly as they
     happened."""
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     source_run = await _get_update_run_or_404(run_id, db)
     if source_run.honeypot_id != honeypot.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Update run not found.")
@@ -305,7 +304,7 @@ async def set_package_hold_endpoint(
     """Hold a package at its installed version (`apt-mark hold`) so no
     update run touches it, or release it again (`hold=0`). Same access as
     running updates. Audited as `honeypot.package.hold`/`.unhold`."""
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     app_settings = await get_or_create_app_settings(db)
     package = package.strip()
     holding = hold not in ("0", "false", "")
@@ -352,7 +351,7 @@ async def package_changelog_page(
     """What changed in one pending apt update since the installed version —
     `apt-get changelog`, fetched live over SSH, trimmed to the new entries
     (`app.ssh.updates.fetch_changelog`). Read-only, never stored."""
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     app_settings = await get_or_create_app_settings(db)
     package = package.strip()
     changelog: str | None = None
@@ -402,7 +401,7 @@ async def honeypot_update_history(
     way `/audit` is (offset/limit, one extra row fetched to know whether an
     "Older" page exists) — the honeypot detail page's "Recent runs" table
     only ever shows the last 5; this is the full history behind it."""
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     page = max(page, 1)
 
     query = select(HoneypotUpdateRun).where(HoneypotUpdateRun.honeypot_id == honeypot_id)
@@ -470,7 +469,7 @@ async def honeypot_update_run_detail(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Response:
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     run = await _get_update_run_or_404(run_id, db)
     if run.honeypot_id != honeypot.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Update run not found.")
@@ -507,7 +506,7 @@ async def honeypot_update_run_status(
     # Resolve the honeypot through the scoped helper first — this fragment
     # would otherwise expose an out-of-scope honeypot's update output to
     # anyone who could guess the pair of ids.
-    await _get_honeypot_or_404(honeypot_id, db, current_user)
+    await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     run = await _get_update_run_or_404(run_id, db)
     if run.honeypot_id != honeypot_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Update run not found.")

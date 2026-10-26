@@ -77,7 +77,7 @@ def _honeypot_tabs(request: Request, honeypot: Honeypot, user: User) -> list[tup
         # Read-only as well: what happened to the honeypot itself.
         ("history", t(request, "honeypots.tabs.history"), f"{base}/history"),
     ]
-    if user.can_write():
+    if can_write_honeypot(user, honeypot):
         # From here on: managing the honeypot, not watching it — the same
         # line the read/write access levels draw. style.css sets the first
         # of these apart with a divider (`.tab-nav a[href$="/updates"]`).
