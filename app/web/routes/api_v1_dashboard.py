@@ -20,6 +20,7 @@ from app.auth.scope import visible_company_ids, writable_company_ids
 from app.db.models.company_snapshot import CompanySnapshot
 from app.db.models.user import User
 from app.db.session import get_db
+from app.web.routes.map import _build_map_context
 
 router = APIRouter(prefix="/api/v1/dashboard")
 
@@ -63,4 +64,28 @@ async def dashboard_trends_api(
             _snapshot_to_dict(s, with_updates=writable is None or s.company_id in writable)
             for s in snapshots
         ]
+    }
+
+
+@router.get("/map", dependencies=[_view])
+async def dashboard_map_api(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_api_token_user),
+) -> dict[str, object]:
+    """The Map page's data: every located event source (latitude,
+    longitude, how many events), the top countries, the busiest internal
+    sources, and whether a GeoIP database is installed — scoped to the
+    companies this account can see, ignored events left out, exactly like
+    the web Map."""
+    context = await _build_map_context(db, user)
+    return {
+        key: context[key]
+        for key in (
+            "geoip_ready",
+            "total_events",
+            "located_events",
+            "locations",
+            "top_countries",
+            "top_internal",
+        )
     }

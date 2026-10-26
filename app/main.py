@@ -33,9 +33,13 @@ from app.web.routes import (
     api_v1_account,
     api_v1_audit,
     api_v1_backup,
+    api_v1_company_links,
     api_v1_dashboard,
     api_v1_events,
+    api_v1_honeypot_tabs,
+    api_v1_initialize,
     api_v1_maintenance,
+    api_v1_notifications,
     api_v1_scheduling,
     api_v1_search,
     api_v1_settings,
@@ -310,6 +314,10 @@ def create_app() -> FastAPI:
     app.include_router(api_v1.router)
     app.include_router(api_v1_scheduling.router)
     app.include_router(api_v1_maintenance.router)
+    app.include_router(api_v1_notifications.router)
+    app.include_router(api_v1_honeypot_tabs.router)
+    app.include_router(api_v1_company_links.router)
+    app.include_router(api_v1_initialize.router)
     app.include_router(api_v1_users.router)
     app.include_router(api_v1_audit.router)
     app.include_router(api_v1_audit.recordings_router)

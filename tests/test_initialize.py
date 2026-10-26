@@ -8,7 +8,7 @@ from __future__ import annotations
 import re
 import uuid
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from app.db.models.user import AccessLevel, User
 from app.ssh.initialize import build_initialize_command, service_user_for, wrap_for_sudo
@@ -705,13 +705,13 @@ def test_wrap_for_sudo_non_root_with_password_pipes_it_to_sudo_dash_capital_s():
 
 
 class _FakeWebSocket:
+    """Records the frames a run emits (`initialize_ws.Emit`)."""
+
     def __init__(self) -> None:
         self.sent: list[dict[str, object]] = []
 
-    async def send_text(self, text: str) -> None:
-        import json
-
-        self.sent.append(json.loads(text))
+    async def emit(self, frame: dict[str, Any]) -> None:
+        self.sent.append(frame)
 
 
 async def test_wait_for_reboot_succeeds_once_the_device_answers_again(monkeypatch):
@@ -728,7 +728,7 @@ async def test_wait_for_reboot_succeeds_once_the_device_answers_again(monkeypatc
 
     websocket = _FakeWebSocket()
     error = await initialize_ws_module._wait_for_reboot(
-        cast("WebSocket", websocket), "192.0.2.10", 22222, "SHA256:samefingerprint"
+        websocket.emit, "192.0.2.10", 22222, "SHA256:samefingerprint"
     )
     assert error is None
     assert any(m.get("label") == "Back up after reboot" for m in websocket.sent)
@@ -748,7 +748,7 @@ async def test_wait_for_reboot_reports_a_fingerprint_mismatch_immediately(monkey
 
     websocket = _FakeWebSocket()
     error = await initialize_ws_module._wait_for_reboot(
-        cast("WebSocket", websocket), "192.0.2.10", 22222, "SHA256:originalfingerprint"
+        websocket.emit, "192.0.2.10", 22222, "SHA256:originalfingerprint"
     )
     assert error is not None
     assert "different SSH host key" in error
@@ -769,7 +769,7 @@ async def test_wait_for_reboot_times_out_if_the_device_never_comes_back(monkeypa
 
     websocket = _FakeWebSocket()
     error = await initialize_ws_module._wait_for_reboot(
-        cast("WebSocket", websocket), "192.0.2.10", 22222, "SHA256:originalfingerprint"
+        websocket.emit, "192.0.2.10", 22222, "SHA256:originalfingerprint"
     )
     assert error is not None
     assert "didn't come back up" in error
