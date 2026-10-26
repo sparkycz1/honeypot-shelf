@@ -2,11 +2,18 @@ name: Fuzz
 
 # Coverage-guided fuzzing of every target in fuzz/targets.py with Atheris
 # (libFuzzer for Python): the parsers of honeypot output, OpenCanary event
-# logs and user input — see fuzz/__init__.py. One job per target, in parallel: a
-# short run on every PR that touches the code, a long one weekly. A crash
-# fails the job and uploads the input that caused it (replay it with
+# logs and user input — see fuzz/__init__.py.
+#
+# - `quick` (every PR that touches the code, every push to main): one job
+#   that fuzzes every target for 30 seconds, as many at once as the runner
+#   has cores. One job instead of one per target, so a PR doesn't queue 18
+#   runners behind the account's concurrent-job limit.
+# - `long` (weekly, or by hand): one job per target, 20 minutes each.
+#
+# A crash fails the job and uploads the input that caused it (replay it with
 # `python -m fuzz.run <target> <file>`). tests/test_fuzz_targets.py keeps
-# the matrix below in sync with fuzz.targets.TARGETS.
+# the `long` matrix in sync with fuzz.targets.TARGETS; `quick` reads the
+# list from fuzz.targets itself.
 
 on:
   push:
@@ -21,15 +28,68 @@ on:
 permissions:
   contents: read
 
+# A new push to a PR cancels the run for the previous one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Atheris has no Python 3.15 wheels yet (3.1.0 ships cp312-cp314
+  # only), so fuzzing stays on 3.14 while the app itself runs on
+  # 3.15 (.python-version). Drop this once Atheris supports 3.15.
+  UV_PYTHON: "3.14"
+
 jobs:
-  fuzz:
+  quick:
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # Pinned by commit SHA like every other action here (see ci.yml).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
+        with:
+          version: "0.13.5"
+
+      - name: Install Python
+        run: uv python install "$UV_PYTHON"
+
+      - name: Install dependencies (with Atheris)
+        run: uv sync --locked --group fuzz
+
+      - name: Fuzz every target
+        env:
+          SECONDS_PER_TARGET: "30"
+        run: |
+          mkdir -p crashes logs
+          uv run python -c 'from fuzz.targets import TARGETS; print(*TARGETS, sep="\n")' > targets.txt
+          status=0
+          xargs -P "$(nproc)" -I{} sh -c \
+            'uv run --no-sync python -m fuzz.run "$1" -max_total_time="$SECONDS_PER_TARGET" -artifact_prefix="crashes/$1-" -print_final_stats=1 > "logs/$1.log" 2>&1 || { echo "::error::fuzz target $1 failed"; exit 1; }' \
+            _ {} < targets.txt || status=$?
+          for log in logs/*.log; do
+            echo "::group::$(basename "$log" .log)"
+            cat "$log"
+            echo "::endgroup::"
+          done
+          exit "$status"
+
+      - name: Upload the crashing input
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: fuzz-crashes
+          path: crashes/
+          if-no-files-found: ignore
+
+  long:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      # Atheris has no Python 3.15 wheels yet (3.1.0 ships cp312-cp314
-      # only), so fuzzing stays on 3.14 while the app itself runs on
-      # 3.15 (.python-version). Drop this once Atheris supports 3.15.
-      UV_PYTHON: "3.14"
     strategy:
       fail-fast: false
       matrix:
@@ -60,6 +120,8 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
+        with:
+          version: "0.13.5"
 
       - name: Install Python
         run: uv python install "$UV_PYTHON"
@@ -69,8 +131,7 @@ jobs:
 
       - name: Fuzz ${{ matrix.target }}
         env:
-          # 20 minutes each on the weekly run, one minute otherwise.
-          SECONDS_PER_TARGET: ${{ github.event_name == 'schedule' && '1200' || '60' }}
+          SECONDS_PER_TARGET: "1200"
           TARGET: ${{ matrix.target }}
         run: |
           mkdir -p crashes

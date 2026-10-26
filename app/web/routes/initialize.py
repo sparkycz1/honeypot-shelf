@@ -115,7 +115,14 @@ class PendingInitializeRun:
     # An address for the device to use from the reboot that ends the run
     # (see app.ssh.mac_address); None leaves the hardware one.
     mac_address: str | None = None
+    # Who filled in the form: only that account may open the run's page or
+    # start it over the WebSocket. The run holds the device's SSH password
+    # and VPN secrets, and its id travels in a URL.
+    created_by: uuid.UUID | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+    def started_by(self, user_id: uuid.UUID) -> bool:
+        return self.created_by == user_id
 
 
 # Module-level, not `app.state` — see the module docstring's single-process
@@ -268,6 +275,7 @@ async def initialize_submit(
         wireguard_config=wireguard_config or None,
         new_ssh_port=new_ssh_port,
         mac_address=normalized_mac,
+        created_by=request.state.user.id,
     )
     return RedirectResponse(
         url=f"/initialize/run/{run_id}", status_code=status.HTTP_303_SEE_OTHER
@@ -284,7 +292,7 @@ async def initialize_run_page(request: Request, run_id: str) -> Response:
     """
     _purge_stale_runs()
     run = PENDING_RUNS.get(run_id)
-    if run is None:
+    if run is None or not run.started_by(request.state.user.id):
         # Never existed, expired, or a run already claimed and finished —
         # either way there's nothing left to show; back to a fresh form
         # rather than an error page for what's usually just a stale

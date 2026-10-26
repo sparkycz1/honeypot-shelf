@@ -1,11 +1,30 @@
 version: 2
 
+# Every ecosystem waits 7 days after a release before proposing it
+# (`cooldown`): a hijacked package version is usually caught and yanked
+# within days, and nothing here needs a release on day one — a security
+# fix still arrives at once, since Dependabot security updates ignore the
+# cooldown. Minor and patch bumps come grouped into one PR per ecosystem,
+# so a week's worth of updates is one CI run, not ten; a major bump still
+# gets a PR of its own.
+#
+# Not covered by any ecosystem here: the vendored front-end files under
+# app/web/static/ (htmx, xterm.js, Swagger UI) — they have no package
+# manifest, so they're checked by hand in each dependency round (see
+# CLAUDE.md, "Vendored JS/CSS").
+
 updates:
-  # Python dependencies (pyproject.toml + the committed uv.lock).
+  # Python dependencies (pyproject.toml + the committed uv.lock), all
+  # groups (dev, e2e, fuzz) included.
   - package-ecosystem: "uv"
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      python:
+        update-types: ["minor", "patch"]
     open-pull-requests-limit: 15
     labels:
       - "dependencies"
@@ -15,6 +34,8 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 15
     labels:
       - "dependencies"
@@ -25,21 +46,25 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 15
     labels:
       - "dependencies"
 
-  # Every action pinned in .github/workflows/*.yml (ci.yml, codeql.yml,
-  # scorecard.yml) — `directory: "/"` scans the whole workflows folder,
-  # not just one file. Each `uses: owner/action@<sha>  # vX.Y.Z` is pinned
-  # by commit SHA (see those workflows' own comments for why); Dependabot
-  # already understands that exact pattern and opens a PR bumping both
-  # the SHA and the trailing version comment together when a new release
-  # ships — nothing extra to configure for that specifically.
+  # Every action pinned in .github/workflows/*.yml — `directory: "/"` scans
+  # the whole workflows folder. Each `uses: owner/action@<sha>  # vX.Y.Z` is
+  # pinned by commit SHA (see ci.yml); Dependabot bumps the SHA and the
+  # trailing version comment together.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        update-types: ["minor", "patch"]
     open-pull-requests-limit: 15
     labels:
       - "dependencies"

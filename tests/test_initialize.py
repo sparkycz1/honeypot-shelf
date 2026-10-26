@@ -773,3 +773,85 @@ async def test_wait_for_reboot_times_out_if_the_device_never_comes_back(monkeypa
     )
     assert error is not None
     assert "didn't come back up" in error
+
+
+def _pending_run(created_by: uuid.UUID | None) -> PendingInitializeRun:
+    return PendingInitializeRun(
+        ip_address="192.0.2.30",
+        port=22,
+        username="root",
+        device_name="acme-honey9",
+        auth_method="password",
+        password="device-password",
+        vpn_provider="none",
+        netbird_setup_key=None,
+        netbird_management_url=None,
+        wireguard_config=None,
+        new_ssh_port=22222,
+        created_by=created_by,
+    )
+
+
+async def test_a_new_run_belongs_to_the_account_that_filled_in_the_form(client):
+    form = await client.get("/initialize")
+    response = await client.post(
+        "/initialize",
+        data={
+            "ip_address": "192.0.2.12",
+            "device_name": "acme-honey4",
+            "username": "root",
+            "port": "22",
+            "auth_method": "ssh_key",
+            "csrf_token": _csrf_from(form),
+        },
+        follow_redirects=False,
+    )
+    run_id = response.headers["location"].removeprefix("/initialize/run/")
+    run = PENDING_RUNS.pop(run_id)
+    assert run.created_by is not None
+    assert run.started_by(run.created_by)
+
+
+async def test_another_accounts_run_page_is_not_found(client, login_as):
+    """A run carries the device's SSH password; knowing its id is not enough."""
+    PENDING_RUNS["someone-elses-run"] = _pending_run(uuid.uuid4())
+    try:
+        await login_as(client, username="other-admin", is_superadmin=True)
+        response = await client.get("/initialize/run/someone-elses-run", follow_redirects=False)
+        assert response.status_code == 303
+        assert response.headers["location"] == "/initialize"
+    finally:
+        PENDING_RUNS.pop("someone-elses-run", None)
+
+
+class _ClosingWebSocket:
+    def __init__(self) -> None:
+        self.accepted = False
+        self.closed: tuple[int, str] | None = None
+
+    async def accept(self) -> None:
+        self.accepted = True
+
+    async def close(self, code: int = 1000, reason: str = "") -> None:
+        self.closed = (code, reason)
+
+
+async def test_another_account_cannot_start_a_run_over_the_websocket(monkeypatch):
+    from app.web.routes import initialize_ws
+
+    intruder = User(id=uuid.uuid4(), username="intruder", is_superadmin=True)
+
+    async def _as_intruder(websocket: object) -> User:
+        return intruder
+
+    monkeypatch.setattr(initialize_ws, "_authenticate", _as_intruder)
+    PENDING_RUNS["victim-run"] = _pending_run(uuid.uuid4())
+    try:
+        ws = _ClosingWebSocket()
+        await initialize_ws.initialize_websocket(cast("WebSocket", ws), "victim-run")
+        assert not ws.accepted
+        assert ws.closed is not None and ws.closed[0] == 1008
+        # Still there for its owner.
+        assert "victim-run" in PENDING_RUNS
+    finally:
+        PENDING_RUNS.pop("victim-run", None)

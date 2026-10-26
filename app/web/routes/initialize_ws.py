@@ -37,7 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.audit import log_event
 from app.auth import session_policy
-from app.auth.sessions import SESSION_COOKIE_NAME, get_valid_session
+from app.auth.sessions import SESSION_COOKIE_NAME, get_valid_session, must_change_password_first
 from app.auth.ssh_keys import parse_ssh_public_keys
 from app.auth.websocket_origin import is_same_origin
 from app.core.app_settings import get_or_create_app_settings
@@ -95,7 +95,7 @@ async def _authenticate(websocket: WebSocket) -> User | None:
     db_session_factory = websocket.app.state.db_session_factory
     async with db_session_factory() as db:
         session = await get_valid_session(db, raw_token)
-    if session is None:
+    if session is None or must_change_password_first(session):
         await websocket.close(code=_POLICY_VIOLATION, reason="Not authenticated.")
         return None
 
@@ -271,10 +271,13 @@ async def initialize_websocket(websocket: WebSocket, run_id: str) -> None:
     if user is None:
         return
 
-    run = PENDING_RUNS.pop(run_id, None)
-    if run is None:
+    # Another account's run is "not found" too: it carries the device's
+    # credentials, and must not be claimed by whoever learns its id.
+    run = PENDING_RUNS.get(run_id)
+    if run is None or not run.started_by(user.id):
         await websocket.close(code=_POLICY_VIOLATION, reason="Run not found or already started.")
         return
+    PENDING_RUNS.pop(run_id, None)
 
     await websocket.accept()
 
