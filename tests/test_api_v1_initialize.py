@@ -116,7 +116,8 @@ async def test_validation_and_read_only(
     ro = await _auth(client, login_as, db_session_factory, "ro", AccessLevel.READ)
     refused = await client.post("/api/v1/initialize", json=_REQUEST, headers=ro)
     assert refused.status_code == 403
-    assert (await client.get("/api/v1/initialize/history", headers=ro)).status_code == 403
+    history = await client.get("/api/v1/initialize/history", headers=ro)
+    assert history.status_code == 403
     await _settle()
     assert fake_runner == []
 

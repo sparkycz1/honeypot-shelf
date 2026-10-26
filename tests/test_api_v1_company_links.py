@@ -75,8 +75,10 @@ async def test_grant_change_and_revoke_access(
             (ctx["acme"].id, AccessLevel.READ_WRITE),
             (ctx["beta"].id, AccessLevel.READ_WRITE),
         }
-    assert (await client.delete(url, headers=ctx["admin"])).status_code == 204
-    assert (await client.delete(url, headers=ctx["admin"])).status_code == 404
+    revoked = await client.delete(url, headers=ctx["admin"])
+    assert revoked.status_code == 204
+    revoked_again = await client.delete(url, headers=ctx["admin"])
+    assert revoked_again.status_code == 404
     async with db_session_factory() as db:
         assert await db.get(User, ctx["member"].id) is not None
 
@@ -88,12 +90,14 @@ async def test_attach_and_detach_honeypot_never_deletes_it(
     hp = ctx["honeypot"]
     for company in (ctx["beta"], ctx["acme"]):
         url = f"/api/v1/companies/{company.id}/honeypots/{hp.id}"
-        assert (await client.put(url, headers=ctx["admin"])).status_code == 204
+        attached = await client.put(url, headers=ctx["admin"])
+        assert attached.status_code == 204
     async with db_session_factory() as db:
         assert {c.name for c in (await db.get(Honeypot, hp.id)).companies} == {"Acme", "Beta"}
     for company in (ctx["acme"], ctx["beta"]):
         url = f"/api/v1/companies/{company.id}/honeypots/{hp.id}"
-        assert (await client.delete(url, headers=ctx["admin"])).status_code == 204
+        detached = await client.delete(url, headers=ctx["admin"])
+        assert detached.status_code == 204
     async with db_session_factory() as db:
         assert (await db.get(Honeypot, hp.id)).companies == []
 
@@ -109,7 +113,8 @@ async def test_syslog_targets(client: Any, login_as: Any, db_session_factory: An
         headers=ctx["admin"],
     )
     assert saved.status_code == 200, saved.text
-    assert (await client.get(url, headers=ctx["admin"])).json() == {
+    read_back = await client.get(url, headers=ctx["admin"])
+    assert read_back.json() == {
         "enabled": True, "host": "siem.example.com", "port": 6514, "protocol": "tcp"
     }
     fleet = await client.put(

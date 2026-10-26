@@ -77,7 +77,8 @@ async def test_read_only_member_creates_lists_updates_and_deletes_own_rule(
 
     deleted = await client.delete(f"/api/v1/notifications/rules/{rule['id']}", headers=headers)
     assert deleted.status_code == 204
-    assert (await client.get("/api/v1/notifications/rules", headers=headers)).json() == []
+    rules = await client.get("/api/v1/notifications/rules", headers=headers)
+    assert rules.json() == []
 
 
 async def test_rule_for_a_company_out_of_scope_is_404(client, login_as, db_session_factory):

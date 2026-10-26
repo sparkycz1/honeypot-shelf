@@ -42,6 +42,10 @@ from app.web.routes.notifications import (
 router = APIRouter(prefix="/api/v1/notifications")
 
 _HISTORY_LIMIT = 200
+_TEST_SEND_FAILED = (
+    "The test notification could not be delivered; the send history"
+    " (GET /api/v1/notifications/history) has the reason."
+)
 
 
 class NotificationRuleSave(BaseModel):
@@ -307,7 +311,7 @@ async def send_test_notification_api(
         error = "No destination (email address, URL or recipient) is set for this rule."
     else:
         app_settings = await get_or_create_app_settings(db)
-        error = await send_test_notification(
+        failure = await send_test_notification(
             db,
             app_settings,
             rule=rule,
@@ -315,6 +319,9 @@ async def send_test_notification_api(
             channel=rule.delivery_channel,
             target=resolve_target(rule) or "",
         )
+        # The delivery error can quote a remote server's or library's text;
+        # it is kept in the send history (`GET .../history`), not echoed here.
+        error = None if failure is None else _TEST_SEND_FAILED
     return {"sent": error is None, "error": error}
 
 

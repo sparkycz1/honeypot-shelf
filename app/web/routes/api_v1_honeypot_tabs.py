@@ -13,6 +13,7 @@ kept exactly as it was, then OpenCanary restarts."""
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from dataclasses import asdict
 from typing import Any
@@ -38,6 +39,7 @@ from app.tasks import jobs as tasks
 from app.web.routes.api_v1 import _get_honeypot_or_404, _get_writable_honeypot_or_404
 from app.web.routes.honeypots_common import _build_monitoring_context
 from app.web.routes.honeypots_config import (
+    JOB_FAILED_MESSAGE,
     _load_opencanary_config,
     _load_readonly_state,
     _mac_task,
@@ -45,6 +47,7 @@ from app.web.routes.honeypots_config import (
 from app.web.time_window import window_from_query
 
 router = APIRouter(prefix="/api/v1/honeypots")
+logger = logging.getLogger(__name__)
 
 _view = Depends(get_api_token_user)
 _write = Depends(require_api_write)
@@ -131,8 +134,9 @@ async def refresh_honeypot_monitoring_api(
                 error = str(result.get("error") or "Unknown error.")
     except CeleryTimeoutError:
         error = "The background job did not respond in time."
-    except Exception as exc:
-        error = str(exc)
+    except Exception:
+        logger.warning("Background job failed", exc_info=True)
+        error = JOB_FAILED_MESSAGE
     await log_event(
         db,
         request=request,
@@ -272,8 +276,9 @@ async def save_honeypot_opencanary_api(
                 error = str((result or {}).get("error") or "Unknown error.")
         except CeleryTimeoutError:
             error = "Applying the config did not finish in time."
-        except Exception as exc:
-            error = str(exc)
+        except Exception:
+            logger.warning("Background job failed", exc_info=True)
+            error = JOB_FAILED_MESSAGE
         if error is None:
             await sync_module_tags(db, honeypot, updated)
     await log_event(
@@ -327,8 +332,9 @@ async def set_honeypot_readonly_api(
             error = str(result.get("error") or "Unknown error.")
     except CeleryTimeoutError:
         error = "The command did not finish in time."
-    except Exception as exc:
-        error = str(exc)
+    except Exception:
+        logger.warning("Background job failed", exc_info=True)
+        error = JOB_FAILED_MESSAGE
     await log_event(
         db,
         request=request,
