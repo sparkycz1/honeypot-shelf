@@ -1,6 +1,6 @@
 [project]
 name = "honeypot-shelf"
-version = "0.82.0"
+version = "0.83.0"
 description = "Management and monitoring overview for a fleet of OpenCanary honeypots, across multiple companies"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -100,7 +100,7 @@ e2e = [
 
 [tool.uv]
 package = false
-# `.python-version` pins Python 3.14.8, which older uv releases can't
+# `.python-version` pins Python 3.15.1, which older uv releases can't
 # download — fail with a clear "update uv" message instead.
 required-version = ">=0.13"
 # Never resolve to an alpha/beta/rc, even when a newer stable dependency
@@ -108,7 +108,7 @@ required-version = ">=0.13"
 prerelease = "disallow"
 
 [tool.ruff]
-target-version = "py314"
+target-version = "py315"
 line-length = 100
 
 [tool.ruff.lint]
@@ -160,7 +160,7 @@ max-complexity = 16
 "alembic/versions/1aabc66480ab_initial_schema.py" = ["E501"]
 
 [tool.mypy]
-python_version = "3.14"
+python_version = "3.15"
 plugins = ["pydantic.mypy"]
 strict = true
 warn_unused_ignores = true

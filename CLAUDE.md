@@ -75,8 +75,8 @@ uv run mypy app alembic tests    # type check (strict for app/ and alembic/)
 uv run alembic revision --autogenerate -m "..."   # after changing a model — READ the generated file
 uv run alembic upgrade head
 uv run alembic heads             # must show exactly one head before committing a migration
-uv run python -m fuzz.run <target> -max_total_time=60   # Linux only (atheris); targets in fuzz/targets.py
-uvx pip-audit --strict -r <(uv export --frozen --no-hashes --all-groups)   # known CVEs, same as CI
+uv run --python 3.14 --group fuzz python -m fuzz.run <target> -max_total_time=60   # Linux only; Atheris has no 3.15 wheels yet, so 3.14 (and no `uv sync --all-groups`)
+uvx pip-audit --strict -r <(uv export --frozen --no-hashes --no-dev)   # known CVEs, same as CI
 ```
 
 On Windows the suite needs `--ignore=tests/test_vpn.py` (it imports
