@@ -10,21 +10,38 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/sparkycz1/honeypot-shelf/releases/latest"><img src="https://img.shields.io/github/v/release/sparkycz1/honeypot-shelf?color=f2a83a" alt="Latest release"></a>
   <a href="https://github.com/sparkycz1/honeypot-shelf/actions/workflows/ci.yml"><img src="https://github.com/sparkycz1/honeypot-shelf/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/sparkycz1/honeypot-shelf/actions/workflows/codeql.yml"><img src="https://github.com/sparkycz1/honeypot-shelf/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
   <a href="https://github.com/sparkycz1/honeypot-shelf/actions/workflows/fuzz.yml"><img src="https://github.com/sparkycz1/honeypot-shelf/actions/workflows/fuzz.yml/badge.svg" alt="Fuzz"></a>
+  <a href="https://github.com/sparkycz1/honeypot-shelf/actions/workflows/scorecard.yml"><img src="https://github.com/sparkycz1/honeypot-shelf/actions/workflows/scorecard.yml/badge.svg" alt="Scorecard"></a>
+  <a href="https://github.com/sparkycz1/honeypot-shelf/actions/workflows/release.yml"><img src="https://github.com/sparkycz1/honeypot-shelf/actions/workflows/release.yml/badge.svg" alt="Release"></a>
   <a href="https://scorecard.dev/viewer/?uri=github.com/sparkycz1/honeypot-shelf"><img src="https://api.securityscorecards.dev/projects/github.com/sparkycz1/honeypot-shelf/badge" alt="OpenSSF Scorecard"></a>
-  <a href="https://github.com/sparkycz1/honeypot-shelf/releases/latest"><img src="https://img.shields.io/github/v/release/sparkycz1/honeypot-shelf?color=f2a83a" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue" alt="License"></a>
+</p>
+
+<p align="center">
+  <a href=".github/SECURITY.md"><img src="https://img.shields.io/badge/security-policy-blue" alt="Security policy"></a>
+  <a href="https://github.com/sparkycz1/honeypot-shelf/security"><img src="https://img.shields.io/badge/secret%20scanning-enabled-brightgreen" alt="Secret scanning"></a>
+  <a href=".github/dependabot.yml"><img src="https://img.shields.io/badge/dependabot-enabled-025E8C?logo=dependabot&logoColor=white" alt="Dependabot"></a>
+  <a href="https://github.com/sparkycz1/honeypot-shelf/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/pip--audit-in%20CI-4B8BBE" alt="pip-audit"></a>
+  <a href="https://github.com/astral-sh/ruff"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json" alt="Ruff"></a>
+  <a href="https://mypy-lang.org/"><img src="https://img.shields.io/badge/mypy-strict-2A6DB2" alt="mypy strict"></a>
+  <a href="https://github.com/sparkycz1/honeypot-shelf/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/browser%20test-Playwright-2EAD33?logo=playwright&logoColor=white" alt="Playwright browser test"></a>
+  <a href="https://github.com/astral-sh/uv"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json" alt="uv"></a>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.15-3776AB?logo=python&logoColor=white" alt="Python 3.15">
   <img src="https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white" alt="FastAPI">
   <img src="https://img.shields.io/badge/htmx-3366CC?logo=htmx&logoColor=white" alt="htmx">
+  <img src="https://img.shields.io/badge/SQLAlchemy%202.1-D71F00?logo=sqlalchemy&logoColor=white" alt="SQLAlchemy 2.1">
   <img src="https://img.shields.io/badge/PostgreSQL%2018-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL 18">
+  <img src="https://img.shields.io/badge/Redis%208-DC382D?logo=redis&logoColor=white" alt="Redis 8">
   <img src="https://img.shields.io/badge/Celery-37814A?logo=celery&logoColor=white" alt="Celery">
   <img src="https://img.shields.io/badge/Docker%20Compose-2496ED?logo=docker&logoColor=white" alt="Docker Compose">
+  <img src="https://img.shields.io/badge/Caddy-1F88C0?logo=caddy&logoColor=white" alt="Caddy">
+  <img src="https://img.shields.io/badge/OpenCanary-f2a83a" alt="OpenCanary">
   <img src="https://img.shields.io/badge/i18n-English%20%7C%20%C4%8Ce%C5%A1tina-f2a83a" alt="English and Czech">
 </p>
 
@@ -32,7 +49,8 @@
   <a href="#-quick-start"><b>Quick start</b></a> ·
   <a href="https://github.com/sparkycz1/honeypot-shelf/wiki"><b>Documentation</b></a> ·
   <a href="https://github.com/sparkycz1/honeypot-shelf/wiki/REST-API"><b>REST API</b></a> ·
-  <a href="https://github.com/sparkycz1/honeypot-shelf/releases"><b>Releases</b></a>
+  <a href="https://github.com/sparkycz1/honeypot-shelf/releases"><b>Releases</b></a> ·
+  <a href=".github/SECURITY.md"><b>Security</b></a>
 </p>
 
 ![The Dashboard: every company's honeypots, their health and the attacks they caught](docs/screenshots/dashboard.png)
