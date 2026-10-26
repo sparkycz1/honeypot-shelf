@@ -34,7 +34,7 @@ from app.ssh import logs as ssh_logs
 from app.tasks import jobs as tasks
 from app.web.log_lines import journal_log_lines, parse_log_lines
 from app.web.routes.honeypots_common import (
-    _get_honeypot_or_404,
+    _get_writable_honeypot_or_404,
     _honeypot_tabs,
     honeypots_router,
     need_terminal,
@@ -56,7 +56,7 @@ async def terminal_page(
     page having already been reached. Gated behind `ACTION_TERMINAL` — see
     that permission's comment in `app/db/models/role.py` for why it's its
     own dedicated permission rather than folded into an existing one."""
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     if not honeypot.host_key_fingerprint:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -124,7 +124,7 @@ async def honeypot_logs(
     honeypot, journal/file/browse, search term) the same way "Refresh
     packages now"/"Test connection" are — not the returned log content
     itself, which is never stored anywhere in this app."""
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     settings = get_settings()
     app_settings = await get_or_create_app_settings(db)
 
@@ -280,7 +280,7 @@ async def save_log_view(
     """"Save this view" on the Logs tab — only the Logs filters are kept
     (`app.services.saved_log_views`), not the honeypot, so the view can be
     replayed on any honeypot's Logs tab."""
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     form = await request.form()
     query_string = build_log_query_string(
         {key: str(form.get(key, "")) for key in ALLOWED_LOG_VIEW_PARAMS}
@@ -307,7 +307,7 @@ async def delete_log_view(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Response:
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     await delete_saved_log_view(db, current_user.id, view_id)
     return RedirectResponse(
         url=f"/honeypots/{honeypot.id}/logs", status_code=status.HTTP_303_SEE_OTHER

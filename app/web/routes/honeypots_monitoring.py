@@ -27,6 +27,7 @@ from app.tasks import jobs as tasks
 from app.web.routes.honeypots_common import (
     _build_monitoring_context,
     _get_honeypot_or_404,
+    _get_writable_honeypot_or_404,
     _honeypot_tabs,
     honeypots_router,
     need_manage,
@@ -116,7 +117,7 @@ async def refresh_monitoring_endpoint(
     `refresh_facts_endpoint` already uses, just gathered rather than
     sequential since no job depends on another), then
     re-renders the same partial the auto-poll panel does."""
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     app_settings = await get_or_create_app_settings(db)
 
     monitoring_result = tasks.sample_honeypot_monitoring.delay(str(honeypot.id))
@@ -153,7 +154,7 @@ async def refresh_monitoring_endpoint(
         details={"error": error} if error else None,
     )
 
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     window = window_from_query(range_key, start, end)
     context = await _build_monitoring_context(honeypot, window, db, current_user)
     csrf_token, _ = get_or_create_csrf_token(request)

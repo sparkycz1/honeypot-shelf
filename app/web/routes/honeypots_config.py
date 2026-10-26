@@ -38,7 +38,6 @@ from app.ssh.opencanary_config import (
 )
 from app.tasks import jobs as tasks
 from app.web.routes.honeypots_common import (
-    _get_honeypot_or_404,
     _get_writable_honeypot_or_404,
     _honeypot_tabs,
     honeypots_router,
@@ -116,7 +115,7 @@ async def honeypot_config_tab(
     a real failure (e.g. a missing sudoers grant) was ever distinguishable
     from a silent no-op. Confirmed live as a real "it does nothing" bug
     report."""
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     app_settings = await get_or_create_app_settings(db)
 
     readonly_state: str | None = None
@@ -169,7 +168,7 @@ async def save_honeypot_opencanary_config_endpoint(
     untouched), writes it back, and restarts whatever needs restarting.
     Never a partial save: reading and writing both happen in this one
     request, no separate "stage changes then apply" step."""
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     app_settings = await get_or_create_app_settings(db)
 
     error: str | None = None
@@ -264,7 +263,7 @@ async def set_honeypot_readonly_endpoint(
     `enable` is the literal string "true"/"false" from the two buttons on
     the Config tab, not a checkbox (there's nothing to check — each button
     is its own explicit, unambiguous action)."""
-    honeypot = await _get_honeypot_or_404(honeypot_id, db, current_user)
+    honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, current_user)
     app_settings = await get_or_create_app_settings(db)
     enable_bool = enable == "true"
 

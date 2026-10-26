@@ -161,3 +161,17 @@ async def visible_honeypots_by_ids(
     query = honeypots_visible_to(user).where(Honeypot.id.in_(honeypot_ids))
     result = await db.execute(query)
     return list(result.scalars().all())
+
+
+async def writable_honeypots_by_ids(
+    db: AsyncSession, user: User, honeypot_ids: Sequence[uuid.UUID]
+) -> list[Honeypot]:
+    """`visible_honeypots_by_ids`, narrowed to the honeypots `user` may
+    write — what every bulk action (updates, power, delete, tags) acts
+    on. An account that writes one company and only reads another must
+    not reach the second company's honeypots through a bulk selection."""
+    if not honeypot_ids:
+        return []
+    query = honeypots_writable_by(user).where(Honeypot.id.in_(honeypot_ids))
+    result = await db.execute(query)
+    return list(result.scalars().all())
