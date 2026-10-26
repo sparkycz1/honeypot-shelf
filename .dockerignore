@@ -21,3 +21,4 @@ secrets/
 *.key
 .vscode
 .idea
+docs
