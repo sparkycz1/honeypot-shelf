@@ -2,12 +2,39 @@
 
 Guidance for Claude Code when working in this repo.
 
+## Standing rules from the owner
+
+Jakub (GitHub `sparkycz1`) set these for every change, by Claude or anyone
+else. They come first; the rest of this file is how to follow them here.
+
+1. **Security, speed and efficiency come first** — in the code you write
+   and in how you work.
+2. **Never merge a pull request until Jakub has reviewed it**, unless he
+   explicitly says otherwise for that PR. Open it, get CI green, and stop.
+3. **Use every skill and tool available** (code review, security review,
+   documentation, testing, ...) instead of doing by hand what a skill
+   already does well.
+4. **The wiki, the REST API and the translations stay current with the
+   code, always.** Every feature is documented in the wiki, reachable
+   through the REST API, and translated in every locale — in the same
+   round of work, not "later". A feature the API can't reach yet is a gap
+   to close (or a deliberate exception listed on the wiki's REST API page).
+5. **Latest stable technology only** — no alpha, beta or release
+   candidate versions of anything. Close a Dependabot PR that proposes a
+   pre-release, with a short comment saying why.
+6. **When something is unclear or doesn't make sense, ask** before
+   building on a guess.
+7. **The wiki is for reading**: clear structure, short paragraphs,
+   screenshots and diagrams, color (badges, callouts). Screenshots are
+   regenerated with `python -m e2e.screenshots` (see
+   [wiki/Development](https://github.com/sparkycz1/honeypot-shelf/wiki/Development)).
+
 ## What this is
 
 Honeypot Shelf: FastAPI + htmx, **manages and monitors a fleet of
 [OpenCanary](https://github.com/thinkst/opencanary) honeypots** (Raspberry
 Pis at customer sites) across **multiple companies**, with per-company
-RBAC. Server-rendered Jinja2 + htmx, no SPA. Python 3.14, SQLAlchemy 2.1
+RBAC. Server-rendered Jinja2 + htmx, no SPA. Python 3.15, SQLAlchemy 2.1
 async + PostgreSQL, Celery + Redis, Docker Compose only.
 
 **Derived from a sister project, [debcontrol](https://github.com/sparkycz1/debcontrol)**
@@ -283,7 +310,13 @@ in both apps for that reason.
    page to something in *this* repo (not another wiki page) does need a
    real URL — `blob/main/...` for a file, `raw.githubusercontent.com/
    .../main/...` for an image — since a relative path only resolves
-   inside whichever repo the file is actually sitting in.
+   inside whichever repo the file is actually sitting in. A new or
+   changed REST endpoint also goes on
+   [REST API](https://github.com/sparkycz1/honeypot-shelf/wiki/REST-API), a
+   new `.env` variable on
+   [Configuration](https://github.com/sparkycz1/honeypot-shelf/wiki/Configuration),
+   and a visibly changed page gets its screenshot retaken
+   (`python -m e2e.screenshots`, images in `docs/screenshots/`).
 3. **i18n parity.** Any new/changed user-facing string goes through
    `t(request, "...")` and gets a key in `app/i18n/locales/en.json` *and*
    `cs.json`. Guarded by tests: `tests/test_i18n_template_keys.py` fails
@@ -297,7 +330,7 @@ in both apps for that reason.
 5. **Security.** CSRF on every mutating web route, `require_write` +
    company scoping on both web and API sides, secrets only ever
    `encrypt_secret`/stored hashed, no new inline script/style (CSP).
-6. **Current, not legacy, tech.** Match what's already here (Python 3.14,
+6. **Current, not legacy, tech.** Match what's already here (Python 3.15,
    SQLAlchemy 2.1 async, Pydantic v2, FastAPI, htmx 2.x, `httpx2` — not
    `httpx` — for outbound HTTP). `[tool.uv]
    prerelease = "disallow"` keeps `uv lock --upgrade` from reaching for an
