@@ -205,6 +205,8 @@ async def test_dashboard_trend_sums_every_company_per_day(client, db_session_fac
 
     assert page.status_code == 200
     assert ">Events per day<" in page.text and ">Honeypots with OpenCanary reporting<" in page.text
+    # The hint around the Settings link reads as a sentence ("Settingsfor").
+    assert "</a> for how long these are kept." in page.text
     # Two days -> two points, 15 and 27 events; both companies online -> 2.
     series = {}
     for raw in re.findall(r"data-chart='([^']*)'", page.text):

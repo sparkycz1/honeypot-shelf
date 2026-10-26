@@ -128,3 +128,22 @@ async def test_monitoring_last_checked_uses_the_more_recent_signal(
 
     response = await client.get(f"/honeypots/{honeypot.id}/monitoring")
     assert response.status_code == 200
+
+
+async def test_monitoring_not_gathered_names_the_interval_in_a_sentence(
+    client, db_session_factory
+):
+    """No sample yet: the hint names the honeypot's own interval, or the
+    instance default — never the old "(every the instance default )"."""
+    honeypot = await _make_honeypot(db_session_factory)
+    response = await client.get(f"/honeypots/{honeypot.id}/monitoring-panel")
+    assert "(at the instance default interval)." in response.text
+    assert "every the instance default" not in response.text
+
+    async with db_session_factory() as db:
+        stored = await db.get(Honeypot, honeypot.id)
+        assert stored is not None
+        stored.monitoring_interval_seconds = 120
+        await db.commit()
+    response = await client.get(f"/honeypots/{honeypot.id}/monitoring-panel")
+    assert "(every 120 s)." in response.text

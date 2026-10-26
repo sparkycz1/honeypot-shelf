@@ -46,8 +46,8 @@
 {% if not honeypot.monitoring_updated_at and not availability.sample_count %}
   <section class="panel">
     <p class="hint">
-      {{ t(request, 'honeypots.monitoring.not_gathered_pre') }} ({{ t(request, 'honeypots.monitoring.every') }} {{ honeypot.monitoring_interval_seconds or t(request, 'honeypots.monitoring.instance_default') }}
-      {{ t(request, 'honeypots.monitoring.seconds') if honeypot.monitoring_interval_seconds }}).
+      {{ t(request, 'honeypots.monitoring.not_gathered_pre') }}
+      ({% if honeypot.monitoring_interval_seconds %}{{ t(request, 'honeypots.monitoring.interval_seconds', seconds=honeypot.monitoring_interval_seconds) }}{% else %}{{ t(request, 'honeypots.monitoring.at_instance_default') }}{% endif %}).
     </p>
   </section>
 {% else %}

@@ -9,9 +9,10 @@ What it does, in order: copies `.env.example` to `.env`, fills in every
 secret (`SECRET_KEY`, `ENCRYPTION_KEY`, `POSTGRES_PASSWORD`,
 `REDIS_PASSWORD`, `INFORM_TOKEN`) with freshly generated
 random values, asks a handful of questions (timezone, whether to use the
-bundled Caddy reverse proxy and its domain/email if so, whether the app's
-own port should only accept local connections, the background-check
-intervals, the superadmin account's password (typed twice, masked — no
+bundled Caddy reverse proxy and its domain/email if so, whether people
+reach it over HTTPS (sets `APP_ENV`), whether the app's own port should
+only accept local connections, event retention, the default language,
+the superadmin account's password (typed twice, masked — no
 auto-generate option, so it's never echoed or printed anywhere) and
 the host port to publish), writes `.env`, brings the stack up with `docker
 compose`, waits for the app to become healthy, generates and applies the
@@ -403,6 +404,17 @@ def main() -> None:
         lines = _set_env_line(lines, "DOMAIN", domain)
         lines = _set_env_line(lines, "ACME_EMAIL", email)
 
+    # Behind TLS the app must say so: production marks the session cookie
+    # `Secure` and sends HSTS. Bundled Caddy always terminates TLS; with
+    # your own proxy only you know, so ask (plain-HTTP testing needs "no",
+    # or a `Secure` cookie would never come back and sign-in would fail).
+    behind_https = use_caddy or _prompt_yes_no(
+        "Will people open Honeypot Shelf over HTTPS (through your own reverse "
+        "proxy)? Answer no only for a plain-HTTP test install.",
+        default=True,
+    )
+    lines = _set_env_line(lines, "APP_ENV", "production" if behind_https else "development")
+
     use_vpn = _prompt_yes_no(
         "Add the optional VPN sidecar (lets Honeypot Shelf reach a honeypot that's "
         "only addressable over NetBird or WireGuard, e.g. behind a NAT with no "
@@ -430,16 +442,9 @@ def main() -> None:
         "127.0.0.1" if localhost_only else "0.0.0.0",  # noqa: S104 - explicit user choice, not a default
     )
 
-    print()
-    facts_interval = _prompt("Facts refresh interval, in seconds", default="600")
-    reachability_interval = _prompt("Reachability check interval, in seconds", default="60")
-    lines = _set_env_line(lines, "FACTS_REFRESH_INTERVAL_SECONDS", facts_interval)
-    lines = _set_env_line(
-        lines, "REACHABILITY_CHECK_INTERVAL_SECONDS", reachability_interval
-    )
 
     print()
-    retention_days = _prompt("Honeypot event retention, in days", default="180")
+    retention_days = _prompt("Honeypot event retention, in days", default="90")
     lines = _set_env_line(lines, "EVENT_RETENTION_DAYS", retention_days)
 
     print()
