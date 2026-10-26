@@ -7,6 +7,8 @@ section.
 
 from __future__ import annotations
 
+import base64
+
 import pytest
 from cryptography.fernet import Fernet
 
@@ -59,8 +61,14 @@ def test_tampered_ciphertext_raises_decryption_error():
 
 def test_tampered_legacy_fernet_ciphertext_raises_decryption_error():
     key = get_settings().encryption_key.get_secret_value()
-    legacy_ciphertext = bytearray(Fernet(key.encode("utf-8")).encrypt(b"old-style secret"))
-    legacy_ciphertext[-1] ^= 0xFF
+    token = base64.urlsafe_b64decode(Fernet(key.encode("utf-8")).encrypt(b"old-style secret"))
+    tampered = bytearray(token)
+    tampered[-1] ^= 0xFF  # flip a bit in the HMAC
+    # Tamper with the decoded token, not its base64 text: flipping the
+    # trailing "=" padding turns it into a non-base64 byte the decoder just
+    # skips, and since Python 3.15 the missing padding isn't an error either,
+    # so the original token would decode intact.
+    legacy_ciphertext = base64.urlsafe_b64encode(bytes(tampered))
 
     with pytest.raises(DecryptionError):
         decrypt_secret(bytes(legacy_ciphertext))
