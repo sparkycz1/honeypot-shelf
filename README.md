@@ -32,17 +32,17 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/python-3.15-3776AB?logo=python&logoColor=white" alt="Python 3.15">
-  <img src="https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white" alt="FastAPI">
-  <img src="https://img.shields.io/badge/htmx-3366CC?logo=htmx&logoColor=white" alt="htmx">
-  <img src="https://img.shields.io/badge/SQLAlchemy%202.1-D71F00?logo=sqlalchemy&logoColor=white" alt="SQLAlchemy 2.1">
-  <img src="https://img.shields.io/badge/PostgreSQL%2018-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL 18">
-  <img src="https://img.shields.io/badge/Redis%208-DC382D?logo=redis&logoColor=white" alt="Redis 8">
-  <img src="https://img.shields.io/badge/Celery-37814A?logo=celery&logoColor=white" alt="Celery">
-  <img src="https://img.shields.io/badge/Docker%20Compose-2496ED?logo=docker&logoColor=white" alt="Docker Compose">
-  <img src="https://img.shields.io/badge/Caddy-1F88C0?logo=caddy&logoColor=white" alt="Caddy">
-  <img src="https://img.shields.io/badge/OpenCanary-f2a83a" alt="OpenCanary">
-  <img src="https://img.shields.io/badge/i18n-English%20%7C%20%C4%8Ce%C5%A1tina-f2a83a" alt="English and Czech">
+  <a href="https://github.com/python/cpython"><img src="https://img.shields.io/badge/python-3.15-3776AB?logo=python&logoColor=white" alt="Python 3.15"></a>
+  <a href="https://github.com/fastapi/fastapi"><img src="https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white" alt="FastAPI"></a>
+  <a href="https://github.com/bigskysoftware/htmx"><img src="https://img.shields.io/badge/htmx-3366CC?logo=htmx&logoColor=white" alt="htmx"></a>
+  <a href="https://github.com/sqlalchemy/sqlalchemy"><img src="https://img.shields.io/badge/SQLAlchemy%202.1-D71F00?logo=sqlalchemy&logoColor=white" alt="SQLAlchemy 2.1"></a>
+  <a href="https://github.com/postgres/postgres"><img src="https://img.shields.io/badge/PostgreSQL%2018-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL 18"></a>
+  <a href="https://github.com/redis/redis"><img src="https://img.shields.io/badge/Redis%208-DC382D?logo=redis&logoColor=white" alt="Redis 8"></a>
+  <a href="https://github.com/celery/celery"><img src="https://img.shields.io/badge/Celery-37814A?logo=celery&logoColor=white" alt="Celery"></a>
+  <a href="https://github.com/docker/compose"><img src="https://img.shields.io/badge/Docker%20Compose-2496ED?logo=docker&logoColor=white" alt="Docker Compose"></a>
+  <a href="https://github.com/caddyserver/caddy"><img src="https://img.shields.io/badge/Caddy-1F88C0?logo=caddy&logoColor=white" alt="Caddy"></a>
+  <a href="https://github.com/thinkst/opencanary"><img src="https://img.shields.io/badge/OpenCanary-f2a83a" alt="OpenCanary"></a>
+  <a href="https://github.com/sparkycz1/honeypot-shelf/tree/main/app/i18n/locales"><img src="https://img.shields.io/badge/i18n-English%20%7C%20%C4%8Ce%C5%A1tina-f2a83a" alt="English and Czech"></a>
 </p>
 
 <p align="center">
