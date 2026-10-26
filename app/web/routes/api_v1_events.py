@@ -44,8 +44,6 @@ router = APIRouter(prefix="/api/v1/events")
 
 _view = Depends(get_api_token_user)
 
-_PAGE_SIZE = 50
-
 _EXPORT_FIELDS = (
     "id",
     "occurred_at",

@@ -29,11 +29,19 @@ on:
 permissions:
   contents: read
 
+# A new push to a PR cancels the still-running checks of the previous one
+# (never on main, where every commit gets its full run).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   gate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
@@ -102,9 +110,13 @@ jobs:
       INFORM_TOKEN: ci-dummy-inform-token-not-a-real-value
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
+        with:
+          version: "0.13.5"
 
       - name: Install Python
         run: uv python install 3.15
@@ -126,9 +138,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
+        with:
+          version: "0.13.5"
 
       - name: Install Python 3.15
         run: uv python install 3.15
@@ -136,8 +152,12 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --group e2e
 
+      # Only the headless shell (what `chromium.launch()` runs), and no
+      # `--with-deps`: the runner image already has every library Chromium
+      # needs, and `--with-deps` spent ~11 minutes downloading extra fonts
+      # from a slow apt mirror. Playwright names any library that's missing.
       - name: Install Chromium
-        run: uv run playwright install --with-deps chromium
+        run: uv run playwright install --only-shell chromium
 
       - name: Browser smoke test
         run: uv run pytest -q e2e
@@ -146,6 +166,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
@@ -177,4 +199,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
       - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294  # v5.0.0
