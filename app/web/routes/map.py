@@ -181,6 +181,18 @@ async def _build_map_context(db: AsyncSession, user: User) -> dict[str, object]:
     ][:_TOP_INTERNAL_SOURCES]
 
     return {
+        # The same points unprojected, for the REST API (`/api/v1/dashboard/map`).
+        "locations": [
+            {
+                "country_code": row.src_country_code,
+                "country_name": row.src_country_name,
+                "city": row.src_city_name,
+                "latitude": row.src_latitude,
+                "longitude": row.src_longitude,
+                "count": row.event_count,
+            }
+            for row in location_rows
+        ],
         "dots": dots,
         "top_countries": top_countries,
         "top_internal": top_internal,

@@ -28,7 +28,9 @@ import contextlib
 import json
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
+from typing import Any
 
 import asyncssh
 from fastapi import APIRouter, WebSocket, status
@@ -106,8 +108,13 @@ async def _authenticate(websocket: WebSocket) -> User | None:
     return user
 
 
+# Where a run's frames go: the WebSocket for the web page, an in-memory
+# record for the REST API (`app.web.routes.api_v1_initialize`).
+Emit = Callable[[dict[str, Any]], Awaitable[None]]
+
+
 async def _relay_output(
-    websocket: WebSocket, process: asyncssh.SSHClientProcess[str], collected: list[str]
+    emit: Emit, process: asyncssh.SSHClientProcess[str], collected: list[str]
 ) -> None:
     """Reads the script's output one line at a time, forwarding each as
     either a `step` or `output` frame — see the module docstring's
@@ -120,25 +127,14 @@ async def _relay_output(
             return
         line = line.rstrip("\n")
         if line.startswith(STEP_MARKER_PREFIX):
-            await websocket.send_text(
-                json.dumps({"kind": "step", "label": line[len(STEP_MARKER_PREFIX) :]})
-            )
+            await emit({"kind": "step", "label": line[len(STEP_MARKER_PREFIX) :]})
             continue
         collected.append(line)
-        await websocket.send_text(json.dumps({"kind": "output", "text": line}))
-
-
-async def _send_done(
-    websocket: WebSocket, *, ok: bool, error: str | None, fingerprint: str | None
-) -> None:
-    with contextlib.suppress(Exception):
-        await websocket.send_text(
-            json.dumps({"kind": "done", "ok": ok, "error": error, "fingerprint": fingerprint})
-        )
+        await emit({"kind": "output", "text": line})
 
 
 async def _wait_for_reboot(
-    websocket: WebSocket,
+    emit: Emit,
     ip_address: str,
     new_ssh_port: int,
     expected_fingerprint: str | None,
@@ -160,9 +156,7 @@ async def _wait_for_reboot(
     exhausting the rest of the retry budget on what would just be the same
     surprising answer every time.
     """
-    await websocket.send_text(
-        json.dumps({"kind": "step", "label": "Rebooting — waiting for the device to come back"})
-    )
+    await emit({"kind": "step", "label": "Rebooting — waiting for the device to come back"})
     await asyncio.sleep(REBOOT_GRACE_SECONDS)
 
     deadline = time.monotonic() + REBOOT_WAIT_MAX_SECONDS
@@ -182,9 +176,7 @@ async def _wait_for_reboot(
                     "assuming it's the same device. Verify it by hand before adding it as "
                     "a honeypot."
                 )
-            await websocket.send_text(
-                json.dumps({"kind": "step", "label": "Back up after reboot"})
-            )
+            await emit({"kind": "step", "label": "Back up after reboot"})
             return None
 
         if time.monotonic() >= deadline:
@@ -281,7 +273,23 @@ async def initialize_websocket(websocket: WebSocket, run_id: str) -> None:
 
     await websocket.accept()
 
-    db_session_factory = websocket.app.state.db_session_factory
+    async def emit(frame: dict[str, Any]) -> None:
+        await websocket.send_text(json.dumps(frame))
+
+    await run_initialize(run, user, websocket.app.state.db_session_factory, emit)
+    with contextlib.suppress(Exception):
+        await websocket.close(code=status.WS_1000_NORMAL_CLOSURE)
+
+
+async def run_initialize(
+    run: PendingInitializeRun,
+    user: User,
+    db_session_factory: async_sessionmaker[AsyncSession],
+    emit: Emit,
+) -> None:
+    """Runs one Initialize from start to finish, sending its frames (see
+    the module docstring's protocol) to `emit`, ending with `done`; then
+    audits it and stores it in the run history. Never raises."""
     async with db_session_factory() as db:
         app_settings = await get_or_create_app_settings(db)
 
@@ -293,7 +301,7 @@ async def initialize_websocket(websocket: WebSocket, run_id: str) -> None:
     collected: list[str] = []
 
     try:
-        await websocket.send_text(json.dumps({"kind": "step", "label": "Connecting"}))
+        await emit({"kind": "step", "label": "Connecting"})
         try:
             fingerprint = await discover_host_key_fingerprint(
                 run.ip_address, run.port, app_settings.ssh_connect_timeout
@@ -342,7 +350,7 @@ async def initialize_websocket(websocket: WebSocket, run_id: str) -> None:
                         superadmin.username,
                     )
 
-        await websocket.send_text(json.dumps({"kind": "step", "label": "Detecting OS"}))
+        await emit({"kind": "step", "label": "Detecting OS"})
         try:
             async with await open_connection(
                 device, secret, app_settings.ssh_connect_timeout
@@ -390,7 +398,7 @@ async def initialize_websocket(websocket: WebSocket, run_id: str) -> None:
 
         try:
             await asyncio.wait_for(
-                _relay_output(websocket, process, collected),
+                _relay_output(emit, process, collected),
                 timeout=INITIALIZE_RUN_MAX_SECONDS,
             )
         except TimeoutError:
@@ -415,7 +423,7 @@ async def initialize_websocket(websocket: WebSocket, run_id: str) -> None:
             process = None
             conn = None
             error = await _wait_for_reboot(
-                websocket,
+                emit,
                 run.ip_address,
                 run.new_ssh_port,
                 fingerprint,
@@ -431,9 +439,10 @@ async def initialize_websocket(websocket: WebSocket, run_id: str) -> None:
             with contextlib.suppress(Exception):
                 conn.close()
 
-        await _send_done(websocket, ok=error is None, error=error, fingerprint=fingerprint)
         with contextlib.suppress(Exception):
-            await websocket.close(code=status.WS_1000_NORMAL_CLOSURE)
+            await emit(
+                {"kind": "done", "ok": error is None, "error": error, "fingerprint": fingerprint}
+            )
 
         duration_seconds = (datetime.now(UTC) - started_at).total_seconds()
         with contextlib.suppress(Exception):

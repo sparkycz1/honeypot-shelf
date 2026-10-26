@@ -146,3 +146,51 @@ async def test_map_excludes_events_from_a_company_the_user_cannot_see(
     assert response.status_code == 200
     assert "United States" in response.text
     assert "Germany" not in response.text
+
+
+async def test_map_api_returns_scoped_locations(client, login_as, db_session_factory):
+    """`GET /api/v1/dashboard/map` — the same data as the page, unprojected,
+    and only for the token owner's companies."""
+    from app.auth.api_tokens import create_api_token
+    from app.db.models.user import User
+
+    acme = await create_company(db_session_factory, name="Acme")
+    beta = await create_company(db_session_factory, name="Beta")
+    acme_hp = await _create_honeypot(db_session_factory, acme.id)
+    beta_hp = await _create_honeypot(db_session_factory, beta.id, name="beta-honey1")
+    await _add_located_event(db_session_factory, acme_hp.id)
+    await _add_located_event(
+        db_session_factory, beta_hp.id, country_code="DE", country_name="Germany",
+        city_name="Berlin", lat=52.5, lon=13.4,
+    )
+    user = await login_as(
+        client,
+        username="map-api",
+        company_id=acme.id,
+        access_level=AccessLevel.READ,
+        api_access_enabled=True,
+    )
+    async with db_session_factory() as db:
+        _token, raw = await create_api_token(
+            db, await db.get(User, user.id), name="t", expires_at=None
+        )
+
+    response = await client.get(
+        "/api/v1/dashboard/map", headers={"Authorization": f"Bearer {raw}"}
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["total_events"] == 1
+    assert body["located_events"] == 1
+    assert body["geoip_ready"] is False
+    assert body["locations"] == [
+        {
+            "country_code": "US",
+            "country_name": "United States",
+            "city": "Mountain View",
+            "latitude": 37.4,
+            "longitude": -122.1,
+            "count": 1,
+        }
+    ]
+    assert [c["code"] for c in body["top_countries"]] == ["US"]

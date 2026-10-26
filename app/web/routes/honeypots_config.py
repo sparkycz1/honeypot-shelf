@@ -4,6 +4,7 @@ switch."""
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from typing import Any
 from urllib.parse import urlencode
@@ -46,6 +47,11 @@ from app.web.routes.honeypots_common import (
 from app.web.templating import templates
 
 router = honeypots_router()
+logger = logging.getLogger(__name__)
+
+# An unexpected exception's text can carry internals (paths, hostnames,
+# library details); it goes to the log, the user gets this.
+JOB_FAILED_MESSAGE = "The background job failed — see the worker log for details."
 
 
 async def _load_readonly_state(
@@ -63,8 +69,9 @@ async def _load_readonly_state(
             return None, str(result.get("error") or "Unknown error.")
     except CeleryTimeoutError:
         return None, "The status check did not finish in time."
-    except Exception as exc:
-        return None, str(exc)
+    except Exception:
+        logger.warning("Background job failed", exc_info=True)
+        return None, JOB_FAILED_MESSAGE
     return None, "Unknown error."
 
 
@@ -86,8 +93,9 @@ async def _load_opencanary_config(
             return None, str(result.get("error") or "Unknown error.")
     except CeleryTimeoutError:
         return None, "Reading the config did not finish in time."
-    except Exception as exc:
-        return None, str(exc)
+    except Exception:
+        logger.warning("Background job failed", exc_info=True)
+        return None, JOB_FAILED_MESSAGE
     return None, "Unknown error."
 
 
@@ -206,8 +214,9 @@ async def save_honeypot_opencanary_config_endpoint(
                         error = str(result.get("error") or "Unknown error.")
             except CeleryTimeoutError:
                 error = "Applying the config did not finish in time."
-            except Exception as exc:
-                error = str(exc)
+            except Exception:
+                logger.warning("Background job failed", exc_info=True)
+                error = JOB_FAILED_MESSAGE
 
         readonly_state, readonly_error = await _load_readonly_state(honeypot, app_settings)
         error = error or readonly_error
@@ -285,8 +294,9 @@ async def set_honeypot_readonly_endpoint(
                 error = str(result.get("error") or "Unknown error.")
         except CeleryTimeoutError:
             error = "The command did not finish in time."
-        except Exception as exc:
-            error = str(exc)
+        except Exception:
+            logger.warning("Background job failed", exc_info=True)
+            error = JOB_FAILED_MESSAGE
 
     await log_event(
         db,
@@ -341,8 +351,9 @@ async def _mac_task(
         )
     except CeleryTimeoutError:
         return None, "The honeypot did not answer in time."
-    except Exception as exc:
-        return None, str(exc)
+    except Exception:
+        logger.warning("Background job failed", exc_info=True)
+        return None, JOB_FAILED_MESSAGE
     if isinstance(result, dict) and result.get("ok"):
         return result, None
     return None, str((result or {}).get("error") or "Unknown error.")

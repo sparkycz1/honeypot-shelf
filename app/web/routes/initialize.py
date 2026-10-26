@@ -191,29 +191,24 @@ async def initialize_form(
     )
 
 
-@router.post("", dependencies=[Depends(verify_csrf)])
-async def initialize_submit(
-    request: Request,
-    ip_address: str = Form(...),
-    device_name: str = Form(...),
-    username: str = Form(...),
-    port: int = Form(22),
-    auth_method: str = Form(AuthMethod.SSH_KEY.value),
-    password: str = Form(""),
-    vpn_provider: str = Form("none"),
-    netbird_setup_key: str = Form(""),
-    netbird_management_url: str = Form(""),
-    wireguard_config: str = Form(""),
-    new_ssh_port: int = Form(NEW_SSH_PORT),
-    mac_address: str = Form(""),
-    mac_vendor: str = Form(""),
-) -> Response:
-    ip_address = ip_address.strip()
-    device_name = device_name.strip()
-    username = username.strip()
-    netbird_management_url = netbird_management_url.strip()
-    wireguard_config = wireguard_config.strip()
-
+def validate_initialize_input(
+    *,
+    ip_address: str,
+    device_name: str,
+    username: str,
+    port: int,
+    new_ssh_port: int,
+    auth_method: str,
+    password: str,
+    vpn_provider: str,
+    netbird_management_url: str,
+    wireguard_config: str,
+    mac_address: str,
+) -> tuple[list[str], str | None]:
+    """`(errors, normalized_mac)` for an Initialize request — shared by the
+    form and the REST API (`app.web.routes.api_v1_initialize`). Inputs
+    are already stripped. The device name ends up in a shell script, so
+    it must stay this strict."""
     errors: list[str] = []
     if not ip_address:
         errors.append("IP address is required.")
@@ -244,6 +239,45 @@ async def initialize_submit(
             normalized_mac = normalize_mac(mac_address)
         except InvalidMacAddressError as exc:
             errors.append(str(exc))
+    return errors, normalized_mac
+
+
+@router.post("", dependencies=[Depends(verify_csrf)])
+async def initialize_submit(
+    request: Request,
+    ip_address: str = Form(...),
+    device_name: str = Form(...),
+    username: str = Form(...),
+    port: int = Form(22),
+    auth_method: str = Form(AuthMethod.SSH_KEY.value),
+    password: str = Form(""),
+    vpn_provider: str = Form("none"),
+    netbird_setup_key: str = Form(""),
+    netbird_management_url: str = Form(""),
+    wireguard_config: str = Form(""),
+    new_ssh_port: int = Form(NEW_SSH_PORT),
+    mac_address: str = Form(""),
+    mac_vendor: str = Form(""),
+) -> Response:
+    ip_address = ip_address.strip()
+    device_name = device_name.strip()
+    username = username.strip()
+    netbird_management_url = netbird_management_url.strip()
+    wireguard_config = wireguard_config.strip()
+
+    errors, normalized_mac = validate_initialize_input(
+        ip_address=ip_address,
+        device_name=device_name,
+        username=username,
+        port=port,
+        new_ssh_port=new_ssh_port,
+        auth_method=auth_method,
+        password=password,
+        vpn_provider=vpn_provider,
+        netbird_management_url=netbird_management_url,
+        wireguard_config=wireguard_config,
+        mac_address=mac_address,
+    )
 
     if errors:
         return await _render_form(
