@@ -196,31 +196,33 @@ async def _build_monitoring_context(
     # `until` is None for a preset ("up to now"), so far in the future is
     # the same thing without a second code path.
     until = window.until or datetime.now(UTC) + timedelta(days=1)
-    result = await db.execute(
-        select(HoneypotMonitoringSample)
-        .where(
+    samples, sample_total = await monitoring_history.load_spread_rows(
+        db,
+        HoneypotMonitoringSample,
+        HoneypotMonitoringSample.id,
+        HoneypotMonitoringSample.sampled_at,
+        [
             HoneypotMonitoringSample.honeypot_id == honeypot.id,
             HoneypotMonitoringSample.sampled_at >= since,
             HoneypotMonitoringSample.sampled_at <= until,
-        )
-        .order_by(HoneypotMonitoringSample.sampled_at)
-        .limit(monitoring_history.MAX_RAW_SAMPLES)
+        ],
     )
-    samples = list(result.scalars().all())
     history = monitoring_history.build_monitoring_history(samples, range_key)
+    history.sample_count = sample_total
 
-    reachability_result = await db.execute(
-        select(HoneypotReachabilitySample)
-        .where(
+    reachability_samples, reachability_total = await monitoring_history.load_spread_rows(
+        db,
+        HoneypotReachabilitySample,
+        HoneypotReachabilitySample.id,
+        HoneypotReachabilitySample.checked_at,
+        [
             HoneypotReachabilitySample.honeypot_id == honeypot.id,
             HoneypotReachabilitySample.checked_at >= since,
             HoneypotReachabilitySample.checked_at <= until,
-        )
-        .order_by(HoneypotReachabilitySample.checked_at)
-        .limit(monitoring_history.MAX_RAW_SAMPLES)
+        ],
     )
-    reachability_samples = list(reachability_result.scalars().all())
     availability = monitoring_history.build_availability_history(reachability_samples, range_key)
+    availability.sample_count = reachability_total
 
     # One unified "last checked" for the whole tab, rather than a separate
     # timestamp per graph (CPU/RAM/OpenCanary all share one round trip's

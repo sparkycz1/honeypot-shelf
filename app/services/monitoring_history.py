@@ -8,7 +8,8 @@ than have Postgres or the ORM do time-bucketed aggregation (which would
 need either a raw/dialect-specific query or pulling in a real
 time-series-friendly extension neither this app nor its SQLite test
 backend has), this fetches the raw rows in the requested window (capped —
-see `MAX_RAW_SAMPLES`) and downsamples them in Python by simple
+see `MAX_RAW_SAMPLES`; a longer window keeps every n-th row, evenly
+across the whole window, see `load_spread_rows`) and downsamples them in Python by simple
 positional bucketing (every consecutive run of rows averaged into one
 point) — not time-aligned buckets, just "spread evenly across however many
 rows came back," which is good enough for a *trend* line and keeps this
@@ -24,9 +25,14 @@ for that point rather than a nonsensical negative or infinite rate.
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
+
+from sqlalchemy import ColumnElement, func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import InstrumentedAttribute
 
 from app.db.models.honeypot_monitoring_sample import HoneypotMonitoringSample
 from app.db.models.honeypot_reachability_sample import HoneypotReachabilitySample
@@ -43,10 +49,9 @@ TIME_RANGES: tuple[tuple[str, str, timedelta], ...] = (
 )
 DEFAULT_TIME_RANGE = "24h"
 
-# A hard cap on how many raw rows one request will pull into memory before
-# downsampling — protects against a honeypot whose interval override is much
-# shorter than expected, or a retention override far longer than the
-# selected range would normally imply.
+# At most this many raw rows (plus the newest one) are pulled into memory
+# per series before downsampling; a window holding more is thinned evenly
+# (`load_spread_rows`), never cut short.
 MAX_RAW_SAMPLES = 20_000
 
 # How many points a downsampled series targets — enough resolution for a
@@ -257,8 +262,9 @@ def _combined_rate_series(
 class MonitoringHistory:
     range_key: str
     sample_count: int
-    truncated: bool  # True if MAX_RAW_SAMPLES was hit — the window shown is
-    # actually shorter than the selected range implies.
+    # Kept for API compatibility; always False since 0.84.2 (a long window
+    # is thinned evenly instead of cut short, see `load_spread_rows`).
+    truncated: bool
     # One timestamp per point in every series below — they all bucket
     # identically (see _bucket_timestamps), so this is shared rather than
     # repeated per graph. Rendered as data attributes for the hover
@@ -314,10 +320,11 @@ class MonitoringHistory:
 def build_monitoring_history(
     samples: list[HoneypotMonitoringSample], range_key: str
 ) -> MonitoringHistory:
-    """Pure function, no I/O — the caller (`app.web.routes.honeypots`) does
-    the DB query (oldest-first, capped at `MAX_RAW_SAMPLES`, within the
-    requested window) and hands the rows here."""
-    truncated = len(samples) >= MAX_RAW_SAMPLES
+    """Pure function, no I/O — the caller (`app.web.routes.honeypots_common`)
+    does the DB query (oldest first, within the requested window, thinned
+    to about `MAX_RAW_SAMPLES` rows by `load_spread_rows`) and hands the
+    rows here."""
+    truncated = False
     timestamps = [s.sampled_at for s in samples]
     bucket_timestamps = _bucket_timestamps(timestamps, _TARGET_POINTS)
 
@@ -449,9 +456,10 @@ def build_availability_history(
     samples: list[HoneypotReachabilitySample], range_key: str
 ) -> AvailabilityHistory:
     """Pure function, no I/O — same shape as `build_monitoring_history`:
-    the caller does the DB query (oldest-first, capped at `MAX_RAW_SAMPLES`,
-    within the requested window) and hands the rows here."""
-    truncated = len(samples) >= MAX_RAW_SAMPLES
+    the caller does the DB query (oldest first, within the requested
+    window, thinned to about `MAX_RAW_SAMPLES` rows) and hands the rows
+    here."""
+    truncated = False
     timestamps = [s.checked_at for s in samples]
     bucket_timestamps = _bucket_timestamps(timestamps, _TARGET_POINTS)
 
@@ -474,3 +482,42 @@ def build_availability_history(
         latest_latency_ms=latest.latency_ms if latest else None,
         latest_checked_at=latest.checked_at if latest else None,
     )
+
+
+async def load_spread_rows[RowT](
+    db: AsyncSession,
+    model: type[RowT],
+    id_column: InstrumentedAttribute[uuid.UUID],
+    time_column: InstrumentedAttribute[datetime],
+    conditions: list[ColumnElement[bool]],
+) -> tuple[list[RowT], int]:
+    """The rows of `model` matching `conditions`, oldest first, and how
+    many there are in all. Up to `MAX_RAW_SAMPLES` rows come back as they
+    are; more are thinned to every n-th row (plus the newest one), so the
+    result still spans the whole window. Cutting the list at
+    `MAX_RAW_SAMPLES` instead would silently drop the newest days of a
+    30/90-day view. Every kept row is a real sample, so rates computed from
+    consecutive cumulative counters stay right. Portable SQL (a window
+    function), so the SQLite test backend runs the same query."""
+    total = (
+        await db.execute(select(func.count()).select_from(model).where(*conditions))
+    ).scalar_one()
+    query = select(model).where(*conditions).order_by(time_column)
+    if total > MAX_RAW_SAMPLES:
+        stride = -(-total // MAX_RAW_SAMPLES)
+        numbered = (
+            select(
+                id_column.label("row_id"),
+                func.row_number().over(order_by=time_column).label("rn"),
+            )
+            .where(*conditions)
+            .subquery()
+        )
+        query = (
+            select(model)
+            .join(numbered, id_column == numbered.c.row_id)
+            .where(or_((numbered.c.rn - 1) % stride == 0, numbered.c.rn == total))
+            .order_by(time_column)
+        )
+    rows = list((await db.execute(query)).scalars().all())
+    return rows, total

@@ -33,7 +33,7 @@ from app.db.models.honeypot_event import HoneypotEvent
 from app.db.models.user import User
 from app.db.session import get_db
 from app.services import dashboard_layout
-from app.services.canary_activity_history import MAX_RAW_EVENTS, build_activity_history
+from app.services.canary_activity_history import load_activity_history
 from app.services.honeypot_status import is_online, offline_cutoff
 from app.services.opencanary_logtypes import localized_logtype_label
 from app.web.templating import t, templates
@@ -96,24 +96,18 @@ async def _build_dashboard_context(
     # Fleet-wide (or, for a company-scoped account, its own companies')
     # "what kind of activity" breakdown — the same per-type bucketing the
     # honeypot Activity tab uses (`app.services.canary_activity_history`),
-    # just fed events across every honeypot in scope instead of one.
-    # Capped at `MAX_RAW_EVENTS`, same reasoning as that module's own cap:
-    # a 24h window is normally small, but a sustained flood (portscan)
-    # across many honeypots at once could still be a lot of rows.
-    activity_window_query = (
-        select(HoneypotEvent)
-        .where(
-            HoneypotEvent.occurred_at >= now - timedelta(days=1),
-            HoneypotEvent.ignored.is_(False),
-        )
-        .order_by(HoneypotEvent.occurred_at)
-        .limit(MAX_RAW_EVENTS)
-    )
+    # just counted across every honeypot in scope instead of one, in the
+    # database, so a flood (portscan) is counted in full.
+    activity_conditions: list[ColumnElement[bool]] = [
+        HoneypotEvent.occurred_at >= now - timedelta(days=1),
+        HoneypotEvent.occurred_at <= now,
+        HoneypotEvent.ignored.is_(False),
+    ]
     if company_ids is not None:
-        activity_window_query = activity_window_query.where(_event_company_filter(company_ids))
-    activity_events = (await db.execute(activity_window_query)).scalars().all()
-    activity = build_activity_history(
-        list(activity_events),
+        activity_conditions.append(_event_company_filter(company_ids))
+    activity = await load_activity_history(
+        db,
+        activity_conditions,
         "24h",
         now=now,
         label_of=lambda logtype: localized_logtype_label(lambda key: t(request, key), logtype),
