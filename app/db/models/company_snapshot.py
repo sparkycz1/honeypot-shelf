@@ -32,7 +32,7 @@ class CompanySnapshot(Base):
     __tablename__ = "company_snapshots"
     __table_args__ = (UniqueConstraint("company_id", "snapshot_date", name="uq_company_snapshot"),)
 
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
     company_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True
     )

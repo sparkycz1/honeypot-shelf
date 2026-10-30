@@ -35,7 +35,7 @@ class ScheduledTaskRun(Base):
     __tablename__ = "scheduled_task_runs"
     __table_args__ = (Index("ix_scheduled_task_runs_task_id_fired_at", "task_id", "fired_at"),)
 
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
 
     task_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("scheduled_tasks.id", ondelete="CASCADE"), nullable=False, index=True
