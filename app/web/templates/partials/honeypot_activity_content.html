@@ -38,12 +38,6 @@
     <p class="hint">{{ t(request, "honeypots.activity.not_gathered") }}</p>
   </section>
 {% else %}
-  {% if activity.truncated %}
-    <div class="alert alert-warn">
-      <p>{{ t(request, "honeypots.activity.truncated") }}</p>
-    </div>
-  {% endif %}
-
   {% set ts = activity.bucket_timestamps %}
   {% set no_data = t(request, "honeypots.activity.no_data_in_range") %}
   {% set by_type = [] %}

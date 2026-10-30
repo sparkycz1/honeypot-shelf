@@ -67,20 +67,14 @@ async def _build_activity_context(
     def label_of(logtype: object) -> str:
         return localized_logtype_label(lambda key: t(request, key), logtype)
 
-    windowed_result = await db.execute(
-        select(HoneypotEvent)
-        .where(
+    activity = await canary_activity_history.load_activity_history(
+        db,
+        [
             HoneypotEvent.honeypot_id == honeypot.id,
             HoneypotEvent.occurred_at >= since,
             HoneypotEvent.occurred_at <= now,
             HoneypotEvent.ignored.is_(False),
-        )
-        .order_by(HoneypotEvent.occurred_at)
-        .limit(canary_activity_history.MAX_RAW_EVENTS)
-    )
-    windowed_events = list(windowed_result.scalars().all())
-    activity = canary_activity_history.build_activity_history(
-        windowed_events,
+        ],
         range_key,
         now=now,
         start=since if window.is_custom else None,

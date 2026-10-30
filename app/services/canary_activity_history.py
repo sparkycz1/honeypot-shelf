@@ -14,17 +14,15 @@ from __future__ import annotations
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
+
+from sqlalchemy import ColumnElement, case, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.honeypot_event import HoneypotEvent
 from app.services.honeypot_status import as_aware_utc
 from app.services.monitoring_history import time_range_delta
 from app.services.opencanary_logtypes import logtype_label, module_key
-
-# A hard cap on how many raw rows one request will pull into memory before
-# bucketing — protects against a busy honeypot (a sustained portscan can
-# log thousands of lines an hour) blowing up one page render.
-MAX_RAW_EVENTS = 20_000
 
 # Fixed bucket count for the trend chart, independent of the time range —
 # unlike the Monitoring tab's downsampling (which starts from however many
@@ -55,52 +53,41 @@ class ActivityHistory:
     # table below the chart, and to pick the top types above).
     totals_by_type: dict[str, int] = field(default_factory=dict)
     sample_count: int = 0
-    truncated: bool = False
 
     @property
     def total(self) -> int:
         return sum(self.total_counts)
 
 
-def build_activity_history(
-    events: list[HoneypotEvent],
-    range_key: str,
-    *,
-    now: datetime,
-    start: datetime | None = None,
-    label_of: Callable[[object], str] = logtype_label,
-    other_label: str = "Other",
-) -> ActivityHistory:
-    """`label_of` defaults to the plain-English `logtype_label` (every
-    non-template caller, e.g. `app.web.routes.dashboard`'s own API-facing
-    bits) — a template-rendering caller passes `app.services.
-    opencanary_logtypes.localized_logtype_label` pre-bound to the current
-    request's `t`, so the chart legend/table read in whichever language
-    the viewer's session is in (found live: this was hardcoded English
-    even on an otherwise fully-translated Czech page)."""
-    # A custom window (`start` given, `now` being its end) is bucketed over
-    # its own length; a preset over the preset's.
+def _bucket_layout(
+    range_key: str, now: datetime, start: datetime | None
+) -> tuple[datetime, timedelta, list[datetime]]:
+    """Where the window starts, how wide one bucket is, and each bucket's
+    midpoint. A custom window (`start` given, `now` being its end) is
+    bucketed over its own length; a preset over the preset's."""
     delta = now - start if start is not None else time_range_delta(range_key)
     start = now - delta
     bucket_width = delta / BUCKET_COUNT
-
     bucket_timestamps = [start + bucket_width * (i + 0.5) for i in range(BUCKET_COUNT)]
+    return start, bucket_width, bucket_timestamps
+
+
+def _assemble(
+    counts: dict[tuple[int, object], int],
+    bucket_timestamps: list[datetime],
+    *,
+    label_of: Callable[[object], str],
+    other_label: str,
+) -> ActivityHistory:
+    """`counts` maps (bucket index, raw event type) to how many events."""
     total_counts = [0] * BUCKET_COUNT
     totals_by_type: dict[str, int] = {}
     per_type_buckets: dict[str, list[int]] = {}
-
-    for event in events:
-        # SQLite (this app's test backend) drops tzinfo on round-trip;
-        # real Postgres columns never do — normalize before comparing, same
-        # gotcha `app.services.honeypot_status.is_online` was written for.
-        occurred_at = as_aware_utc(event.occurred_at)
-        offset = (occurred_at - start) / bucket_width if bucket_width else 0
-        index = min(max(int(offset), 0), BUCKET_COUNT - 1)
-        total_counts[index] += 1
-
-        label = label_of(event.event_type)
-        totals_by_type[label] = totals_by_type.get(label, 0) + 1
-        per_type_buckets.setdefault(label, [0] * BUCKET_COUNT)[index] += 1
+    for (index, event_type), count in counts.items():
+        label = label_of(event_type)
+        total_counts[index] += count
+        totals_by_type[label] = totals_by_type.get(label, 0) + count
+        per_type_buckets.setdefault(label, [0] * BUCKET_COUNT)[index] += count
 
     top_labels = [
         label
@@ -123,9 +110,83 @@ def build_activity_history(
         total_counts=total_counts,
         counts_by_type=counts_by_type,
         totals_by_type=totals_by_type,
-        sample_count=len(events),
-        truncated=len(events) >= MAX_RAW_EVENTS,
+        sample_count=sum(total_counts),
     )
+
+
+def build_activity_history(
+    events: list[HoneypotEvent],
+    range_key: str,
+    *,
+    now: datetime,
+    start: datetime | None = None,
+    label_of: Callable[[object], str] = logtype_label,
+    other_label: str = "Other",
+) -> ActivityHistory:
+    """Pure function over already-loaded rows (tests, small lists); pages
+    use `load_activity_history`, which counts in the database instead.
+    `label_of` defaults to the plain-English `logtype_label` — a
+    template-rendering caller passes `app.services.opencanary_logtypes.
+    localized_logtype_label` pre-bound to the current request's `t`, so
+    the chart legend/table read in whichever language the viewer's session
+    is in."""
+    start, bucket_width, bucket_timestamps = _bucket_layout(range_key, now, start)
+    counts: dict[tuple[int, object], int] = {}
+    for event in events:
+        # SQLite (this app's test backend) drops tzinfo on round-trip;
+        # real Postgres columns never do — normalize before comparing, same
+        # gotcha `app.services.honeypot_status.is_online` was written for.
+        occurred_at = as_aware_utc(event.occurred_at)
+        offset = (occurred_at - start) / bucket_width if bucket_width else 0
+        index = min(max(int(offset), 0), BUCKET_COUNT - 1)
+        key = (index, event.event_type)
+        counts[key] = counts.get(key, 0) + 1
+    return _assemble(counts, bucket_timestamps, label_of=label_of, other_label=other_label)
+
+
+async def load_activity_history(
+    db: AsyncSession,
+    conditions: list[ColumnElement[bool]],
+    range_key: str,
+    *,
+    now: datetime,
+    start: datetime | None = None,
+    label_of: Callable[[object], str] = logtype_label,
+    other_label: str = "Other",
+) -> ActivityHistory:
+    """Every event matching `conditions` counted per bucket and type by the
+    database (one GROUP BY over a CASE on `occurred_at`), so a busy window
+    is counted in full instead of loading rows. Loading the oldest 20,000
+    rows (before 0.84.2) cut a long or flooded window short: its newest
+    buckets read zero. Portable SQL, so SQLite runs the same query.
+    `conditions` must hold the window itself (`occurred_at` between the
+    start and `now`); anything outside is clamped into the first or last
+    bucket, like `build_activity_history`."""
+    start, bucket_width, bucket_timestamps = _bucket_layout(range_key, now, start)
+    bucket = case(
+        *[
+            (HoneypotEvent.occurred_at < start + bucket_width * (i + 1), i)
+            for i in range(BUCKET_COUNT - 1)
+        ],
+        else_=BUCKET_COUNT - 1,
+    )
+    # Grouped in an outer query: grouping by the CASE itself would repeat
+    # its bound parameters, which PostgreSQL treats as a different
+    # expression from the selected one.
+    inner = (
+        select(bucket.label("bucket"), HoneypotEvent.event_type.label("event_type"))
+        .where(*conditions)
+        .subquery()
+    )
+    rows = await db.execute(
+        select(inner.c.bucket, inner.c.event_type, func.count()).group_by(
+            inner.c.bucket, inner.c.event_type
+        )
+    )
+    counts: dict[tuple[int, object], int] = {
+        (int(index), event_type): int(count) for index, event_type, count in rows.all()
+    }
+    return _assemble(counts, bucket_timestamps, label_of=label_of, other_label=other_label)
 
 
 @dataclass

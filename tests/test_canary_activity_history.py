@@ -52,7 +52,6 @@ def test_build_activity_history_empty_when_no_events():
     history = build_activity_history([], "1h", now=now)
     assert history.total == 0
     assert history.counts_by_type == {}
-    assert not history.truncated
 
 
 def test_build_activity_history_folds_extra_types_into_other():

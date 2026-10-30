@@ -51,14 +51,6 @@
     </p>
   </section>
 {% else %}
-  {% if history.truncated or availability.truncated %}
-    <div class="alert alert-warn">
-      <p>
-        {{ t(request, 'honeypots.monitoring.truncated_pre') }} <a href="/settings">{{ t(request, 'nav.settings') }}</a>{{ t(request, 'honeypots.monitoring.truncated_post') }}
-      </p>
-    </div>
-  {% endif %}
-
   {% set ts = history.bucket_timestamps %}
   {% set no_data = t(request, 'honeypots.monitoring.no_data_in_range') %}
 
