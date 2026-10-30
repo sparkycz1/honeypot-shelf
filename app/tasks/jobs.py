@@ -44,6 +44,7 @@ from app.auth.scope import can_write_honeypot
 from app.core.app_settings import effective_event_retention_days, get_or_create_app_settings
 from app.core.config import get_settings
 from app.db import session as db_session
+from app.db import timescale
 from app.db.models.app_settings import AppSettings
 from app.db.models.audit_log import AuditLogEntry, AuditOutcome
 from app.db.models.company import Company
@@ -2215,21 +2216,31 @@ async def _purge_old_events() -> None:
         )
         cutoff = datetime.now(UTC) - timedelta(days=retention_days)
 
+        # TimescaleDB: whole days past the cutoff go at once; the rest of
+        # the oldest day still goes row by row below.
+        chunks_dropped = 0
+        if await timescale.enabled(session):
+            chunks_dropped = await timescale.drop_old_chunks(session, timescale.EVENTS, cutoff)
         deleted_count = await _delete_in_batches(
             session, HoneypotEvent, HoneypotEvent.occurred_at, (HoneypotEvent.occurred_at < cutoff,)
         )
-        if not deleted_count:
+        if not deleted_count and not chunks_dropped:
             return
 
+        summary = (
+            f"Purged {deleted_count} honeypot event"
+            f"{'' if deleted_count == 1 else 's'} older than {retention_days} day(s)"
+        )
+        details: dict[str, int] = {"deleted_count": deleted_count, "retention_days": retention_days}
+        if chunks_dropped:
+            summary += f", and {chunks_dropped} whole day chunk{'s' if chunks_dropped != 1 else ''}"
+            details["chunks_dropped"] = chunks_dropped
         await log_event(
             session,
             actor=_EVENT_PURGE_ACTOR,
             action="honeypot_events.purge",
-            summary=(
-                f"Purged {deleted_count} honeypot event"
-                f"{'' if deleted_count == 1 else 's'} older than {retention_days} day(s)"
-            ),
-            details={"deleted_count": deleted_count, "retention_days": retention_days},
+            summary=summary,
+            details=details,
         )
 
 
@@ -2239,6 +2250,28 @@ def purge_old_events() -> None:
 
 
 _MONITORING_SAMPLE_PURGE_ACTOR = "retention policy (automatic)"
+
+
+async def _drop_old_history_chunks(
+    session: AsyncSession,
+    honeypot_retentions: list[tuple[uuid.UUID, int | None]],
+    default_retention_days: int | None,
+    now: datetime,
+) -> int:
+    """TimescaleDB only: drop whole chunks (days) of monitoring and
+    reachability history that every honeypot's retention has passed: older
+    than the longest retention any honeypot has, and only when no honeypot
+    keeps its history forever. What a shorter per-honeypot retention still
+    covers goes row by row after this, as on PostgreSQL. Returns the number
+    of chunks dropped."""
+    effective = [override or default_retention_days for _, override in honeypot_retentions]
+    if not effective or not all(effective):
+        return 0
+    horizon = now - timedelta(days=max(d for d in effective if d))
+    dropped = 0
+    for table in (timescale.MONITORING, timescale.REACHABILITY):
+        dropped += await timescale.drop_old_chunks(session, table, horizon)
+    return dropped
 
 
 async def _purge_old_monitoring_samples() -> None:
@@ -2260,9 +2293,14 @@ async def _purge_old_monitoring_samples() -> None:
         result = await session.execute(
             select(Honeypot.id, Honeypot.monitoring_history_retention_days)
         )
-        rows = result.all()
+        rows = [(row[0], row[1]) for row in result.all()]
 
         now = datetime.now(UTC)
+        chunks_dropped = 0
+        if await timescale.enabled(session):
+            chunks_dropped = await _drop_old_history_chunks(
+                session, rows, default_retention_days, now
+            )
         total_deleted = 0
         for honeypot_id, override_days in rows:
             retention_days = override_days or default_retention_days
@@ -2289,18 +2327,23 @@ async def _purge_old_monitoring_samples() -> None:
                 ),
             )
 
-        if not total_deleted:
+        if not total_deleted and not chunks_dropped:
             return
 
+        summary = (
+            f"Purged {total_deleted} monitoring sample"
+            f"{'s' if total_deleted != 1 else ''} past their honeypot's retention window"
+        )
+        details: dict[str, int] = {"deleted_count": total_deleted}
+        if chunks_dropped:
+            summary += f", and {chunks_dropped} whole day chunk{'s' if chunks_dropped != 1 else ''}"
+            details["chunks_dropped"] = chunks_dropped
         await log_event(
             session,
             actor=_MONITORING_SAMPLE_PURGE_ACTOR,
             action="monitoring_samples.purge",
-            summary=(
-                f"Purged {total_deleted} monitoring sample"
-                f"{'s' if total_deleted != 1 else ''} past their honeypot's retention window"
-            ),
-            details={"deleted_count": total_deleted},
+            summary=summary,
+            details=details,
         )
 
 

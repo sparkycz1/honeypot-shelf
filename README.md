@@ -133,7 +133,9 @@ always run):
 | add `,caddy` | | bundled Caddy with Let's Encrypt |
 
 Switching between PostgreSQL and TimescaleDB later moves the data by
-itself: `./scripts/switch_db.sh timescaledb` (or back with `postgres`).
+itself: `./scripts/switch_db.sh timescaledb` (or back with `postgres`). On
+TimescaleDB the history (OpenCanary events, monitoring and availability
+samples) is kept in compressed daily chunks, and old days are dropped whole.
 
 Prefer doing it by hand, or updating an existing install? See
 [Installation](https://github.com/sparkycz1/honeypot-shelf/wiki/Installation).

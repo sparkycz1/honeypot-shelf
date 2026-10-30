@@ -51,6 +51,7 @@ from app.auth.dependencies import require_api_superadmin
 from app.core.app_settings import effective_event_retention_days, get_or_create_app_settings
 from app.core.security import encrypt_secret
 from app.core.version import APP_VERSION, commit_url, get_git_commit
+from app.db import timescale
 from app.db.models.app_settings import AppSettings
 from app.db.models.audit_log import AuditOutcome
 from app.db.models.geoip_database import SINGLETON_ID as GEOIP_SINGLETON_ID
@@ -96,6 +97,9 @@ async def get_settings_api(db: AsyncSession = Depends(get_db)) -> dict[str, obje
         # by a person on Settings -> Security, not by a script.
         "terminal_recording_enabled": app_settings.terminal_recording_enabled,
         "terminal_recording_retention_days": app_settings.terminal_recording_retention_days,
+        # Read-only: TimescaleDB's version and compression ages, or null
+        # on plain PostgreSQL.
+        "timescaledb": await timescale.describe(db),
     }
 
 

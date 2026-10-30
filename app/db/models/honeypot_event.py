@@ -29,7 +29,11 @@ from app.db.base import Base
 class HoneypotEvent(Base):
     __tablename__ = "honeypot_events"
 
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
+    # The insert sentinel: bulk inserts match returned rows by id alone, not
+    # by the (id, time) key, whose timestamp SQLite returns without tzinfo.
+    id: Mapped[uuid.UUID] = mapped_column(
+        primary_key=True, default=uuid.uuid7, insert_sentinel=True
+    )
 
     honeypot_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("honeypots.id", ondelete="CASCADE"), nullable=False, index=True
@@ -47,7 +51,8 @@ class HoneypotEvent(Base):
     # configured per-honeypot and can change without a Honeypot Shelf release.
     event_type: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
 
-    occurred_at: Mapped[datetime] = mapped_column(nullable=False, index=True)
+    # Part of the primary key for TimescaleDB (see HoneypotMonitoringSample).
+    occurred_at: Mapped[datetime] = mapped_column(primary_key=True, nullable=False, index=True)
     received_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
 
     src_ip: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)

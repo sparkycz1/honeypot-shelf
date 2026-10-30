@@ -1719,6 +1719,7 @@
     "settings.checks.events.heading": "Události",
     "settings.checks.events.hint": "Jak dlouho se uchovávají události z OpenCanary. Starší se jednou denně mažou; denní součty pro trend na Přehledu zůstávají.",
     "settings.checks.events.retention_label": "Uchovávat události (dní)",
+    "settings.checks.timescaledb_note": "Databáze: TimescaleDB {version}. Historie je uložená po dnech: vzorky monitoringu a dostupnosti se komprimují po {samples} dnech, události OpenCanary po {events} dnech a celé dny starší než retence všech honeypotů se mažou najednou.",
     "settings.checks.events.retention_hint": "Prázdné pole použije výchozí hodnotu z konfigurace serveru (EVENT_RETENTION_DAYS, nyní {days} dní). Nejméně 1 den.",
     "audit.action_label.settings.event_retention.update": "Změna doby uchování událostí",
     "events.filter.include_ignored": "Včetně ignorovaných",

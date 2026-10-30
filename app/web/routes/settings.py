@@ -37,6 +37,7 @@ from app.core.config import get_settings
 from app.core.csrf import get_or_create_csrf_token, set_csrf_cookie, verify_csrf
 from app.core.security import decrypt_secret, encrypt_secret
 from app.core.version import APP_VERSION
+from app.db import timescale
 from app.db.models.app_settings import (
     DEFAULT_LDAP_USER_SEARCH_FILTER,
     DEFAULT_OIDC_SCOPES,
@@ -111,6 +112,7 @@ async def _render_settings(
         "identity": identity,
         "settings": get_settings(),
         "app_settings": app_settings,
+        "timescaledb": await timescale.describe(db),
         "csrf_token": csrf_token,
         "errors": errors,
         "syslog_protocols": list(SyslogProtocol),

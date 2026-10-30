@@ -114,6 +114,12 @@
              placeholder="{{ t(request, 'settings.security.forever') }}"
              value="{{ app_settings.monitoring_history_retention_days if app_settings.monitoring_history_retention_days is not none else '' }}">
       <p class="hint">{{ t(request, "settings.security.monitoring_history.retention_hint") }}</p>
+      {% if timescaledb %}
+      <p class="hint">{{ t(request, "settings.checks.timescaledb_note",
+          version=timescaledb.version,
+          samples=timescaledb.compress_after_days.get("honeypot_monitoring_samples", "-"),
+          events=timescaledb.compress_after_days.get("honeypot_events", "-")) }}</p>
+      {% endif %}
       <button type="submit" class="button">{{ t(request, "common.save") }}</button>
     </form>
   </section>

@@ -37,14 +37,20 @@ class HoneypotMonitoringSample(Base):
         ),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
+    # The insert sentinel: bulk inserts match returned rows by id alone, not
+    # by the (id, time) key, whose timestamp SQLite returns without tzinfo.
+    id: Mapped[uuid.UUID] = mapped_column(
+        primary_key=True, default=uuid.uuid7, insert_sentinel=True
+    )
 
     honeypot_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("honeypots.id", ondelete="CASCADE"), nullable=False, index=True
     )
     honeypot: Mapped[Honeypot] = relationship(viewonly=True)
 
-    sampled_at: Mapped[datetime] = mapped_column(nullable=False)
+    # Part of the primary key: a TimescaleDB hypertable (app.db.timescale)
+    # needs its time column in every unique index. Harmless on PostgreSQL.
+    sampled_at: Mapped[datetime] = mapped_column(primary_key=True, nullable=False)
 
     # 0-100, None if it couldn't be computed (e.g. /proc/stat unreadable).
     cpu_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
