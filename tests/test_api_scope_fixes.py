@@ -238,8 +238,8 @@ async def test_cancelled_initialize_is_recorded_as_a_failure(
     for _ in range(20):
         await asyncio.sleep(0)
     task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
+    await asyncio.wait({task})
+    assert task.cancelled()  # the cancellation is passed on, not swallowed
 
     done = [f for f in frames if f["kind"] == "done"]
     assert len(done) == 1
