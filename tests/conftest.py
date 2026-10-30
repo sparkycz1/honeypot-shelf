@@ -161,7 +161,7 @@ class _SchemaTemplateConnection(sqlite3.Connection):
 # engine per test would also mean an empty SQLAlchemy compiled-statement
 # cache per test (the cache belongs to the engine), so every test paid again
 # for compiling the same queries — about a quarter of the suite's run time.
-_shared_engine: AsyncEngine | None = None
+_shared_engine: list[AsyncEngine] = []  # at most one
 _TABLES_CHILDREN_FIRST = tuple(reversed(Base.metadata.sorted_tables))
 
 
@@ -186,14 +186,15 @@ async def db_session_factory():
     follow that pattern for any new "edit to a duplicate unique value"
     test. Ported from an identical fix in debcontrol.
     """
-    global _shared_engine
-    if _shared_engine is None:
-        _shared_engine = create_async_engine(
-            "sqlite+aiosqlite:///:memory:",
-            connect_args={"check_same_thread": False, "factory": _SchemaTemplateConnection},
-            poolclass=StaticPool,
+    if not _shared_engine:
+        _shared_engine.append(
+            create_async_engine(
+                "sqlite+aiosqlite:///:memory:",
+                connect_args={"check_same_thread": False, "factory": _SchemaTemplateConnection},
+                poolclass=StaticPool,
+            )
         )
-    engine = _shared_engine
+    engine = _shared_engine[0]
 
     yield async_sessionmaker(engine, expire_on_commit=False)
 
@@ -204,7 +205,7 @@ async def db_session_factory():
     except Exception:
         # Whatever the test left behind (a broken connection, say), the
         # next test starts from a brand-new database instead.
-        _shared_engine = None
+        _shared_engine.clear()
         await engine.dispose()
 
 
