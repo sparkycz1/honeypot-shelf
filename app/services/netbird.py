@@ -10,8 +10,8 @@ network too.
 cannot run inside `web`/`worker` themselves — creating a WireGuard
 interface needs `CAP_NET_ADMIN` and `/dev/net/tun`, capabilities this
 app's containers deliberately don't have (see the `Dockerfile`'s non-root
-`USER app`). Instead, `docker-compose.vpn.yml` (an optional overlay,
-same convention as `docker-compose.caddy.yml`) runs one small privileged
+`USER app`). Instead, `docker-compose.vpn.yml` (an optional overlay, an extra
+`-f` compose file) runs one small privileged
 `netbird` sidecar container, and `web`/`worker` join *its* network
 namespace (`network_mode: "service:netbird"`) — once the daemon connects,
 every honeypot reachable over that NetBird network becomes reachable from

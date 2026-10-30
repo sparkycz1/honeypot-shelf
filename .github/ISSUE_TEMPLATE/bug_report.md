@@ -37,7 +37,7 @@ that's affected.
 ## Environment
 
 - **Honeypot Shelf version**: the `vX.Y.Z` shown in the site footer (or `git rev-parse HEAD` if running from a checkout)
-- **Deployment**: Docker Compose — plain, or with `docker-compose.caddy.yml` / `docker-compose.vpn.yml`?
+- **Deployment**: Docker Compose — your `COMPOSE_PROFILES` (e.g. `postgres,caddy`, `timescaledb`, empty = own database), with or without `docker-compose.vpn.yml`?
 - **Browser**: [e.g. Chrome 128, Firefox, Safari] — desktop or mobile?
 - **Auth method involved, if relevant**: local / LDAP / OIDC
 - **Honeypot OS, if this is about a specific honeypot**: [e.g. Raspberry Pi OS, Debian, Ubuntu]

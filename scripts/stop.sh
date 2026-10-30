@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 # Stop the running Honeypot Shelf stack without removing anything — containers,
 # volumes (your data), and networks are all left in place, just not
-# running. Auto-detects whether the bundled Caddy reverse proxy and/or the
-# VPN sidecar are part of this deployment (same detection
-# scripts/upgrade.sh uses, by each container's own Compose service label —
-# nothing to pass by hand, works whichever of the two (or neither, or
-# both) you're running):
+# running. Stops every service of the project, whichever profiles are on
+# (database, Caddy), and auto-detects whether the VPN sidecar is part of
+# this deployment (same detection scripts/upgrade.sh uses, by the
+# container's own Compose service label — nothing to pass by hand):
 #
 #   ./scripts/stop.sh
 #
@@ -21,14 +20,9 @@ if [ ! -f docker-compose.yml ]; then
   exit 1
 fi
 
-compose_files=(-f docker-compose.yml)
-if docker ps \
-    --filter "label=com.docker.compose.project=honeypotshelf" \
-    --filter "label=com.docker.compose.service=caddy" \
-    --format '{{.Names}}' | grep -q .; then
-  echo "==> Bundled Caddy reverse proxy detected — including docker-compose.caddy.yml."
-  compose_files+=(-f docker-compose.caddy.yml)
-fi
+# Every service of the project, whatever its profile: also a database
+# whose profile was switched off but still runs.
+compose_files=(-f docker-compose.yml --profile '*')
 if docker ps \
     --filter "label=com.docker.compose.project=honeypotshelf" \
     --filter "label=com.docker.compose.service=vpn" \

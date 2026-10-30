@@ -82,6 +82,16 @@ for arg in "$@"; do
   esac
 done
 
+# Step 4 of the header above, since 0.86.0 (the header can't change: see
+# tests/test_upgrade_script.py): which bundled services run is
+# COMPOSE_PROFILES in .env. An
+# .env from before gets it here, from what this stack runs right now
+# (postgres, plus caddy when the bundled Caddy is running) — before the
+# .env sync below, which would otherwise add the plain example value.
+# shellcheck source=scripts/compose_profiles.sh
+. scripts/compose_profiles.sh
+ensure_compose_profiles
+
 # A newer release can add variables to .env.example that this deployment's
 # existing .env predates (a new background-check interval, a new feature's
 # own setting, ...) — scripts/env_sync.py only ever appends what's missing,
@@ -95,24 +105,21 @@ else
   echo "==> Skipping .env sync — no python3 on PATH. Diff .env.example by hand if unsure." >&2
 fi
 
+# Profiles (database, Caddy) come from COMPOSE_PROFILES in .env; only the
+# VPN sidecar is still its own compose file (it changes web's and worker's
+# network, which a profile can't do).
 compose_files=(-f docker-compose.yml)
+echo "==> Profiles: ${COMPOSE_PROFILES:-$(current_profiles)}"
 # `docker ps -a`, not `docker ps` — a currently-*stopped* (crashed, or
 # just not started back up after a host reboot with no restart policy)
-# Caddy/VPN container must still count as "part of this deployment",
-# not get silently dropped from every future `up -d` onward the moment
-# it isn't running at the exact instant this script happens to check.
-# Confirmed live: exactly this dropped the VPN overlay from a deployment
-# after two routine upgrades, with no error - `up -d` without
+# VPN container must still count as "part of this deployment", not get
+# silently dropped from every future `up -d` onward the moment it isn't
+# running at the exact instant this script happens to check. Confirmed
+# live: exactly this dropped the VPN overlay from a deployment after two
+# routine upgrades, with no error - `up -d` without
 # `-f docker-compose.vpn.yml` just never manages that service again,
 # leaving Settings -> VPN unable to reach it ("not running") even though
 # the operator had already set it up.
-if docker ps -a \
-    --filter "label=com.docker.compose.project=honeypotshelf" \
-    --filter "label=com.docker.compose.service=caddy" \
-    --format '{{.Names}}' | grep -q .; then
-  echo "==> Bundled Caddy reverse proxy detected — including docker-compose.caddy.yml."
-  compose_files+=(-f docker-compose.caddy.yml)
-fi
 if docker ps -a \
     --filter "label=com.docker.compose.project=honeypotshelf" \
     --filter "label=com.docker.compose.service=vpn" \
@@ -158,6 +165,9 @@ export GIT_COMMIT="$(git rev-parse HEAD)"
 # failure.
 export CACHE_BUST="$(date +%Y%m%d%H%M%S)"
 docker compose "${compose_files[@]}" build
+
+# A database whose profile was switched off keeps running otherwise.
+stop_unused_database
 
 echo "==> Applying migrations and restarting services..."
 docker compose "${compose_files[@]}" up -d

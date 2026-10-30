@@ -11,8 +11,8 @@
 # including why WireGuard alone can't help a honeypot that's *also* behind
 # a NAT the way NetBird can).
 #
-# Run alongside the base stack (add docker-compose.caddy.yml too if you use
-# it — see below for the one thing that combination needs to know):
+# Run alongside the base stack (the bundled Caddy, profile `caddy`, works
+# with it too — see below for the one thing that combination needs to know):
 #
 #   docker compose -f docker-compose.yml -f docker-compose.vpn.yml up -d --build
 #
@@ -34,7 +34,7 @@
 # that through whichever network `vpn` itself is attached to, the default
 # one this project's other services already share).
 #
-# Using docker-compose.caddy.yml too? Its Caddyfile proxies to `web:8080`
+# Using the bundled Caddy too? Its Caddyfile proxies to `web:8080`
 # — once `web` shares `vpn`'s network namespace it stops having its own
 # `web` DNS entry, so `vpn` below claims that name as an extra network
 # alias instead. Nothing in Caddyfile needs to change either way.
