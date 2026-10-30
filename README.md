@@ -110,8 +110,9 @@ cd honeypot-shelf
 python3 scripts/setup.py
 ```
 
-It generates every secret, asks a few questions (time zone, the bundled
-Caddy reverse proxy or your own, the superadmin password, the port),
+It generates every secret, asks a few questions (time zone, the database,
+the bundled Caddy reverse proxy or your own, the superadmin password, the
+port),
 starts the stack and creates the first superadmin account. Then add a
 honeypot, or turn a fresh Raspberry Pi into one with **Initialize**.
 
@@ -120,6 +121,19 @@ honeypot, or turn a fresh Raspberry Pi into one with **Initialize**.
 > (the bundled Caddy does this for you), and don't expose its port
 > directly — set `APP_BIND_ADDRESS=127.0.0.1` in `.env` if the proxy runs
 > on the same host.
+
+What runs is chosen with `COMPOSE_PROFILES` in `.env` (the app and Redis
+always run):
+
+| `COMPOSE_PROFILES` | Database | Reverse proxy |
+|---|---|---|
+| `postgres` (default) | bundled PostgreSQL | none / your own |
+| `timescaledb` | bundled TimescaleDB (PostgreSQL + TimescaleDB) | none / your own |
+| *(empty)* | your own PostgreSQL, set `POSTGRES_HOST` etc. in `.env` | none / your own |
+| add `,caddy` | | bundled Caddy with Let's Encrypt |
+
+Switching between PostgreSQL and TimescaleDB later moves the data by
+itself: `./scripts/switch_db.sh timescaledb` (or back with `postgres`).
 
 Prefer doing it by hand, or updating an existing install? See
 [Installation](https://github.com/sparkycz1/honeypot-shelf/wiki/Installation).

@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Start a Honeypot Shelf stack previously stopped with ./scripts/stop.sh (or
-# `docker compose stop`) — auto-detects whether the bundled Caddy reverse
-# proxy and/or the VPN sidecar were part of that deployment, from the
-# stopped-but-still-present containers' own Compose service label (same
-# detection scripts/upgrade.sh/stop.sh use), so you never have to remember
-# or pass which `-f` files by hand:
+# `docker compose stop`). Starts what COMPOSE_PROFILES in .env names (the
+# bundled database and, if chosen, Caddy) together with the app, and
+# auto-detects whether the VPN sidecar was part of that deployment, from
+# the stopped-but-still-present container's own Compose service label
+# (same detection scripts/upgrade.sh/stop.sh use), so you never have to
+# remember or pass which `-f` files by hand:
 #
 #   ./scripts/start.sh
 #
@@ -22,14 +23,12 @@ if [ ! -f docker-compose.yml ]; then
   exit 1
 fi
 
+# Which services belong to this stack (database, Caddy) is
+# COMPOSE_PROFILES in .env; an .env from before 0.86.0 gets it here.
+# shellcheck source=scripts/compose_profiles.sh
+. scripts/compose_profiles.sh
+ensure_compose_profiles
 compose_files=(-f docker-compose.yml)
-if docker ps -a \
-    --filter "label=com.docker.compose.project=honeypotshelf" \
-    --filter "label=com.docker.compose.service=caddy" \
-    --format '{{.Names}}' | grep -q .; then
-  echo "==> Bundled Caddy reverse proxy detected — including docker-compose.caddy.yml."
-  compose_files+=(-f docker-compose.caddy.yml)
-fi
 if docker ps -a \
     --filter "label=com.docker.compose.project=honeypotshelf" \
     --filter "label=com.docker.compose.service=vpn" \

@@ -14,8 +14,10 @@
 #   ./scripts/backup.sh
 #
 # What it does, in order:
-#   1. `docker compose exec db pg_dump` — a live, consistent snapshot via
-#      Postgres's own MVCC; the stack does NOT need to be stopped for this.
+#   1. `pg_dump` in the bundled database (`db`, or `timescaledb` with that
+#      profile) — a live, consistent snapshot via Postgres's own MVCC; the
+#      stack does NOT need to be stopped for this. With your own database
+#      (no database profile) this step is skipped.
 #   2. Copies `.env` as-is.
 #   3. Writes everything into one timestamped directory under
 #      `BACKUP_DIR` (default ./backups), `chmod 600`'d — this holds
@@ -52,14 +54,25 @@ dest="${backup_dir}/${timestamp}"
 
 mkdir -p "$dest"
 
-if ! docker compose ps db --format '{{.State}}' 2>/dev/null | grep -q .; then
-  echo "error: the 'db' service isn't running (docker compose ps). Start the stack first." >&2
-  exit 1
+# The bundled database is `db` (profile postgres) or `timescaledb`; with
+# neither, the database is your own and is backed up with its own tools.
+# shellcheck source=scripts/compose_profiles.sh
+. scripts/compose_profiles.sh
+db_service="$(database_service)"
+if [ -z "$db_service" ]; then
+  echo "==> No bundled database (COMPOSE_PROFILES='$(current_profiles)'): back up your own"
+  echo "    database with its own tools; this saves .env only."
+else
+  if ! docker compose ps "$db_service" --format '{{.State}}' 2>/dev/null | grep -q .; then
+    echo "error: the '$db_service' service isn't running (docker compose ps). Start the stack first." >&2
+    exit 1
+  fi
+  echo "==> Dumping database (${POSTGRES_DB:-honeypotshelf}, $db_service)..."
+  docker compose exec -T "$db_service" pg_dump -U "${POSTGRES_USER}" "${POSTGRES_DB}" \
+    | gzip > "${dest}/db.sql.gz"
+  # restore.sh needs to know: a TimescaleDB dump only restores into TimescaleDB.
+  echo "$db_service" > "${dest}/db-kind"
 fi
-
-echo "==> Dumping database (${POSTGRES_DB:-honeypotshelf})..."
-docker compose exec -T db pg_dump -U "${POSTGRES_USER}" "${POSTGRES_DB}" \
-  | gzip > "${dest}/db.sql.gz"
 
 echo "==> Copying .env..."
 cp .env "${dest}/env.backup"
@@ -71,7 +84,9 @@ find "$backup_dir" -mindepth 1 -maxdepth 1 -type d -mtime "+${retention_days}" -
 
 echo
 echo "Done: ${dest}"
-echo "  db.sql.gz  — $(du -h "${dest}/db.sql.gz" | cut -f1)"
+if [ -f "${dest}/db.sql.gz" ]; then
+  echo "  db.sql.gz  — $(du -h "${dest}/db.sql.gz" | cut -f1) ($(cat "${dest}/db-kind"))"
+fi
 echo "  env.backup — $(du -h "${dest}/env.backup" | cut -f1)"
 echo
 echo "This directory contains secrets in the clear (env.backup, and every"
