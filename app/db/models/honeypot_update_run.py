@@ -52,7 +52,7 @@ class HoneypotUpdateRun(Base):
     __tablename__ = "honeypot_update_runs"
     __table_args__ = (Index("ix_honeypot_update_runs_batch_id", "batch_id"),)
 
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
 
     honeypot_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("honeypots.id", ondelete="CASCADE"), nullable=False, index=True

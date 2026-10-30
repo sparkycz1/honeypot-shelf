@@ -2156,6 +2156,44 @@ def reapply_ignored_sources() -> dict[str, Any]:
     return asyncio.run(_reapply_ignored_sources())
 
 
+# Retention deletes run in batches of this many rows, each its own
+# transaction: one huge DELETE would hold its locks (and grow the WAL) for
+# as long as it takes to remove months of rows, and an `IN (...)` list
+# longer than ~32k ids exceeds asyncpg's bind-parameter limit.
+_DELETE_BATCH_SIZE = 5_000
+
+
+async def _delete_in_batches(
+    session: AsyncSession,
+    model: Any,
+    time_column: Any,
+    conditions: tuple[Any, ...],
+) -> int:
+    """Delete every `model` row matching `conditions`, oldest first
+    (`time_column`), `_DELETE_BATCH_SIZE` at a time, committing after each
+    batch. Oldest first, so an interrupted purge never leaves a hole in
+    the middle of the hash-chained audit log. Returns how many went."""
+    deleted = 0
+    while True:
+        ids = (
+            (
+                await session.execute(
+                    select(model.id)
+                    .where(*conditions)
+                    .order_by(time_column)
+                    .limit(_DELETE_BATCH_SIZE)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if not ids:
+            return deleted
+        await session.execute(delete(model).where(model.id.in_(ids)))
+        await session.commit()
+        deleted += len(ids)
+
+
 _EVENT_PURGE_ACTOR = "retention policy (automatic)"
 
 
@@ -2177,17 +2215,11 @@ async def _purge_old_events() -> None:
         )
         cutoff = datetime.now(UTC) - timedelta(days=retention_days)
 
-        count_result = await session.execute(
-            select(func.count())
-            .select_from(HoneypotEvent)
-            .where(HoneypotEvent.occurred_at < cutoff)
+        deleted_count = await _delete_in_batches(
+            session, HoneypotEvent, HoneypotEvent.occurred_at, (HoneypotEvent.occurred_at < cutoff,)
         )
-        deleted_count = count_result.scalar_one()
         if not deleted_count:
             return
-
-        await session.execute(delete(HoneypotEvent).where(HoneypotEvent.occurred_at < cutoff))
-        await session.commit()
 
         await log_event(
             session,
@@ -2216,11 +2248,11 @@ async def _purge_old_monitoring_samples() -> None:
     `AppSettings.monitoring_history_retention_days` (`None` on both = keep
     that honeypot's samples forever). One retention setting covers both
     tables — they're the same "how long does this fleet's own history
-    stick around" question, not two knobs to configure. One `DELETE` per
-    honeypot per table rather than a single global cutoff (unlike
+    stick around" question, not two knobs to configure. Per honeypot per
+    table rather than a single global cutoff (unlike
     `_purge_old_honeypot_update_runs`) since retention can differ per
-    honeypot — acceptable for a once-a-day job; see
-    wiki/Host-Requirements.md if this ever needs to scale further."""
+    honeypot, and in batches (`_delete_in_batches`) so no single
+    transaction removes months of samples at once."""
     async with db_session.AsyncSessionLocal() as session:
         app_settings = await get_or_create_app_settings(session)
         default_retention_days = app_settings.monitoring_history_retention_days
@@ -2238,38 +2270,27 @@ async def _purge_old_monitoring_samples() -> None:
                 continue
             cutoff = now - timedelta(days=retention_days)
 
-            monitoring_filter = (
-                HoneypotMonitoringSample.honeypot_id == honeypot_id,
-                HoneypotMonitoringSample.sampled_at < cutoff,
+            total_deleted += await _delete_in_batches(
+                session,
+                HoneypotMonitoringSample,
+                HoneypotMonitoringSample.sampled_at,
+                (
+                    HoneypotMonitoringSample.honeypot_id == honeypot_id,
+                    HoneypotMonitoringSample.sampled_at < cutoff,
+                ),
             )
-            count_result = await session.execute(
-                select(func.count()).select_from(HoneypotMonitoringSample).where(*monitoring_filter)
+            total_deleted += await _delete_in_batches(
+                session,
+                HoneypotReachabilitySample,
+                HoneypotReachabilitySample.checked_at,
+                (
+                    HoneypotReachabilitySample.honeypot_id == honeypot_id,
+                    HoneypotReachabilitySample.checked_at < cutoff,
+                ),
             )
-            honeypot_deleted = count_result.scalar_one()
-            if honeypot_deleted:
-                await session.execute(delete(HoneypotMonitoringSample).where(*monitoring_filter))
-                total_deleted += honeypot_deleted
-
-            reachability_filter = (
-                HoneypotReachabilitySample.honeypot_id == honeypot_id,
-                HoneypotReachabilitySample.checked_at < cutoff,
-            )
-            count_result = await session.execute(
-                select(func.count())
-                .select_from(HoneypotReachabilitySample)
-                .where(*reachability_filter)
-            )
-            reachability_deleted = count_result.scalar_one()
-            if reachability_deleted:
-                await session.execute(
-                    delete(HoneypotReachabilitySample).where(*reachability_filter)
-                )
-                total_deleted += reachability_deleted
 
         if not total_deleted:
             return
-
-        await session.commit()
 
         await log_event(
             session,
@@ -3016,17 +3037,11 @@ async def _purge_old_audit_log_entries() -> None:
             return
 
         cutoff = datetime.now(UTC) - timedelta(days=retention_days)
-        count_result = await session.execute(
-            select(func.count())
-            .select_from(AuditLogEntry)
-            .where(AuditLogEntry.created_at < cutoff)
+        deleted_count = await _delete_in_batches(
+            session, AuditLogEntry, AuditLogEntry.created_at, (AuditLogEntry.created_at < cutoff,)
         )
-        deleted_count = count_result.scalar_one()
         if not deleted_count:
             return
-
-        await session.execute(delete(AuditLogEntry).where(AuditLogEntry.created_at < cutoff))
-        await session.commit()
 
         await log_event(
             session,
@@ -3134,19 +3149,14 @@ async def _purge_old_company_snapshots() -> None:
             return
 
         cutoff = (datetime.now(UTC) - timedelta(days=retention_days)).date()
-        count_result = await session.execute(
-            select(func.count())
-            .select_from(CompanySnapshot)
-            .where(CompanySnapshot.snapshot_date < cutoff)
+        deleted_count = await _delete_in_batches(
+            session,
+            CompanySnapshot,
+            CompanySnapshot.snapshot_date,
+            (CompanySnapshot.snapshot_date < cutoff,),
         )
-        deleted_count = count_result.scalar_one()
         if not deleted_count:
             return
-
-        await session.execute(
-            delete(CompanySnapshot).where(CompanySnapshot.snapshot_date < cutoff)
-        )
-        await session.commit()
 
         await log_event(
             session,
@@ -3183,19 +3193,14 @@ async def _purge_old_honeypot_update_runs() -> None:
             return
 
         cutoff = datetime.now(UTC) - timedelta(days=retention_days)
-        count_result = await session.execute(
-            select(func.count())
-            .select_from(HoneypotUpdateRun)
-            .where(HoneypotUpdateRun.created_at < cutoff)
+        deleted_count = await _delete_in_batches(
+            session,
+            HoneypotUpdateRun,
+            HoneypotUpdateRun.created_at,
+            (HoneypotUpdateRun.created_at < cutoff,),
         )
-        deleted_count = count_result.scalar_one()
         if not deleted_count:
             return
-
-        await session.execute(
-            delete(HoneypotUpdateRun).where(HoneypotUpdateRun.created_at < cutoff)
-        )
-        await session.commit()
 
         await log_event(
             session,
@@ -3229,19 +3234,14 @@ async def _purge_old_terminal_recordings() -> None:
         if not retention_days:
             return
         cutoff = datetime.now(UTC) - timedelta(days=retention_days)
-        deleted_count = (
-            await session.execute(
-                select(func.count())
-                .select_from(TerminalRecording)
-                .where(TerminalRecording.started_at < cutoff)
-            )
-        ).scalar_one()
+        deleted_count = await _delete_in_batches(
+            session,
+            TerminalRecording,
+            TerminalRecording.started_at,
+            (TerminalRecording.started_at < cutoff,),
+        )
         if not deleted_count:
             return
-        await session.execute(
-            delete(TerminalRecording).where(TerminalRecording.started_at < cutoff)
-        )
-        await session.commit()
         await log_event(
             session,
             actor=_TERMINAL_RECORDING_PURGE_ACTOR,
@@ -3275,19 +3275,14 @@ async def _purge_old_notification_logs() -> None:
             return
 
         cutoff = datetime.now(UTC) - timedelta(days=retention_days)
-        count_result = await session.execute(
-            select(func.count())
-            .select_from(NotificationLog)
-            .where(NotificationLog.created_at < cutoff)
+        deleted_count = await _delete_in_batches(
+            session,
+            NotificationLog,
+            NotificationLog.created_at,
+            (NotificationLog.created_at < cutoff,),
         )
-        deleted_count = count_result.scalar_one()
         if not deleted_count:
             return
-
-        await session.execute(
-            delete(NotificationLog).where(NotificationLog.created_at < cutoff)
-        )
-        await session.commit()
 
         await log_event(
             session,

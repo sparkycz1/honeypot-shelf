@@ -48,9 +48,16 @@ class HoneypotReachabilitySample(Base):
             "honeypot_id",
             "checked_at",
         ),
+        # Rows arrive in time order, so a BRIN index (a few pages for
+        # millions of rows) serves fleet-wide time-range scans.
+        Index(
+            "ix_honeypot_reachability_samples_checked_at_brin",
+            "checked_at",
+            postgresql_using="brin",
+        ),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
 
     honeypot_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("honeypots.id", ondelete="CASCADE"), nullable=False, index=True

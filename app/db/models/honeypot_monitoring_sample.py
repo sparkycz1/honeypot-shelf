@@ -28,9 +28,16 @@ class HoneypotMonitoringSample(Base):
         # in this time range, in order" — and the same shape the retention
         # purge deletes by.
         Index("ix_honeypot_monitoring_samples_honeypot_id_sampled_at", "honeypot_id", "sampled_at"),
+        # Rows arrive in time order, so a BRIN index (a few pages for
+        # millions of rows) serves fleet-wide time-range scans.
+        Index(
+            "ix_honeypot_monitoring_samples_sampled_at_brin",
+            "sampled_at",
+            postgresql_using="brin",
+        ),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
 
     honeypot_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("honeypots.id", ondelete="CASCADE"), nullable=False, index=True
