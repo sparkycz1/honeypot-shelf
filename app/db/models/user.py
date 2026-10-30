@@ -189,7 +189,12 @@ class User(Base):
         gating (Initialize, Scheduling's own landing page — neither is
         scoped to one company). Per-company enforcement is a separate,
         narrower check — see `app.auth.scope.has_company_access`/
-        `can_write_company` below, and `app.auth.permissions`."""
+        `can_write_company` below, and `app.auth.permissions`. Under a
+        company-limited API token, only `READ_WRITE` on one of the token's
+        companies counts."""
+        scope = self.token_company_scope
+        if scope is not None:
+            return any(self.can_write_company(company_id) for company_id in scope)
         return self.is_superadmin or any(
             m.access_level == AccessLevel.READ_WRITE for m in self.memberships
         )

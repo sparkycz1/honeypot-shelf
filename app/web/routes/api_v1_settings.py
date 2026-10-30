@@ -39,6 +39,7 @@ What's deliberately **not** exposed here, even to a superadmin token:
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from celery.exceptions import TimeoutError as CeleryTimeoutError
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -58,7 +59,10 @@ from app.db.session import get_db
 from app.services import app_update, mac_vendors
 from app.ssh.identity import get_or_create_identity
 from app.tasks.jobs import refresh_geoip_database
+from app.web.routes.honeypots_config import JOB_FAILED_MESSAGE
 from app.web.routes.settings import MAX_EVENT_RETENTION_DAYS
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/settings")
 
@@ -157,17 +161,6 @@ async def upgrade_app_api(
 # Same fields, bounds and audit codes as Settings -> Checks & retention.
 # Partial updates: only the fields sent change.
 
-_CHECK_BOUNDS: dict[str, tuple[int, int]] = {
-    "ssh_connect_timeout": (1, 300),
-    "update_timeout_seconds": (60, 14400),
-    "facts_refresh_interval_seconds": (60, 604800),
-    "reachability_check_interval_seconds": (5, 86400),
-    "reachability_check_concurrency": (1, 1000),
-    "monitoring_interval_seconds": (10, 86400),
-    "opencanary_log_poll_interval_seconds": (10, 86400),
-}
-
-
 class ChecksSettings(BaseModel):
     """Seconds, except the concurrency (parallel checks). The four
     intervals take effect after the worker and beat services restart."""
@@ -182,7 +175,7 @@ class ChecksSettings(BaseModel):
 
 
 def _checks_of(app_settings: AppSettings) -> dict[str, int]:
-    return {key: getattr(app_settings, key) for key in _CHECK_BOUNDS}
+    return {key: getattr(app_settings, key) for key in ChecksSettings.model_fields}
 
 
 @router.get("/checks", dependencies=[_view])
@@ -377,8 +370,11 @@ async def refresh_geoip_api(
             error = str(outcome.get("error")) if isinstance(outcome, dict) else "Unknown error."
     except CeleryTimeoutError:
         error = "Download timed out — it may still complete in the background."
-    except Exception as exc:
-        error = str(exc)
+    except Exception:
+        # Never echo raw exception text (a broker URL, a traceback line) to
+        # an API client: log it, answer with the generic message.
+        logger.warning("GeoIP download job failed", exc_info=True)
+        error = JOB_FAILED_MESSAGE
     await log_event(
         db,
         request=request,

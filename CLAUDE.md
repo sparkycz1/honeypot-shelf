@@ -95,7 +95,7 @@ exists. Companies, Users, Settings, and the Audit log are
 
 ```bash
 uv sync                          # install deps into .venv (needed for tests/lint/mypy)
-uv run pytest                    # full suite — no real Postgres/Redis/Celery broker touched
+uv run pytest -n auto            # full suite on every core — no real Postgres/Redis/Celery broker touched
 uv run pytest tests/test_x.py    # one file
 uv run ruff check .              # lint
 uv run mypy app alembic tests    # type check (strict for app/ and alembic/)
