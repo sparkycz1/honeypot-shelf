@@ -57,14 +57,19 @@ class HoneypotReachabilitySample(Base):
         ),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
+    # The insert sentinel: bulk inserts match returned rows by id alone, not
+    # by the (id, time) key, whose timestamp SQLite returns without tzinfo.
+    id: Mapped[uuid.UUID] = mapped_column(
+        primary_key=True, default=uuid.uuid7, insert_sentinel=True
+    )
 
     honeypot_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("honeypots.id", ondelete="CASCADE"), nullable=False, index=True
     )
     honeypot: Mapped[Honeypot] = relationship(viewonly=True)
 
-    checked_at: Mapped[datetime] = mapped_column(nullable=False)
+    # Part of the primary key for TimescaleDB (see HoneypotMonitoringSample).
+    checked_at: Mapped[datetime] = mapped_column(primary_key=True, nullable=False)
     reachable: Mapped[bool] = mapped_column(Boolean, nullable=False)
     # How long the TCP connect attempt took, in milliseconds — None for a
     # failed attempt (there's no meaningful "connect time" for a timeout
