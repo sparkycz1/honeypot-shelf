@@ -23,9 +23,11 @@ from starlette.datastructures import FormData, UploadFile
 
 from app.audit import log_event
 from app.auth.dependencies import get_api_token_user
+from app.auth.scope import can_see_honeypot
 from app.core.app_settings import get_or_create_app_settings
 from app.db.models.company import Company
 from app.db.models.honeypot import Honeypot
+from app.db.models.honeypot_company import honeypot_companies
 from app.db.models.notification_log import NotificationChannel, NotificationLog
 from app.db.models.notification_rule import NotificationRule
 from app.db.models.user import User
@@ -132,6 +134,28 @@ def _as_form(payload: NotificationRuleSave) -> FormData:
     return FormData(items)
 
 
+def _within_token_scope(user: User, rule: NotificationRule) -> bool:
+    """Under a company-limited token, only the rules whose companies and
+    honeypots all lie inside the token's companies are visible — another
+    company's rule would give away that company's ids and honeypot names.
+    Without such a limit every own rule is visible, as on the web."""
+    if user.token_company_scope is None:
+        return True
+    companies = user.company_ids()
+    return all(c.id in companies for c in rule.companies) and all(
+        can_see_honeypot(user, h) for h in rule.honeypots
+    )
+
+
+async def _get_rule_in_scope(
+    db: AsyncSession, user: User, rule_id: uuid.UUID, *, with_user: bool = False
+) -> NotificationRule:
+    rule = await _get_own_rule(db, user, rule_id, with_user=with_user)
+    if not _within_token_scope(user, rule):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    return rule
+
+
 def _rule_to_dict(rule: NotificationRule) -> dict[str, object]:
     return {
         "id": str(rule.id),
@@ -202,7 +226,7 @@ async def list_notification_rules_api(
         .where(NotificationRule.user_id == user.id)
         .order_by(NotificationRule.name)
     )
-    return [_rule_to_dict(rule) for rule in result.scalars()]
+    return [_rule_to_dict(rule) for rule in result.scalars() if _within_token_scope(user, rule)]
 
 
 @router.post("/rules", status_code=status.HTTP_201_CREATED)
@@ -235,7 +259,7 @@ async def get_notification_rule_api(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_token_user),
 ) -> dict[str, object]:
-    return _rule_to_dict(await _get_own_rule(db, user, rule_id))
+    return _rule_to_dict(await _get_rule_in_scope(db, user, rule_id))
 
 
 @router.put("/rules/{rule_id}")
@@ -248,7 +272,7 @@ async def update_notification_rule_api(
 ) -> dict[str, object]:
     """Replaces the whole rule (a field left out takes its default), except
     `channel_token`, which is kept when left out."""
-    rule = await _get_own_rule(db, user, rule_id)
+    rule = await _get_rule_in_scope(db, user, rule_id)
     values, companies, honeypots = await _validated(
         db, user, payload, has_token=rule.channel_token_encrypted is not None
     )
@@ -277,7 +301,7 @@ async def delete_notification_rule_api(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_api_token_user),
 ) -> Response:
-    rule = await _get_own_rule(db, user, rule_id)
+    rule = await _get_rule_in_scope(db, user, rule_id)
     name = rule.name
     await db.delete(rule)
     await db.commit()
@@ -302,7 +326,7 @@ async def send_test_notification_api(
     """"Send test": one made-up alert through the rule's channel, about a
     real honeypot in its scope. `sent` is false with the reason in `error`
     when it could not be delivered."""
-    rule = await _get_own_rule(db, user, rule_id, with_user=True)
+    rule = await _get_rule_in_scope(db, user, rule_id, with_user=True)
     honeypot = await _representative_honeypot(db, rule)
     error: str | None
     if honeypot is None:
@@ -331,11 +355,19 @@ async def notification_history_api(
 ) -> list[dict[str, object]]:
     """The token owner's own last 200 send attempts, newest first — real
     and test, delivered, failed or muted by a maintenance window."""
+    query = select(NotificationLog).where(NotificationLog.user_id == user.id)
+    if user.token_company_scope is not None:
+        # A company-limited token sees only the sends about honeypots in
+        # its companies.
+        query = query.where(
+            NotificationLog.honeypot_id.in_(
+                select(honeypot_companies.c.honeypot_id).where(
+                    honeypot_companies.c.company_id.in_(user.company_ids())
+                )
+            )
+        )
     result = await db.execute(
-        select(NotificationLog)
-        .where(NotificationLog.user_id == user.id)
-        .order_by(NotificationLog.created_at.desc())
-        .limit(_HISTORY_LIMIT)
+        query.order_by(NotificationLog.created_at.desc()).limit(_HISTORY_LIMIT)
     )
     return [
         {

@@ -149,6 +149,9 @@ async def refresh_honeypot_monitoring_api(
         details={"error": error} if error else None,
     )
     honeypot = await _get_writable_honeypot_or_404(honeypot_id, db, user)
+    # The worker wrote new values in its own session: reload them, or the
+    # answer would still show the previous check time.
+    await db.refresh(honeypot)
     payload = await _monitoring_payload(
         honeypot, monitoring_history.DEFAULT_TIME_RANGE, "", "", db, user
     )

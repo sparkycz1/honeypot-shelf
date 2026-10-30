@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import functools
 import os
+import sqlite3
 from collections.abc import Iterator
 
 # Set these BEFORE importing `app.main` — configuration (`Settings`) is
@@ -27,7 +29,8 @@ import pytest
 import pytest_asyncio
 from celery.app.task import Task
 from httpx2 import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy import create_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from app.auth.security import hash_password
@@ -128,6 +131,40 @@ class FakeRedis:
         return True
 
 
+@functools.cache
+def _schema_template() -> bytes:
+    """The whole schema (`Base.metadata.create_all`), built once per test
+    process into a plain in-memory SQLite database and kept as its
+    serialized bytes. Running `create_all` for every test cost ~50 ms each
+    (41 tables plus indexes), over half of the whole suite's run time;
+    loading these bytes into a fresh connection takes well under 1 ms."""
+    template = sqlite3.connect(":memory:")
+    engine = create_engine("sqlite://", creator=lambda: template, poolclass=StaticPool)
+    try:
+        Base.metadata.create_all(engine)
+        return template.serialize()
+    finally:
+        engine.dispose()  # also closes `template`
+
+
+class _SchemaTemplateConnection(sqlite3.Connection):
+    """A new in-memory database that starts as a copy of `_schema_template()`
+    — passed to `sqlite3.connect` (through aiosqlite) as `factory`, so each
+    test still gets its own empty, isolated database with the full schema."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.deserialize(_schema_template())
+
+
+# One engine for the whole test process, emptied after every test. A new
+# engine per test would also mean an empty SQLAlchemy compiled-statement
+# cache per test (the cache belongs to the engine), so every test paid again
+# for compiling the same queries — about a quarter of the suite's run time.
+_shared_engine: list[AsyncEngine] = []  # at most one
+_TABLES_CHILDREN_FIRST = tuple(reversed(Base.metadata.sorted_tables))
+
+
 @pytest_asyncio.fixture
 async def db_session_factory():
     """Isolated in-memory SQLite DB for each test (no real Postgres).
@@ -149,17 +186,27 @@ async def db_session_factory():
     follow that pattern for any new "edit to a duplicate unique value"
     test. Ported from an identical fix in debcontrol.
     """
-    engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    if not _shared_engine:
+        _shared_engine.append(
+            create_async_engine(
+                "sqlite+aiosqlite:///:memory:",
+                connect_args={"check_same_thread": False, "factory": _SchemaTemplateConnection},
+                poolclass=StaticPool,
+            )
+        )
+    engine = _shared_engine[0]
 
-    factory = async_sessionmaker(engine, expire_on_commit=False)
-    yield factory
-    await engine.dispose()
+    yield async_sessionmaker(engine, expire_on_commit=False)
+
+    try:
+        async with engine.begin() as conn:
+            for table in _TABLES_CHILDREN_FIRST:
+                await conn.execute(table.delete())
+    except Exception:
+        # Whatever the test left behind (a broken connection, say), the
+        # next test starts from a brand-new database instead.
+        _shared_engine.clear()
+        await engine.dispose()
 
 
 async def create_company(db_session_factory: Any, *, name: str = "Acme Corp") -> Company:

@@ -1,19 +1,19 @@
 [project]
 name = "honeypot-shelf"
-version = "0.84.0"
+version = "0.84.1"
 description = "Management and monitoring overview for a fleet of OpenCanary honeypots, across multiple companies"
 readme = "README.md"
 requires-python = ">=3.14"
 license = { text = "PolyForm-Noncommercial-1.0.0" }
 
 dependencies = [
-    "fastapi>=0.143.0",
+    "fastapi>=0.162.0",
     "uvicorn[standard]>=0.54.0",
-    "pydantic>=2.14.1",
-    "pydantic-settings>=2.15.0",
-    "sqlalchemy[asyncio]>=2.1.4",
+    "pydantic>=2.14.2",
+    "pydantic-settings>=2.16.2",
+    "sqlalchemy[asyncio]>=2.1.6",
     "asyncpg>=0.32.0",
-    "alembic>=1.20.0",
+    "alembic>=1.20.1",
     # Note: the `redis-py` client library is independent from the Redis SERVER
     # version. Only the lower bound is pinned here — the real upper bound
     # comes from `kombu[redis]` (Celery's transport layer). See
@@ -43,7 +43,7 @@ dependencies = [
     # validation. Used together with Starlette's own SessionMiddleware (no
     # new dependency needed for that) to carry state/nonce across the
     # redirect to/from the provider.
-    "authlib>=1.9.0",
+    "authlib>=1.9.1",
     # HTTP client for this app's own outbound requests (push/chat
     # notifications, the GeoIP download, a remote logo) and for Authlib:
     # authlib.integrations.starlette_client (app/auth/oidc.py) imports its
@@ -51,7 +51,7 @@ dependencies = [
     # and since Authlib 1.8 that is httpx2 (plain httpx is only a
     # deprecated fallback). httpx2 is the maintained successor of httpx
     # (github.com/pydantic/httpx2), same API under a new package name.
-    "httpx2>=2.13.1",
+    "httpx2>=2.16.0",
     # TOTP (RFC 6238) generation/verification for two-factor authentication.
     "pyotp>=2.10.0",
     # Renders the TOTP enrollment QR code as inline SVG — deliberately used
@@ -60,7 +60,7 @@ dependencies = [
     # Renders Company/Honeypot notes from Markdown to HTML — pure Python,
     # no C extension. Used with its default escape=True (raw HTML in the
     # source is escaped to text, not passed through). See app.web.templating.
-    "mistune>=3.3.4",
+    "mistune>=3.4.0",
     # WebAuthn/passkey registration and authentication ceremony verification
     # (RP-side): attestation/assertion signature checking, challenge
     # handling. See app/auth/webauthn.py.
@@ -75,11 +75,13 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "pytest>=9.1.1",
-    "pytest-asyncio>=1.4.0",
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.4.1",
+    # `pytest -n auto`: the suite on every CPU core (CI does this).
+    "pytest-xdist>=3.8.0",
     "aiosqlite>=0.22.1",
-    "ruff>=0.17.0",
-    "mypy>=2.4.0",
+    "ruff>=0.17.3",
+    "mypy>=2.4.1",
     "python-dotenv>=1.2.4",
     "types-authlib>=1.8.0.20260911",
     "types-croniter>=6.2.4.20261006",
@@ -95,12 +97,12 @@ fuzz = [
 # The browser smoke test (`e2e/`, the `browser` job in ci.yml): every main
 # page in Chromium under the real CSP. Not part of the default `pytest` run.
 e2e = [
-    "playwright>=1.64.0",
+    "playwright>=1.64.1",
 ]
 
 [tool.uv]
 package = false
-# `.python-version` pins Python 3.15.1, which older uv releases can't
+# `.python-version` pins Python 3.15.2, which older uv releases can't
 # download — fail with a clear "update uv" message instead.
 required-version = ">=0.13"
 # Never resolve to an alpha/beta/rc, even when a newer stable dependency
@@ -196,6 +198,7 @@ check_untyped_defs = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 filterwarnings = [
     # ldap3 still imports pyasn1's deprecated tagMap/typeMap; not ours to fix.

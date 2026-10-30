@@ -33,7 +33,7 @@ one of those.
    uv sync
    uv run ruff check .
    uv run mypy app alembic tests
-   uv run pytest
+   uv run pytest -n auto  # every CPU core; plain `uv run pytest` works too
    uv run alembic heads   # must show exactly one head
    ```
 3. Open a pull request. The [PR template](.github/pull_request_template.md)

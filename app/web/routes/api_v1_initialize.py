@@ -12,14 +12,17 @@ holds the device's password and VPN secrets until it ends, and those are
 never returned or stored. A finished run stays readable here for an hour,
 then only in the history (`/history`), which keeps every run.
 
-Needs write access, like the web page. Same single-web-process caveat as
+Needs write access, like the web page, and a token that isn't limited
+to some companies. Same single-web-process caveat as
 the page (see `app.web.routes.initialize`)."""
 
 from __future__ import annotations
 
 import asyncio
+import itertools
 import secrets
 import uuid
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
@@ -38,7 +41,21 @@ from app.ssh.initialize import NEW_SSH_PORT
 from app.web.routes import initialize_ws
 from app.web.routes.initialize import PendingInitializeRun, validate_initialize_input
 
-router = APIRouter(prefix="/api/v1/initialize", dependencies=[Depends(require_api_write)])
+
+async def _require_unlimited_write(user: User = Depends(require_api_write)) -> User:
+    """Initialize belongs to no company: the new device isn't in one yet,
+    and the run history covers the whole fleet. So a token limited to some
+    companies can't use it, like the superadmin-only endpoints."""
+    if user.token_company_scope is not None:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, detail="This API token is limited to some companies."
+        )
+    return user
+
+
+router = APIRouter(
+    prefix="/api/v1/initialize", dependencies=[Depends(_require_unlimited_write)]
+)
 
 _FINISHED_RUN_TTL = timedelta(hours=1)
 _MAX_LIVE_OUTPUT_LINES = 5000
@@ -55,7 +72,7 @@ class LiveRun:
     started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     step: str | None = None
     steps: list[str] = field(default_factory=list)
-    output: list[str] = field(default_factory=list)
+    output: deque[str] = field(default_factory=lambda: deque(maxlen=_MAX_LIVE_OUTPUT_LINES))
     output_dropped: int = 0
     done: bool = False
     ok: bool | None = None
@@ -69,10 +86,9 @@ class LiveRun:
             self.step = str(frame.get("label"))
             self.steps.append(self.step)
         elif kind == "output":
-            self.output.append(str(frame.get("text")))
-            if len(self.output) > _MAX_LIVE_OUTPUT_LINES:
-                del self.output[0]
+            if len(self.output) == self.output.maxlen:
                 self.output_dropped += 1
+            self.output.append(str(frame.get("text")))
         elif kind == "done":
             self.done = True
             self.ok = bool(frame.get("ok"))
@@ -190,7 +206,7 @@ async def initialize_run_api(
         "started_at": live.started_at.isoformat(),
         "step": live.step,
         "steps": live.steps,
-        "output": live.output[start:],
+        "output": list(itertools.islice(live.output, start, None)),
         "next_since": total,
         "done": live.done,
         "ok": live.ok,

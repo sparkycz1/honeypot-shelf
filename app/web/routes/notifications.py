@@ -454,7 +454,9 @@ async def _authorize_scope(
         found = {company.id: company for company in result.scalars().all()}
         for company_id in company_ids:
             company = found.get(company_id)
-            if company is None or not (user.is_superadmin or company_id in user.company_ids()):
+            if company is None or not (
+                user.sees_every_company or company_id in user.company_ids()
+            ):
                 errors.append("You don't have access to that company.")
             else:
                 companies.append(company)

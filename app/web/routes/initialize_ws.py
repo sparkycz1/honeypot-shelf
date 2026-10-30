@@ -289,10 +289,8 @@ async def run_initialize(
 ) -> None:
     """Runs one Initialize from start to finish, sending its frames (see
     the module docstring's protocol) to `emit`, ending with `done`; then
-    audits it and stores it in the run history. Never raises."""
-    async with db_session_factory() as db:
-        app_settings = await get_or_create_app_settings(db)
-
+    audits it and stores it in the run history. Never raises, except to
+    pass on its own cancellation (which is still reported as a failure)."""
     error: str | None = None
     fingerprint: str | None = None
     conn: asyncssh.SSHClientConnection | None = None
@@ -301,6 +299,8 @@ async def run_initialize(
     collected: list[str] = []
 
     try:
+        async with db_session_factory() as db:
+            app_settings = await get_or_create_app_settings(db)
         await emit({"kind": "step", "label": "Connecting"})
         try:
             fingerprint = await discover_host_key_fingerprint(
@@ -429,6 +429,11 @@ async def run_initialize(
                 fingerprint,
                 mac_changed=run.mac_address is not None,
             )
+    except asyncio.CancelledError:
+        # E.g. the server shutting down mid-run: the device may be half
+        # provisioned, so this must never be recorded as a success.
+        error = "Initialize was interrupted before it finished."
+        raise
     except Exception as exc:
         error = str(exc)
     finally:
