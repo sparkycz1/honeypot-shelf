@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # --- Stage 1: build the virtualenv with uv -----------------------------------
-FROM python:3.15.2-slim@sha256:c4158543ecb725b99e57d129dfd43d761d4c43e4577b5e23326aabb223cf7f4e AS builder
+FROM python:3.16.0a1-slim@sha256:df293ba3b89f458e1aad6051b62ff1c4fad7b3b52b8147ae9cc4b667f9cf2741 AS builder
 
 # Official static uv binary — no need to pip-install it into the image.
 # Pinned to an exact version (same reasoning as Postgres/Redis/Caddy) —
@@ -28,7 +28,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev
 
 # --- Stage 2: minimal runtime image ------------------------------------------
-FROM python:3.15.2-slim@sha256:c4158543ecb725b99e57d129dfd43d761d4c43e4577b5e23326aabb223cf7f4e AS runtime
+FROM python:3.16.0a1-slim@sha256:df293ba3b89f458e1aad6051b62ff1c4fad7b3b52b8147ae9cc4b667f9cf2741 AS runtime
 
 # Lets scripts/upgrade.sh find (and remove) old untagged Honeypot Shelf builds.
 LABEL io.honeypotshelf.image="app"
