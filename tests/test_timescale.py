@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import asyncpg
 import pytest
 from sqlalchemy import inspect, select
 
@@ -195,3 +196,84 @@ async def test_settings_page_and_api_show_timescaledb(
         "/api/v1/settings", headers={"Authorization": f"Bearer {raw_token}"}
     )
     assert response.json()["timescaledb"] == info
+
+
+class _Result:
+    def __init__(self, row: tuple[str, str] | None) -> None:
+        self._row = row
+
+    def first(self) -> tuple[str, str] | None:
+        return self._row
+
+
+class _Conn:
+    def __init__(self, row: tuple[str, str] | None) -> None:
+        self.row = row
+
+    async def execute(self, _statement: Any) -> _Result:
+        return _Result(self.row)
+
+
+class _Bare:
+    def __init__(self, fail: bool) -> None:
+        self.fail = fail
+        self.statements: list[str] = []
+        self.closed = False
+
+    async def execute(self, sql: str) -> None:
+        if self.fail:
+            raise asyncpg.InsufficientPrivilegeError("must be owner of extension")
+        self.statements.append(sql)
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+def _fake_connect(monkeypatch: pytest.MonkeyPatch, bare: _Bare) -> list[str]:
+    dsns: list[str] = []
+
+    async def connect(dsn: str) -> _Bare:
+        dsns.append(dsn)
+        return bare
+
+    monkeypatch.setattr(asyncpg, "connect", connect)
+    return dsns
+
+
+URL = "postgresql+asyncpg://app:secret@db:5432/honeypotshelf"
+
+
+@pytest.mark.parametrize("row", [None, ("2.32.0", "2.32.0")])
+async def test_extension_update_is_skipped_when_not_needed(
+    monkeypatch: pytest.MonkeyPatch, row: tuple[str, str] | None
+) -> None:
+    dsns = _fake_connect(monkeypatch, _Bare(fail=False))
+    assert await timescale.update_extension(_Conn(row), URL) is None  # type: ignore[arg-type]
+    assert dsns == []
+
+
+async def test_extension_update_runs_first_on_a_bare_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # After a new TimescaleDB image the database stays on the old extension
+    # version until ALTER EXTENSION ... UPDATE, which must be the first
+    # statement of its session — hence a bare asyncpg connection.
+    bare = _Bare(fail=False)
+    dsns = _fake_connect(monkeypatch, bare)
+    updated = await timescale.update_extension(_Conn(("2.31.0", "2.32.0")), URL)  # type: ignore[arg-type]
+    assert updated == "2.31.0 -> 2.32.0"
+    assert dsns == ["postgresql://app:secret@db:5432/honeypotshelf"]
+    assert bare.statements == ["ALTER EXTENSION timescaledb UPDATE"]
+    assert bare.closed
+
+
+async def test_extension_update_without_ownership_only_warns(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    bare = _Bare(fail=True)
+    _fake_connect(monkeypatch, bare)
+    updated = await timescale.update_extension(_Conn(("2.31.0", "2.32.0")), URL)  # type: ignore[arg-type]
+    assert updated is None
+    assert bare.closed
+    assert "ALTER EXTENSION timescaledb UPDATE" in caplog.text
+    assert "secret" not in caplog.text

@@ -184,7 +184,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # One long-lived Redis connection pool for the login rate limiter
     # (app.auth.rate_limit) — nothing to do with the Celery broker, which
     # talks to Redis from the worker processes on its own.
-    app.state.redis = aioredis.from_url(settings.redis_url)  # type: ignore[no-untyped-call]
+    app.state.redis = aioredis.from_url(settings.redis_url)
     # The auth middleware (app.auth.middleware) needs a DB session but runs
     # outside FastAPI's dependency injection — this is what it opens one
     # from. Kept on app.state rather than imported directly so tests can

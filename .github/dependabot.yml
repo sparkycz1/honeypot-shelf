@@ -36,6 +36,13 @@ updates:
       interval: "weekly"
     cooldown:
       default-days: 7
+    # The Python image gets patch bumps only. Docker tags carry no "this is
+    # a pre-release" flag Dependabot honours, so it once proposed
+    # 3.16.0a1-slim (#110); a new Python minor is adopted on purpose, in a
+    # dependency round, once it is a stable release (as 3.15 was in 0.83.0).
+    ignore:
+      - dependency-name: "python"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
     open-pull-requests-limit: 15
     labels:
       - "dependencies"

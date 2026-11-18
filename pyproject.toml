@@ -1,37 +1,37 @@
 [project]
 name = "honeypot-shelf"
-version = "0.87.0"
+version = "0.87.1"
 description = "Management and monitoring overview for a fleet of OpenCanary honeypots, across multiple companies"
 readme = "README.md"
 requires-python = ">=3.14"
 license = { text = "PolyForm-Noncommercial-1.0.0" }
 
 dependencies = [
-    "fastapi>=0.162.0",
+    "fastapi>=0.164.0",
     "uvicorn[standard]>=0.54.0",
-    "pydantic>=2.14.2",
-    "pydantic-settings>=2.16.2",
-    "sqlalchemy[asyncio]>=2.1.6",
+    "pydantic>=2.14.3",
+    "pydantic-settings>=2.16.3",
+    "sqlalchemy[asyncio]>=2.1.9",
     "asyncpg>=0.32.0",
     "alembic>=1.20.1",
     # Note: the `redis-py` client library is independent from the Redis SERVER
     # version. Only the lower bound is pinned here — the real upper bound
     # comes from `kombu[redis]` (Celery's transport layer). See
     # wiki/Architecture.md, "Dependency version notes".
-    "redis[hiredis]>=5.3.1",
+    "redis[hiredis]>=8.1.0",
     # Task queue: broker AND result backend are the same Redis instance
     # (REDIS_URL). Used for the daily housekeeping jobs (event/audit-log
     # purge, snapshot rollups) — event ingestion itself is a plain, fast
     # synchronous DB write, not queued. See app/tasks/celery_app.py.
-    "celery[redis]>=5.6.3",
+    "celery[redis]>=5.7.0",
     "asyncssh>=2.24.1",
     "jinja2>=3.1.6",
-    "python-multipart>=0.0.32",
+    "python-multipart>=0.0.34",
     "cryptography>=50.0.2",
     "itsdangerous>=2.2.0",
     # Standard 5-field cron expression parsing/next-run computation for
     # Scheduling (app/scheduling/). Well-established, tiny, no transitive deps.
-    "croniter>=6.2.4",
+    "croniter>=7.0.0",
     # --- Authentication (app/auth/) ---
     # Argon2id password hashing for local accounts — current OWASP-recommended
     # default, memory-hard (better GPU/ASIC resistance than bcrypt).
@@ -43,7 +43,7 @@ dependencies = [
     # validation. Used together with Starlette's own SessionMiddleware (no
     # new dependency needed for that) to carry state/nonce across the
     # redirect to/from the provider.
-    "authlib>=1.9.1",
+    "authlib>=1.9.9",
     # HTTP client for this app's own outbound requests (push/chat
     # notifications, the GeoIP download, a remote logo) and for Authlib:
     # authlib.integrations.starlette_client (app/auth/oidc.py) imports its
@@ -51,9 +51,9 @@ dependencies = [
     # and since Authlib 1.8 that is httpx2 (plain httpx is only a
     # deprecated fallback). httpx2 is the maintained successor of httpx
     # (github.com/pydantic/httpx2), same API under a new package name.
-    "httpx2>=2.16.0",
+    "httpx2>=2.16.2",
     # TOTP (RFC 6238) generation/verification for two-factor authentication.
-    "pyotp>=2.10.0",
+    "pyotp>=2.12.0",
     # Renders the TOTP enrollment QR code as inline SVG — deliberately used
     # without its optional Pillow/PNG extra, which isn't needed for that.
     "qrcode>=8.2",
@@ -70,25 +70,25 @@ dependencies = [
     # redistributing MaxMind's own GeoLite2 data isn't allowed under their
     # license. Works with any provider shipping the same .mmdb format, not
     # just MaxMind's own downloads.
-    "geoip2>=5.3.0",
+    "geoip2>=5.4.0",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=9.2.0",
-    "pytest-asyncio>=1.4.1",
+    "pytest-asyncio>=1.5.0",
     # `pytest -n auto`: the suite on every CPU core (CI does this).
     "pytest-xdist>=3.8.0",
     "aiosqlite>=0.22.1",
-    "ruff>=0.17.3",
+    "ruff>=0.17.5",
     "mypy>=2.4.1",
     "python-dotenv>=1.2.4",
-    "types-authlib>=1.8.0.20260911",
-    "types-croniter>=6.2.4.20261006",
-    "types-ldap3>=2.9.13.20260827",
+    "types-authlib>=1.8.0.20261106",
+    "types-croniter>=6.2.4.20261118",
+    "types-ldap3>=2.9.13.20261107",
     "types-qrcode>=8.2.0.20260518",
     "pyyaml>=6.0.3",
-    "types-pyyaml>=6.0.12.20260826",
+    "types-pyyaml>=6.0.12.20261113",
 ]
 # Coverage-guided fuzzing (`python -m fuzz.run`, `.github/workflows/fuzz.yml`).
 # Atheris ships Linux wheels only; `tests/test_fuzz_targets.py` runs the same
@@ -99,7 +99,7 @@ fuzz = [
 # The browser smoke test (`e2e/`, the `browser` job in ci.yml): every main
 # page in Chromium under the real CSP. Not part of the default `pytest` run.
 e2e = [
-    "playwright>=1.64.1",
+    "playwright>=1.65.2",
 ]
 
 [tool.uv]
@@ -174,6 +174,12 @@ warn_unused_ignores = true
 # Without this every `import celery...` is an error and the whole task
 # layer goes unchecked for unrelated reasons.
 module = ["celery.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# asyncpg ships no type information either; it is used directly only in
+# app/db/timescale.py (the extension update needs a bare connection).
+module = ["asyncpg", "asyncpg.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

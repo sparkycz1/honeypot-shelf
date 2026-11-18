@@ -32,7 +32,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+import asyncpg
 from sqlalchemy import text
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, create_async_engine
 
 log = logging.getLogger(__name__)
@@ -197,6 +199,49 @@ async def drop_old_chunks(session: AsyncSession, table: Hypertable, older_than: 
     return int(result.scalar() or 0)
 
 
+_VERSIONS_SQL = (
+    "SELECT e.extversion, a.default_version FROM pg_extension e "
+    "JOIN pg_available_extensions a ON a.name = e.extname WHERE e.extname = 'timescaledb'"
+)
+
+
+async def update_extension(conn: AsyncConnection, database_url: str) -> str | None:
+    """Move the installed extension up to the version the server ships.
+
+    A new TimescaleDB image leaves an existing database on its old
+    extension version (the image keeps the old library for exactly that)
+    until someone runs `ALTER EXTENSION timescaledb UPDATE`. That has to be
+    the very first statement of a session: any earlier query, even
+    SQLAlchemy's own connection setup, loads the old library and the update
+    then fails. So `conn` only reads the versions, and the update runs on a
+    bare asyncpg connection of its own. Returns "2.31.0 -> 2.32.0" when it
+    updated, None when nothing was needed or possible (no TimescaleDB, or a
+    role that doesn't own the extension: then it logs what an administrator
+    has to run)."""
+    row = (await conn.execute(text(_VERSIONS_SQL))).first()
+    if row is None or row[0] == row[1]:
+        return None
+    installed, available = str(row[0]), str(row[1])
+    dsn = make_url(database_url).set(drivername="postgresql")
+    try:
+        bare = await asyncpg.connect(dsn.render_as_string(hide_password=False))
+        try:
+            await bare.execute("ALTER EXTENSION timescaledb UPDATE")
+        finally:
+            await bare.close()
+    except (asyncpg.PostgresError, OSError) as exc:
+        log.warning(
+            "timescaledb: the extension is %s, the server ships %s, and updating it failed (%s). "
+            "Run `ALTER EXTENSION timescaledb UPDATE` as the extension's owner, "
+            'first thing in a fresh "psql -X" session.',
+            installed,
+            available,
+            type(exc).__name__,
+        )
+        return None
+    return f"{installed} -> {available}"
+
+
 async def _main() -> int:
     from app.core.config import get_settings
 
@@ -206,6 +251,13 @@ async def _main() -> int:
         async with engine.connect() as conn:
             if conn.dialect.name != "postgresql":
                 return 0
+            updated = await update_extension(conn, get_settings().database_url)
+            if updated:
+                log.info("timescaledb: extension updated %s", updated)
+        # A new connection for the rest: the one above has the old
+        # library loaded.
+        await engine.dispose()
+        async with engine.connect() as conn:
             for line in await setup(conn):
                 log.info("timescaledb: %s", line)
     finally:
