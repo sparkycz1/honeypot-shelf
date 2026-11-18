@@ -402,7 +402,7 @@ services:
     # Pinned to an exact patch version, same reasoning as Postgres/Redis —
     # a floating `caddy:2` tag would silently pick up a new release on
     # every rebuild. Bump deliberately.
-    image: caddy:2.11.7
+    image: caddy:2.11.8
     restart: unless-stopped
     env_file:
       - .env
